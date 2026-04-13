@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "functions": {
+    "api/sync/bootstrap.ts": {
+      "maxDuration": 30
+    },
+    "api/sync/bootstrap/status.ts": {
+      "maxDuration": 15
+    },
+    "api/label-ocr/extract.ts": {
+      "maxDuration": 60
+    },
+    "api/sync/pull.ts": {
+      "maxDuration": 30
+    },
+    "api/sync/push.ts": {
+      "maxDuration": 30
+    }
+  }
+}

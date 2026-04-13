@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply font-sans text-slate-900 antialiased dark:text-slate-100;
+    background:
+      radial-gradient(circle at top left, rgba(13, 148, 136, 0.16), transparent 28%),
+      radial-gradient(circle at top right, rgba(245, 158, 11, 0.14), transparent 22%),
+      linear-gradient(180deg, #f8f2ea 0%, #f3f7f4 52%, #eef4f9 100%);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    body {
+      background:
+        radial-gradient(circle at top left, rgba(13, 148, 136, 0.2), transparent 28%),
+        radial-gradient(circle at top right, rgba(245, 158, 11, 0.18), transparent 22%),
+        linear-gradient(180deg, #08121a 0%, #0f172a 44%, #16202f 100%);
+    }
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button {
+    @apply disabled:cursor-not-allowed disabled:opacity-60;
+  }
+}
+
+@layer components {
+  .app-card {
+    @apply rounded-[28px] border border-black/5 bg-white/80 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/80;
+  }
+
+  .field {
+    @apply h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-200 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500 dark:focus:border-teal-400 dark:focus:ring-teal-500/20;
+  }
+
+  .action-button {
+    @apply inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-600;
+  }
+
+  .action-button-secondary {
+    @apply inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+  }
+
+  .icon-button {
+    @apply inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-700 transition hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+  }
+}
