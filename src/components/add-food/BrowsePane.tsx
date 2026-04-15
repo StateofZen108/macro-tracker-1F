@@ -9,6 +9,8 @@ import type {
 import { ServingsInput } from '../ServingsInput'
 import {
   describeFood,
+  describeFoodWithServings,
+  formatSelectedFoodServingPreview,
   formatServingMeta,
   getCatalogImportButtonLabel,
   getCatalogProviderLabel,
@@ -247,6 +249,15 @@ export function BrowsePane({
   onCancelDiscard,
 }: BrowsePaneProps) {
   const shortQuery = debouncedQuery.trim().length < 3
+  const selectedFoodPreview = selectedFood
+    ? formatSelectedFoodServingPreview({
+        brand: selectedFood.brand,
+        servingSize: selectedFood.servingSize,
+        servingUnit: selectedFood.servingUnit,
+        labelNutrition: selectedFood.labelNutrition,
+        servings,
+      })
+    : null
 
   return (
     <div ref={contentRef} className="space-y-4" data-add-food-pane="browse">
@@ -335,18 +346,24 @@ export function BrowsePane({
                 Selected food
               </p>
               <p className="font-display text-2xl text-slate-900 dark:text-white">{selectedFood.name}</p>
-              <p
-                className="text-sm text-slate-500 dark:text-slate-300"
-                data-testid="selected-food-serving-meta"
-              >
-                {selectedFood.brand ? `${selectedFood.brand} - ` : ''}
-                {selectedFood.servingSize}
-                {selectedFood.servingUnit}
-              </p>
-              <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                {describeFood(selectedFood)}
-              </p>
-            </div>
+                <p
+                  className="text-sm text-slate-500 dark:text-slate-300"
+                  data-testid="selected-food-serving-meta"
+                >
+                  {selectedFoodPreview?.primaryMeta}
+                </p>
+                {selectedFoodPreview?.basisMeta ? (
+                  <p
+                    className="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                    data-testid="selected-food-serving-basis"
+                  >
+                    {selectedFoodPreview.basisMeta}
+                  </p>
+                ) : null}
+                <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                  {describeFoodWithServings(selectedFood, servings)}
+                </p>
+              </div>
             <div className="flex items-center gap-2">
               {mode === 'add' && onToggleFavoriteFood ? (
                 <button

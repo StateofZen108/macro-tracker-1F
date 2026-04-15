@@ -281,12 +281,37 @@ test('nutrition-label OCR review saves a new food and logs it', async ({ page })
   await expect(selectedFoodCard.getByText('Selected food')).toBeVisible()
   await expect(selectedFoodCard.getByText('OCR Oats')).toBeVisible()
   await expect(selectedFoodCard.getByText('Test Brand')).toBeVisible()
-  await expect(getSelectedFoodServingMeta(page)).toContainText('28g')
+  await expect(getSelectedFoodServingMeta(page)).toContainText('2 cookies (28g)')
+  await addFoodSheet.getByRole('button', { name: /^2x$/i }).click()
+  await expect(getSelectedFoodServingMeta(page)).toContainText('4 cookies (56g)')
+  await expect(page.getByTestId('selected-food-serving-basis')).toContainText('1x = 2 cookies (28g)')
+  await expect(selectedFoodCard.getByText('420 cal | 16P | 66C | 8F')).toBeVisible()
   await addFoodSheet.getByRole('button', { name: /add to meal/i }).click()
+  await addFoodSheet.getByRole('button', { name: /close sheet/i }).click()
+  await expect(addFoodSheet).toBeHidden()
 
   await goToLog(page)
   await ensureMealExpanded(page)
-  await expect(entryRow(page, 'OCR Oats')).toContainText('210 cal')
+  await expect(entryRow(page, 'OCR Oats')).toContainText('420 cal')
+})
+
+test('selected saved-food preview updates macros and fallback serving meta as servings change', async ({
+  page,
+}) => {
+  await openMealSheet(page)
+  const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
+  await getAddFoodSearchInput(page).fill('Banana')
+  await addFoodSheet.getByRole('button', { name: /banana/i }).first().click()
+
+  const selectedFoodCard = getSelectedFoodCard(page)
+  await expect(selectedFoodCard).toBeVisible()
+  await expect(getSelectedFoodServingMeta(page)).toContainText('1medium')
+  await expect(selectedFoodCard.getByText('105 cal | 1P | 27C | 0F')).toBeVisible()
+
+  await addFoodSheet.getByRole('button', { name: /^2x$/i }).click()
+  await expect(getSelectedFoodServingMeta(page)).toContainText('2medium')
+  await expect(page.getByTestId('selected-food-serving-basis')).toBeHidden()
+  await expect(selectedFoodCard.getByText('210 cal | 3P | 54C | 1F')).toBeVisible()
 })
 
 test('nutrition-label OCR review warns when the label has no gram or ml equivalent', async ({ page }) => {
