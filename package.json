@@ -11,8 +11,10 @@
     "test:bundle": "node scripts/check-chunk-budgets.mjs",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "test:all": "npm run lint && npm run build && npm run test:bundle && npm run test:unit && npm run test:e2e",
-    "test:e2e": "playwright test"
+    "test:e2e:generic": "playwright test",
+    "test:e2e": "npm run test:e2e:generic",
+    "test:e2e:lane-guard": "node scripts/e2e-lane-guard.mjs",
+    "test:all": "npm run lint && npm run build && npm run test:bundle && npm run test:unit && npm run test:e2e"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
