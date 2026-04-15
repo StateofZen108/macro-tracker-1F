@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { entryRow, getAddFoodSearchInput, openMealSheet, resetApp } from '../helpers/app'
+import { ensureMealExpanded, entryRow, getAddFoodSearchInput, openMealSheet, resetApp } from '../helpers/app'
 import { seedPersonalLibraryScenario } from '../helpers/seed'
 
 const REMOTE_CATALOG_RESPONSE = {
@@ -25,6 +25,20 @@ const REMOTE_CATALOG_RESPONSE = {
   ],
 }
 
+async function clickCatalogImportAction(page: import('@playwright/test').Page) {
+  const action = page
+    .getByRole('button', { name: /^(import and log|review and import|fix and save)$/i })
+    .first()
+
+  await expect(action).toBeVisible()
+  await action.click()
+
+  if (!(await page.getByText(/already in your archived library/i).isVisible().catch(() => false))) {
+    await expect(action).toBeVisible()
+    await action.click()
+  }
+}
+
 test.beforeEach(async ({ page }) => {
   await resetApp(page)
 })
@@ -36,6 +50,7 @@ test('repeat this meal surfaces recent foods and reuses the last amount', async 
   await expect(page.getByText(/repeat this meal/i)).toBeVisible()
   await page.getByRole('button', { name: /use last amount/i }).first().click()
 
+  await ensureMealExpanded(page)
   await expect(entryRow(page, 'Greek Yogurt')).toContainText('180 cal')
   const todaysServings = await page.evaluate(() => {
     const today = new Date()
@@ -60,7 +75,7 @@ test('remote imports become local foods and immediately resolve as in-library ma
   await openMealSheet(page)
   await page.getByRole('checkbox').check()
   await getAddFoodSearchInput(page).fill('greek yogurt')
-  await page.getByRole('button', { name: /^import and log$/i }).click()
+  await clickCatalogImportAction(page)
 
   await expect(page.getByText(/in your library/i)).toBeVisible()
   const importedFood = await page.evaluate(() => {

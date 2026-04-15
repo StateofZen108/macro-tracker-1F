@@ -273,8 +273,8 @@ test('nutrition-label OCR review saves a new food and logs it', async ({ page })
 
   await expect(addFoodSheet.getByText(/review extracted label/i)).toBeVisible()
   await expect(addFoodSheet.getByLabel('Food name')).toHaveValue('OCR Oats')
-  await expect(addFoodSheet.getByLabel('Serving size')).toHaveValue('28')
-  await expect(addFoodSheet.getByLabel('Serving unit')).toHaveValue('g')
+  await expect(addFoodSheet.getByRole('button', { name: /28 g label/i })).toBeVisible()
+  await expect(addFoodSheet.getByRole('button', { name: /per 100 g label/i })).toBeVisible()
   await addFoodSheet.getByRole('button', { name: /save reviewed food/i }).click()
 
   const selectedFoodCard = getSelectedFoodCard(page)
@@ -306,11 +306,13 @@ test('nutrition-label OCR review warns when the label has no gram or ml equivale
     .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: Buffer.from('ocr-label') })
   await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
 
-  await expect(addFoodSheet.getByLabel('Serving size')).toHaveValue('1')
-  await expect(addFoodSheet.getByLabel('Serving unit')).toHaveValue('bar')
+  await expect(addFoodSheet.getByRole('button', { name: /enter manually/i })).toBeVisible()
   await expect(
-    addFoodSheet.getByText(/no gram or ml serving size was found on this label/i),
+    addFoodSheet.getByText(
+      /serving basis could not be resolved\. enter a serving size before saving\./i,
+    ),
   ).toBeVisible()
+  await expect(addFoodSheet.getByRole('button', { name: /fix and save/i })).toBeDisabled()
 })
 
 test('nutrition-label review blocks save when a required field is cleared', async ({ page }) => {

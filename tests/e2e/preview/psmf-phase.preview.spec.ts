@@ -214,7 +214,7 @@ test('uses the shared notes editor for historical phase notes', async ({ page })
 
   const dialog = page.getByRole('dialog', { name: /^Edit phase notes$/i })
   await expect(dialog).toBeVisible()
-  await dialog.getByLabel(/^Notes$/i).fill('Updated completed phase note')
+  await dialog.getByRole('textbox', { name: /^Notes$/i }).fill('Updated completed phase note')
   await dialog.getByRole('button', { name: /^Save notes$/i }).click()
   await expect(dialog).toBeHidden()
 

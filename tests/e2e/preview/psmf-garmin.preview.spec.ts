@@ -147,7 +147,7 @@ test('same-day refeeds lock date and calories after logging begins for that day'
   await section.getByRole('button', { name: /^Edit refeed$/i }).click()
   const dialog = page.getByRole('dialog', { name: /^Edit refeed notes$/i })
   await expect(dialog).toBeVisible()
-  await dialog.getByLabel(/^Notes$/i).fill('Notes updated after logging')
+  await dialog.getByRole('textbox', { name: /^Notes$/i }).fill('Notes updated after logging')
   await dialog.getByRole('button', { name: /^Save notes$/i }).click()
 
   const events = await page.evaluate(() => JSON.parse(window.localStorage.getItem('mt_diet_phase_events') ?? '[]'))
@@ -209,5 +209,16 @@ test('weight card renders every refeed inside the current decision window in asc
 
   const supplemental = page.getByTestId('weight-preview-supplemental')
   const text = ((await supplemental.textContent()) ?? '').replace(/\s+/g, ' ')
-  expect(text).toMatch(/Planned refeed on (Apr 1|1 Apr).*Planned refeed on (Apr 5|5 Apr)/)
+  const expectedRefeedOne = new Date(`${refeedOne}T00:00:00.000Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+  const expectedRefeedTwo = new Date(`${refeedTwo}T00:00:00.000Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+  expect(text).toContain(`Planned refeed on ${expectedRefeedOne}`)
+  expect(text).toContain(`Planned refeed on ${expectedRefeedTwo}`)
 })

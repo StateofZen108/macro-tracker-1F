@@ -119,6 +119,21 @@ async function ensureMealExpanded(
   page: Page,
   meal: 'breakfast' | 'lunch' | 'dinner' | 'snack' = 'breakfast',
 ) {
+  const addFoodDialog = getAddFoodDialog(page)
+  if (await addFoodDialog.isVisible().catch(() => false)) {
+    const closeButton = addFoodDialog.getByRole('button', { name: /^close sheet$/i })
+    if (await closeButton.isVisible().catch(() => false)) {
+      await closeButton.click()
+    }
+
+    const discardDialog = page.getByRole('alertdialog', { name: /discard changes\?/i })
+    if (await discardDialog.isVisible().catch(() => false)) {
+      await discardDialog.getByRole('button', { name: /^discard$/i }).click()
+    }
+
+    await expect(addFoodDialog).toBeHidden({ timeout: 5000 })
+  }
+
   const mealSection = page.locator(`[data-meal-section="${meal}"]`)
   const inlineAddFoodButton = mealSection.getByRole('button', { name: /^add food$/i }).first()
 
