@@ -1,16 +1,22 @@
 import type {
   ActivityEntry,
+  CheckInRecord,
+  CoachingDecisionRecord,
   DayMeta,
+  DietPhase,
+  DietPhaseEvent,
   FavoriteFood,
   Food,
   FoodLogEntry,
   InterventionEntry,
+  RecoveryCheckIn,
   Recipe,
   SavedMeal,
   SyncCounts,
   SyncRecordEnvelope,
   SyncScope,
   UserSettings,
+  WellnessEntry,
   WeightEntry,
 } from '../../types'
 
@@ -21,6 +27,7 @@ export interface SyncSettingsTargetsPayload {
   carbTarget: number
   fatTarget: number
   goalMode: UserSettings['goalMode']
+  fatLossMode: NonNullable<UserSettings['fatLossMode']>
   targetWeeklyRatePercent: number
 }
 
@@ -34,12 +41,16 @@ export interface SyncSettingsPreferencesPayload {
   coachConsentAt?: string
   dailyStepTarget?: number
   weeklyCardioMinuteTarget?: number
+  coachingMinCalories?: number
 }
 
 export interface SyncSettingsCoachingRuntimePayload {
   updatedAt: string
   tdeeEstimate?: number
   coachingDismissedAt?: string
+  goalModeChangedAt?: string
+  goalModeChangedFrom?: UserSettings['goalMode']
+  fatLossModeChangedAt?: string
 }
 
 export interface SyncedLocalDataset {
@@ -48,10 +59,16 @@ export interface SyncedLocalDataset {
   weights: WeightEntry[]
   dayMeta: DayMeta[]
   activity: ActivityEntry[]
+  wellness: WellnessEntry[]
+  recoveryCheckIns: RecoveryCheckIn[]
+  dietPhases: DietPhase[]
+  dietPhaseEvents: DietPhaseEvent[]
   interventions: InterventionEntry[]
   mealTemplates: SavedMeal[]
   recipes: Recipe[]
   favoriteFoods: FavoriteFood[]
+  weeklyCheckIns: CheckInRecord[]
+  coachDecisions: CoachingDecisionRecord[]
   settingsTargets: SyncSettingsTargetsPayload
   settingsPreferences: SyncSettingsPreferencesPayload
   settingsCoachingRuntime: SyncSettingsCoachingRuntimePayload
@@ -69,10 +86,16 @@ const SYNC_APPLY_ORDER: SyncScope[] = [
   'favorite_foods',
   'meal_templates',
   'recipes',
+  'weekly_check_ins',
+  'coach_decisions',
   'food_log_entries',
   'weights',
   'day_meta',
   'activity',
+  'wellness',
+  'recovery_check_ins',
+  'diet_phases',
+  'diet_phase_events',
   'interventions',
   'settings_targets',
   'settings_preferences',
@@ -136,6 +159,7 @@ function ensureSettingsTargetsPayload(
     carbTarget: settings.carbTarget,
     fatTarget: settings.fatTarget,
     goalMode: settings.goalMode,
+    fatLossMode: settings.fatLossMode ?? 'standard_cut',
     targetWeeklyRatePercent: settings.targetWeeklyRatePercent,
   }
 }
@@ -154,6 +178,7 @@ function ensureSettingsPreferencesPayload(
     coachConsentAt: settings.coachConsentAt,
     dailyStepTarget: settings.dailyStepTarget,
     weeklyCardioMinuteTarget: settings.weeklyCardioMinuteTarget,
+    coachingMinCalories: settings.coachingMinCalories,
   }
 }
 
@@ -165,6 +190,9 @@ function ensureSettingsCoachingRuntimePayload(
     updatedAt,
     tdeeEstimate: settings.tdeeEstimate,
     coachingDismissedAt: settings.coachingDismissedAt,
+    goalModeChangedAt: settings.goalModeChangedAt,
+    goalModeChangedFrom: settings.goalModeChangedFrom,
+    fatLossModeChangedAt: settings.fatLossModeChangedAt,
   }
 }
 
@@ -206,6 +234,7 @@ export function mergeSyncSettingsIntoLocal(
     carbTarget: dataset.settingsTargets.carbTarget,
     fatTarget: dataset.settingsTargets.fatTarget,
     goalMode: dataset.settingsTargets.goalMode,
+    fatLossMode: dataset.settingsTargets.fatLossMode,
     targetWeeklyRatePercent: dataset.settingsTargets.targetWeeklyRatePercent,
     weightUnit: dataset.settingsPreferences.weightUnit,
     checkInWeekday: dataset.settingsPreferences.checkInWeekday,
@@ -215,8 +244,12 @@ export function mergeSyncSettingsIntoLocal(
     coachConsentAt: dataset.settingsPreferences.coachConsentAt,
     dailyStepTarget: dataset.settingsPreferences.dailyStepTarget,
     weeklyCardioMinuteTarget: dataset.settingsPreferences.weeklyCardioMinuteTarget,
+    coachingMinCalories: dataset.settingsPreferences.coachingMinCalories,
     tdeeEstimate: dataset.settingsCoachingRuntime.tdeeEstimate,
     coachingDismissedAt: dataset.settingsCoachingRuntime.coachingDismissedAt,
+    goalModeChangedAt: dataset.settingsCoachingRuntime.goalModeChangedAt,
+    goalModeChangedFrom: dataset.settingsCoachingRuntime.goalModeChangedFrom,
+    fatLossModeChangedAt: dataset.settingsCoachingRuntime.fatLossModeChangedAt,
   }
 }
 
@@ -228,6 +261,10 @@ export function buildSyncCountsFromDataset(dataset: SyncedLocalDataset): SyncCou
     weights: dataset.weights.length,
     dayMeta: dataset.dayMeta.length,
     activity: dataset.activity.length,
+    wellness: dataset.wellness.length,
+    recoveryCheckIns: dataset.recoveryCheckIns.length,
+    dietPhases: dataset.dietPhases.length,
+    dietPhaseEvents: dataset.dietPhaseEvents.length,
     interventions: dataset.interventions.length,
     savedMeals: dataset.mealTemplates.length,
     recipes: dataset.recipes.length,
@@ -243,6 +280,10 @@ export function buildEmptySyncCounts(): SyncCounts {
     weights: 0,
     dayMeta: 0,
     activity: 0,
+    wellness: 0,
+    recoveryCheckIns: 0,
+    dietPhases: 0,
+    dietPhaseEvents: 0,
     interventions: 0,
     savedMeals: 0,
     recipes: 0,
@@ -295,6 +336,30 @@ export function datasetToSyncRecordDrafts(dataset: SyncedLocalDataset): SyncReco
       payload: entry as unknown as Record<string, unknown>,
       deletedAt: entry.deletedAt,
     })),
+    ...dataset.wellness.map((entry) => ({
+      scope: 'wellness' as const,
+      recordId: `${entry.provider}:${entry.date}`,
+      payload: entry as unknown as Record<string, unknown>,
+      deletedAt: entry.deletedAt,
+    })),
+    ...dataset.recoveryCheckIns.map((entry) => ({
+      scope: 'recovery_check_ins' as const,
+      recordId: entry.date,
+      payload: entry as unknown as Record<string, unknown>,
+      deletedAt: entry.deletedAt,
+    })),
+    ...dataset.dietPhases.map((entry) => ({
+      scope: 'diet_phases' as const,
+      recordId: entry.id,
+      payload: entry as unknown as Record<string, unknown>,
+      deletedAt: entry.status === 'cancelled' ? entry.updatedAt : undefined,
+    })),
+    ...dataset.dietPhaseEvents.map((entry) => ({
+      scope: 'diet_phase_events' as const,
+      recordId: entry.id,
+      payload: entry as unknown as Record<string, unknown>,
+      deletedAt: entry.deletedAt,
+    })),
     ...dataset.interventions.map((entry) => ({
       scope: 'interventions' as const,
       recordId: entry.id,
@@ -318,6 +383,16 @@ export function datasetToSyncRecordDrafts(dataset: SyncedLocalDataset): SyncReco
       recordId: favorite.foodId,
       payload: favorite as unknown as Record<string, unknown>,
       deletedAt: favorite.deletedAt,
+    })),
+    ...dataset.weeklyCheckIns.map((checkIn) => ({
+      scope: 'weekly_check_ins' as const,
+      recordId: checkIn.id,
+      payload: checkIn as unknown as Record<string, unknown>,
+    })),
+    ...dataset.coachDecisions.map((decision) => ({
+      scope: 'coach_decisions' as const,
+      recordId: decision.id,
+      payload: decision as unknown as Record<string, unknown>,
     })),
     {
       scope: 'settings_targets',
@@ -363,6 +438,10 @@ function normalizeSettingsTargetsPayload(
       payload.goalMode === 'lose' || payload.goalMode === 'gain' || payload.goalMode === 'maintain'
         ? payload.goalMode
         : fallback.goalMode,
+    fatLossMode:
+      payload.fatLossMode === 'psmf' || payload.fatLossMode === 'standard_cut'
+        ? payload.fatLossMode
+        : fallback.fatLossMode,
     targetWeeklyRatePercent:
       typeof payload.targetWeeklyRatePercent === 'number' &&
       Number.isFinite(payload.targetWeeklyRatePercent)
@@ -406,6 +485,10 @@ function normalizeSettingsPreferencesPayload(
       Number.isFinite(payload.weeklyCardioMinuteTarget)
         ? payload.weeklyCardioMinuteTarget
         : fallback.weeklyCardioMinuteTarget,
+    coachingMinCalories:
+      typeof payload.coachingMinCalories === 'number' && Number.isFinite(payload.coachingMinCalories)
+        ? payload.coachingMinCalories
+        : fallback.coachingMinCalories,
   }
 }
 
@@ -423,6 +506,20 @@ function normalizeSettingsCoachingRuntimePayload(
       typeof payload.coachingDismissedAt === 'string' && payload.coachingDismissedAt.trim()
         ? payload.coachingDismissedAt
         : fallback.coachingDismissedAt,
+    goalModeChangedAt:
+      typeof payload.goalModeChangedAt === 'string' && payload.goalModeChangedAt.trim()
+        ? payload.goalModeChangedAt
+        : fallback.goalModeChangedAt,
+    goalModeChangedFrom:
+      payload.goalModeChangedFrom === 'lose' ||
+      payload.goalModeChangedFrom === 'maintain' ||
+      payload.goalModeChangedFrom === 'gain'
+        ? payload.goalModeChangedFrom
+        : fallback.goalModeChangedFrom,
+    fatLossModeChangedAt:
+      typeof payload.fatLossModeChangedAt === 'string' && payload.fatLossModeChangedAt.trim()
+        ? payload.fatLossModeChangedAt
+        : fallback.fatLossModeChangedAt,
   }
 }
 
@@ -442,10 +539,16 @@ export function recordsToDataset(
     weights: [],
     dayMeta: [],
     activity: [],
+    wellness: [],
+    recoveryCheckIns: [],
+    dietPhases: [],
+    dietPhaseEvents: [],
     interventions: [],
     mealTemplates: [],
     recipes: [],
     favoriteFoods: [],
+    weeklyCheckIns: [],
+    coachDecisions: [],
     settingsTargets: fallbackPartitions.settingsTargets,
     settingsPreferences: fallbackPartitions.settingsPreferences,
     settingsCoachingRuntime: fallbackPartitions.settingsCoachingRuntime,
@@ -477,6 +580,20 @@ export function recordsToDataset(
       case 'activity':
         dataset.activity.push(payloadWithDeleteMarker as unknown as ActivityEntry)
         break
+      case 'wellness':
+        dataset.wellness.push(payloadWithDeleteMarker as unknown as WellnessEntry)
+        break
+      case 'recovery_check_ins':
+        dataset.recoveryCheckIns.push(payloadWithDeleteMarker as unknown as RecoveryCheckIn)
+        break
+      case 'diet_phases':
+        if (!record.deletedAt && record.payload.status !== 'cancelled') {
+          dataset.dietPhases.push(record.payload as unknown as DietPhase)
+        }
+        break
+      case 'diet_phase_events':
+        dataset.dietPhaseEvents.push(payloadWithDeleteMarker as unknown as DietPhaseEvent)
+        break
       case 'interventions':
         dataset.interventions.push(payloadWithDeleteMarker as unknown as InterventionEntry)
         break
@@ -488,6 +605,12 @@ export function recordsToDataset(
         break
       case 'favorite_foods':
         dataset.favoriteFoods.push(payloadWithDeleteMarker as unknown as FavoriteFood)
+        break
+      case 'weekly_check_ins':
+        dataset.weeklyCheckIns.push(record.payload as unknown as CheckInRecord)
+        break
+      case 'coach_decisions':
+        dataset.coachDecisions.push(record.payload as unknown as CoachingDecisionRecord)
         break
       case 'settings_targets':
         dataset.settingsTargets = normalizeSettingsTargetsPayload(record.payload, dataset.settingsTargets)
@@ -522,6 +645,30 @@ export function mergeDatasets(localDataset: SyncedLocalDataset, remoteDataset: S
     weights: mergeByKey(localDataset.weights, remoteDataset.weights, (entry) => entry.date, getRecordTimestamp),
     dayMeta: mergeByKey(localDataset.dayMeta, remoteDataset.dayMeta, (entry) => entry.date, (entry) => entry.updatedAt),
     activity: mergeByKey(localDataset.activity, remoteDataset.activity, (entry) => entry.date, getRecordTimestamp),
+    wellness: mergeByKey(
+      localDataset.wellness,
+      remoteDataset.wellness,
+      (entry) => `${entry.provider}:${entry.date}`,
+      getRecordTimestamp,
+    ),
+    recoveryCheckIns: mergeByKey(
+      localDataset.recoveryCheckIns,
+      remoteDataset.recoveryCheckIns,
+      (entry) => entry.date,
+      getRecordTimestamp,
+    ),
+    dietPhases: mergeByKey(
+      localDataset.dietPhases,
+      remoteDataset.dietPhases,
+      (entry) => entry.id,
+      (entry) => entry.updatedAt,
+    ),
+    dietPhaseEvents: mergeByKey(
+      localDataset.dietPhaseEvents,
+      remoteDataset.dietPhaseEvents,
+      (entry) => entry.id,
+      getRecordTimestamp,
+    ),
     interventions: mergeByKey(
       localDataset.interventions,
       remoteDataset.interventions,
@@ -540,6 +687,18 @@ export function mergeDatasets(localDataset: SyncedLocalDataset, remoteDataset: S
       remoteDataset.favoriteFoods,
       (entry) => entry.foodId,
       getRecordTimestamp,
+    ),
+    weeklyCheckIns: mergeByKey(
+      localDataset.weeklyCheckIns,
+      remoteDataset.weeklyCheckIns,
+      (entry) => entry.id,
+      (entry) => entry.updatedAt ?? entry.appliedAt ?? entry.createdAt,
+    ),
+    coachDecisions: mergeByKey(
+      localDataset.coachDecisions,
+      remoteDataset.coachDecisions,
+      (entry) => entry.id,
+      (entry) => entry.updatedAt ?? entry.createdAt,
     ),
     settingsTargets:
       isoCompare(
@@ -581,10 +740,16 @@ export function applyRecordsToDataset(
     weights: [...dataset.weights],
     dayMeta: [...dataset.dayMeta],
     activity: [...dataset.activity],
+    wellness: [...dataset.wellness],
+    recoveryCheckIns: [...dataset.recoveryCheckIns],
+    dietPhases: [...dataset.dietPhases],
+    dietPhaseEvents: [...dataset.dietPhaseEvents],
     interventions: [...dataset.interventions],
     mealTemplates: [...dataset.mealTemplates],
     recipes: [...dataset.recipes],
     favoriteFoods: [...dataset.favoriteFoods],
+    weeklyCheckIns: [...dataset.weeklyCheckIns],
+    coachDecisions: [...dataset.coachDecisions],
     settingsTargets: dataset.settingsTargets,
     settingsPreferences: dataset.settingsPreferences,
     settingsCoachingRuntime: dataset.settingsCoachingRuntime,
@@ -616,6 +781,30 @@ export function applyRecordsToDataset(
         nextDataset.activity = nextDataset.activity.filter((entry) => entry.date !== record.recordId)
         nextDataset.activity.push(record.payload as unknown as ActivityEntry)
         break
+      case 'wellness':
+        nextDataset.wellness = nextDataset.wellness.filter(
+          (entry) => `${entry.provider}:${entry.date}` !== record.recordId,
+        )
+        nextDataset.wellness.push(record.payload as unknown as WellnessEntry)
+        break
+      case 'recovery_check_ins':
+        nextDataset.recoveryCheckIns = nextDataset.recoveryCheckIns.filter(
+          (entry) => entry.date !== record.recordId,
+        )
+        nextDataset.recoveryCheckIns.push(record.payload as unknown as RecoveryCheckIn)
+        break
+      case 'diet_phases':
+        nextDataset.dietPhases = nextDataset.dietPhases.filter((entry) => entry.id !== record.recordId)
+        if (!record.deletedAt && record.payload.status !== 'cancelled') {
+          nextDataset.dietPhases.push(record.payload as unknown as DietPhase)
+        }
+        break
+      case 'diet_phase_events':
+        nextDataset.dietPhaseEvents = nextDataset.dietPhaseEvents.filter(
+          (entry) => entry.id !== record.recordId,
+        )
+        nextDataset.dietPhaseEvents.push(record.payload as unknown as DietPhaseEvent)
+        break
       case 'interventions':
         nextDataset.interventions = nextDataset.interventions.filter((entry) => entry.id !== record.recordId)
         nextDataset.interventions.push(record.payload as unknown as InterventionEntry)
@@ -633,6 +822,14 @@ export function applyRecordsToDataset(
           (entry) => entry.foodId !== record.recordId,
         )
         nextDataset.favoriteFoods.push(record.payload as unknown as FavoriteFood)
+        break
+      case 'weekly_check_ins':
+        nextDataset.weeklyCheckIns = nextDataset.weeklyCheckIns.filter((entry) => entry.id !== record.recordId)
+        nextDataset.weeklyCheckIns.push(record.payload as unknown as CheckInRecord)
+        break
+      case 'coach_decisions':
+        nextDataset.coachDecisions = nextDataset.coachDecisions.filter((entry) => entry.id !== record.recordId)
+        nextDataset.coachDecisions.push(record.payload as unknown as CoachingDecisionRecord)
         break
       case 'settings_targets':
         nextDataset.settingsTargets = normalizeSettingsTargetsPayload(

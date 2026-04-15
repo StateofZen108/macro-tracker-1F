@@ -27,10 +27,16 @@ const SYNC_SCOPES: SyncScope[] = [
   'weights',
   'day_meta',
   'activity',
+  'wellness',
+  'recovery_check_ins',
+  'diet_phases',
+  'diet_phase_events',
   'interventions',
   'meal_templates',
   'recipes',
   'favorite_foods',
+  'weekly_check_ins',
+  'coach_decisions',
   'settings_targets',
   'settings_preferences',
   'settings_coaching_runtime',
@@ -44,6 +50,10 @@ function emptyCounts(): SyncCounts {
     weights: 0,
     dayMeta: 0,
     activity: 0,
+    wellness: 0,
+    recoveryCheckIns: 0,
+    dietPhases: 0,
+    dietPhaseEvents: 0,
     interventions: 0,
     savedMeals: 0,
     recipes: 0,
@@ -74,6 +84,18 @@ export function buildBootstrapCounts(rows: BootstrapCountRow[]): SyncCounts {
         break
       case 'activity':
         counts.activity += 1
+        break
+      case 'wellness':
+        counts.wellness += 1
+        break
+      case 'recovery_check_ins':
+        counts.recoveryCheckIns += 1
+        break
+      case 'diet_phases':
+        counts.dietPhases += 1
+        break
+      case 'diet_phase_events':
+        counts.dietPhaseEvents += 1
         break
       case 'interventions':
         counts.interventions += 1

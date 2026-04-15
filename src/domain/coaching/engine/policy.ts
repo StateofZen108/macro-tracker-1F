@@ -1,8 +1,8 @@
-import type { CoachingTargetSet } from '../../../types'
+import type { CoachingReasonCode, CoachingTargetSet } from '../../../types'
 import { COACH_ENGINE_CONFIG } from './_constants'
 import type { CoachingEngineInputContext, PolicyDecision, QualityAssessment, TrendSummary } from './_types'
 
-function buildPreviousTargets(context: CoachingEngineInputContext): CoachingTargetSet {
+export function buildPreviousTargets(context: CoachingEngineInputContext): CoachingTargetSet {
   return {
     calorieTarget: context.input.calorieTarget,
     proteinTarget: context.input.proteinTarget,
@@ -17,14 +17,15 @@ function getKeepBand(goalMode: CoachingEngineInputContext['settings']['goalMode'
     : COACH_ENGINE_CONFIG.keepBandPercentPerWeek
 }
 
-function realizeCarbLedTargets(
+export function realizeCarbLedTargets(
   previousTargets: CoachingTargetSet,
   requestedDelta: number,
+  minimumCalories: number = COACH_ENGINE_CONFIG.legacyCalorieFloor,
 ): { proposedTargets: CoachingTargetSet; realizedCalorieDelta: number; floorApplied: boolean } {
   let proposedCalorieTarget = previousTargets.calorieTarget + requestedDelta
   let floorApplied = false
-  if (proposedCalorieTarget < COACH_ENGINE_CONFIG.calorieFloor) {
-    proposedCalorieTarget = COACH_ENGINE_CONFIG.calorieFloor
+  if (Number.isFinite(minimumCalories) && proposedCalorieTarget < minimumCalories) {
+    proposedCalorieTarget = minimumCalories
     floorApplied = true
   }
 
@@ -133,6 +134,12 @@ export function evaluatePolicy(
     const requestedDelta =
       actualRate > 0 ? -COACH_ENGINE_CONFIG.lightAdjustmentCalories : COACH_ENGINE_CONFIG.lightAdjustmentCalories
     const realized = realizeCarbLedTargets(previousTargets, requestedDelta)
+    const directionCode: CoachingReasonCode =
+      requestedDelta > 0 ? 'maintenance_weight_down' : 'maintenance_weight_up'
+    const reasonCodes: PolicyDecision['reasonCodes'] = [
+      directionCode,
+      ...(realized.floorApplied ? (['calorieFloorApplied'] as const) : []),
+    ]
     return {
       decisionType: requestedDelta > 0 ? 'increase_calories' : 'decrease_calories',
       recommendedCalories: realized.proposedTargets.calorieTarget,
@@ -151,10 +158,7 @@ export function evaluatePolicy(
         requestedDelta > 0
           ? 'Weight drifted below maintenance. Increase calories slightly.'
           : 'Weight drifted above maintenance. Reduce calories slightly.',
-      reasonCodes: [
-        requestedDelta > 0 ? 'maintenance_weight_down' : 'maintenance_weight_up',
-        ...(realized.floorApplied ? ['calorieFloorApplied'] : []),
-      ],
+      reasonCodes,
       effectiveDate: context.windowEnd,
     }
   }
@@ -183,6 +187,12 @@ export function evaluatePolicy(
   if (context.settings.goalMode === 'lose') {
     const requestedDelta = actualRate > targetRate ? -adjustment : adjustment
     const realized = realizeCarbLedTargets(previousTargets, requestedDelta)
+    const directionCode: CoachingReasonCode =
+      requestedDelta > 0 ? 'loss_faster_than_target' : 'loss_slower_than_target'
+    const reasonCodes: PolicyDecision['reasonCodes'] = [
+      directionCode,
+      ...(realized.floorApplied ? (['calorieFloorApplied'] as const) : []),
+    ]
     return {
       decisionType: requestedDelta > 0 ? 'increase_calories' : 'decrease_calories',
       recommendedCalories: realized.proposedTargets.calorieTarget,
@@ -201,16 +211,19 @@ export function evaluatePolicy(
         requestedDelta > 0
           ? `Rate of loss was faster than target. Increase calories by ${adjustment} per day.`
           : `Rate of loss was slower than target. Reduce calories by ${adjustment} per day.`,
-      reasonCodes: [
-        requestedDelta > 0 ? 'loss_faster_than_target' : 'loss_slower_than_target',
-        ...(realized.floorApplied ? ['calorieFloorApplied'] : []),
-      ],
+      reasonCodes,
       effectiveDate: context.windowEnd,
     }
   }
 
   const requestedDelta = actualRate < targetRate ? adjustment : -adjustment
   const realized = realizeCarbLedTargets(previousTargets, requestedDelta)
+  const directionCode: CoachingReasonCode =
+    requestedDelta > 0 ? 'gain_slower_than_target' : 'gain_faster_than_target'
+  const reasonCodes: PolicyDecision['reasonCodes'] = [
+    directionCode,
+    ...(realized.floorApplied ? (['calorieFloorApplied'] as const) : []),
+  ]
   return {
     decisionType: requestedDelta > 0 ? 'increase_calories' : 'decrease_calories',
     recommendedCalories: realized.proposedTargets.calorieTarget,
@@ -229,10 +242,7 @@ export function evaluatePolicy(
       requestedDelta > 0
         ? `Rate of gain was slower than target. Increase calories by ${adjustment} per day.`
         : `Rate of gain was faster than target. Reduce calories by ${adjustment} per day.`,
-    reasonCodes: [
-      requestedDelta > 0 ? 'gain_slower_than_target' : 'gain_faster_than_target',
-      ...(realized.floorApplied ? ['calorieFloorApplied'] : []),
-    ],
+    reasonCodes,
     effectiveDate: context.windowEnd,
   }
 }

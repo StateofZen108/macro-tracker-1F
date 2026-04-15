@@ -1,4 +1,6 @@
 import type { ActionResult, CoachingDecisionRecord } from '../../types'
+import { normalizeBlockedReasonCode, normalizeReasonCode } from '../../domain/coaching/codes'
+import { queueCoachDecisionSyncMutations } from '../sync/storageQueue'
 import { createExtraCollectionStore } from './extraStore'
 
 const STORAGE_KEY = 'mt_coach_decision_history'
@@ -66,11 +68,13 @@ function normalizeDecisionRecord(rawValue: unknown): CoachingDecisionRecord | nu
     : undefined
 
   const reasonCodes = Array.isArray(rawValue.reasonCodes)
-    ? rawValue.reasonCodes.filter((value): value is string => typeof value === 'string')
+    ? rawValue.reasonCodes
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => normalizeReasonCode(value))
     : []
   const blockedReasons = Array.isArray(rawValue.blockedReasons)
     ? rawValue.blockedReasons.filter(isRecord).map((reason) => ({
-        code: readString(reason.code) ?? 'unknown',
+        code: normalizeBlockedReasonCode(readString(reason.code)),
         message: readString(reason.message) ?? 'Unknown blocked reason.',
       }))
     : []
@@ -120,7 +124,14 @@ export function loadCoachingDecisionHistory(): CoachingDecisionRecord[] {
 }
 
 export function saveCoachingDecisionHistory(records: CoachingDecisionRecord[]): ActionResult<void> {
-  return store.save(records)
+  const previousRecords = store.load()
+  const result = store.save(records)
+  if (!result.ok) {
+    return result
+  }
+
+  queueCoachDecisionSyncMutations(previousRecords, records)
+  return result
 }
 
 export function appendCoachingDecision(record: CoachingDecisionRecord): ActionResult<void> {

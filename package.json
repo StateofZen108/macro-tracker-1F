@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host",
+    "dev:ocr": "vercel dev --yes --listen 3000",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview --host",
+    "preview:restore-test": "vite preview --host 127.0.0.1 --port 4173 --strictPort",
+    "health:ocr": "powershell -ExecutionPolicy Bypass -File scripts/ocr-healthcheck.ps1",
     "test:bundle": "node scripts/check-chunk-budgets.mjs",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",

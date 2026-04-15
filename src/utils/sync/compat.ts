@@ -1,6 +1,6 @@
 import type { SyncRecordEnvelope, SyncScope } from '../../types'
 
-export type FutureSyncScope = 'recipes' | 'favorite_foods'
+export type FutureSyncScope = never
 export type SupportedSyncScope = SyncScope | FutureSyncScope
 
 const KNOWN_CLIENT_SYNC_SCOPES: SyncScope[] = [
@@ -9,14 +9,22 @@ const KNOWN_CLIENT_SYNC_SCOPES: SyncScope[] = [
   'weights',
   'day_meta',
   'activity',
+  'wellness',
+  'recovery_check_ins',
+  'diet_phases',
+  'diet_phase_events',
   'interventions',
   'meal_templates',
+  'recipes',
+  'favorite_foods',
+  'weekly_check_ins',
+  'coach_decisions',
   'settings_targets',
   'settings_preferences',
   'settings_coaching_runtime',
 ]
 
-export const FUTURE_SYNC_SCOPES: FutureSyncScope[] = ['recipes', 'favorite_foods']
+export const FUTURE_SYNC_SCOPES: FutureSyncScope[] = []
 export const SUPPORTED_SYNC_SCOPES: SupportedSyncScope[] = [
   ...KNOWN_CLIENT_SYNC_SCOPES,
   ...FUTURE_SYNC_SCOPES,
@@ -30,10 +38,16 @@ const SCOPE_PRIORITY: Record<SupportedSyncScope, number> = {
   recipes: 20,
   meal_templates: 30,
   favorite_foods: 40,
+  weekly_check_ins: 45,
+  coach_decisions: 46,
   food_log_entries: 50,
   weights: 60,
   day_meta: 70,
   activity: 80,
+  wellness: 85,
+  recovery_check_ins: 86,
+  diet_phases: 87,
+  diet_phase_events: 88,
   interventions: 90,
 }
 

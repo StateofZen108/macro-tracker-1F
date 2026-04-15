@@ -1,8 +1,18 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { Food, FoodLogEntry, MealTemplate, UserSettings, WeightEntry } from '../../types'
+import type {
+  DietPhase,
+  DietPhaseEvent,
+  Food,
+  FoodLogEntry,
+  MealTemplate,
+  RecoveryCheckIn,
+  UserSettings,
+  WellnessEntry,
+  WeightEntry,
+} from '../../types'
 
 export const STORAGE_IDB_NAME = 'macrotracker-storage'
-const STORAGE_IDB_VERSION = 1
+const STORAGE_IDB_VERSION = 2
 
 type CoreDomain = 'foods' | 'settings' | 'weights' | 'mealTemplates' | 'logsByDate'
 
@@ -17,6 +27,10 @@ export interface IndexedDbCoreSnapshot {
   weights: WeightEntry[]
   mealTemplates: MealTemplate[]
   logsByDate: Record<string, FoodLogEntry[]>
+  wellness: WellnessEntry[]
+  recoveryCheckIns: RecoveryCheckIn[]
+  dietPhases: DietPhase[]
+  dietPhaseEvents: DietPhaseEvent[]
 }
 
 export interface StorageDiagnosticEvent {
@@ -56,6 +70,22 @@ interface StorageDatabase extends DBSchema {
   mealTemplates: {
     key: 'default'
     value: MealTemplate[]
+  }
+  wellness: {
+    key: 'default'
+    value: WellnessEntry[]
+  }
+  recoveryCheckIns: {
+    key: 'default'
+    value: RecoveryCheckIn[]
+  }
+  dietPhases: {
+    key: 'default'
+    value: DietPhase[]
+  }
+  dietPhaseEvents: {
+    key: 'default'
+    value: DietPhaseEvent[]
   }
   logs: {
     key: string
@@ -99,6 +129,22 @@ async function getDatabase(): Promise<IDBPDatabase<StorageDatabase> | null> {
 
         if (!database.objectStoreNames.contains('mealTemplates')) {
           database.createObjectStore('mealTemplates')
+        }
+
+        if (!database.objectStoreNames.contains('wellness')) {
+          database.createObjectStore('wellness')
+        }
+
+        if (!database.objectStoreNames.contains('recoveryCheckIns')) {
+          database.createObjectStore('recoveryCheckIns')
+        }
+
+        if (!database.objectStoreNames.contains('dietPhases')) {
+          database.createObjectStore('dietPhases')
+        }
+
+        if (!database.objectStoreNames.contains('dietPhaseEvents')) {
+          database.createObjectStore('dietPhaseEvents')
         }
 
         if (!database.objectStoreNames.contains('logs')) {
@@ -145,6 +191,12 @@ export async function readIndexedDbCoreSnapshot(): Promise<IndexedDbCoreSnapshot
     db.get('weights', 'default'),
     db.get('mealTemplates', 'default'),
   ])
+  const [wellness, recoveryCheckIns, dietPhases, dietPhaseEvents] = await Promise.all([
+    db.get('wellness', 'default'),
+    db.get('recoveryCheckIns', 'default'),
+    db.get('dietPhases', 'default'),
+    db.get('dietPhaseEvents', 'default'),
+  ])
 
   const logsByDate: Record<string, FoodLogEntry[]> = {}
   let hasLogs = false
@@ -155,7 +207,17 @@ export async function readIndexedDbCoreSnapshot(): Promise<IndexedDbCoreSnapshot
     cursor = await cursor.continue()
   }
 
-  if (!foods && !settings && !weights && !mealTemplates && !hasLogs) {
+  if (
+    !foods &&
+    !settings &&
+    !weights &&
+    !mealTemplates &&
+    !wellness &&
+    !recoveryCheckIns &&
+    !dietPhases &&
+    !dietPhaseEvents &&
+    !hasLogs
+  ) {
     return null
   }
 
@@ -165,6 +227,10 @@ export async function readIndexedDbCoreSnapshot(): Promise<IndexedDbCoreSnapshot
     weights: weights ?? [],
     mealTemplates: mealTemplates ?? [],
     logsByDate,
+    wellness: wellness ?? [],
+    recoveryCheckIns: recoveryCheckIns ?? [],
+    dietPhases: dietPhases ?? [],
+    dietPhaseEvents: dietPhaseEvents ?? [],
   }
 }
 
@@ -175,7 +241,7 @@ export async function writeIndexedDbCoreSnapshot(snapshot: IndexedDbCoreSnapshot
   }
 
   const transaction = db.transaction(
-    ['foods', 'settings', 'weights', 'mealTemplates', 'logs'],
+    ['foods', 'settings', 'weights', 'mealTemplates', 'wellness', 'recoveryCheckIns', 'dietPhases', 'dietPhaseEvents', 'logs'],
     'readwrite',
   )
 
@@ -183,6 +249,10 @@ export async function writeIndexedDbCoreSnapshot(snapshot: IndexedDbCoreSnapshot
   await transaction.objectStore('settings').put(snapshot.settings, 'default')
   await transaction.objectStore('weights').put(snapshot.weights, 'default')
   await transaction.objectStore('mealTemplates').put(snapshot.mealTemplates, 'default')
+  await transaction.objectStore('wellness').put(snapshot.wellness, 'default')
+  await transaction.objectStore('recoveryCheckIns').put(snapshot.recoveryCheckIns, 'default')
+  await transaction.objectStore('dietPhases').put(snapshot.dietPhases, 'default')
+  await transaction.objectStore('dietPhaseEvents').put(snapshot.dietPhaseEvents, 'default')
 
   const logStore = transaction.objectStore('logs')
   let existingCursor = await logStore.openCursor()
@@ -251,6 +321,10 @@ export async function clearStorageIndexedDbForTests(): Promise<void> {
       'settings',
       'weights',
       'mealTemplates',
+      'wellness',
+      'recoveryCheckIns',
+      'dietPhases',
+      'dietPhaseEvents',
       'logs',
       'diagnostics',
     ] as const

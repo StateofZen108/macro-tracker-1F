@@ -24,12 +24,14 @@ export {
   buildCoachingDecisionRecord,
   buildManualOverrideDecisionRecord,
   evaluateCoachEngineV1,
+  evaluateCoachEngineV2,
   updateCoachingDecisionRecordStatus,
   upsertCoachingDecisionRecord,
 } from './engine'
 
 export {
   compareCoachingShadowMode,
+  runCoachingReplaySuite,
   runCoachingReplayScenario,
 } from './validation'
 
