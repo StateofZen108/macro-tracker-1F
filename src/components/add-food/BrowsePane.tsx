@@ -404,7 +404,7 @@ export function BrowsePane({
         </div>
       ) : null}
 
-      {lookupMessage && !selectedFood ? (
+      {lookupMessage ? (
         <div className="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-700 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-200">
           {lookupMessage}
         </div>

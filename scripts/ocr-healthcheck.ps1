@@ -5,6 +5,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+Add-Type -AssemblyName System.Net.Http
+
 if (-not (Test-Path -LiteralPath $ImagePath)) {
   Write-Error "OCR health check image not found: $ImagePath"
 }
@@ -25,14 +27,43 @@ $body = @{
   expectedLocale = "auto"
 } | ConvertTo-Json -Depth 6
 
+$handler = [System.Net.Http.HttpClientHandler]::new()
+$client = [System.Net.Http.HttpClient]::new($handler)
+$client.DefaultRequestHeaders.ExpectContinue = $false
+$content = [System.Net.Http.StringContent]::new(
+  $body,
+  [System.Text.Encoding]::UTF8,
+  "application/json"
+)
+
 try {
-  $response = Invoke-RestMethod -Method Post -Uri $ApiUrl -ContentType "application/json" -Body $body
-} catch {
-  if ($_.Exception.Response -and $_.Exception.Response.StatusCode.value__ -eq 503) {
+  $responseMessage = $client.PostAsync($ApiUrl, $content).GetAwaiter().GetResult()
+  $statusCode = [int]$responseMessage.StatusCode
+  $responseText = $responseMessage.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+
+  if ($statusCode -eq 503) {
     Write-Error "OCR provider is not configured for this runtime."
   }
 
-  throw
+  if (-not $responseMessage.IsSuccessStatusCode) {
+    if ($responseText) {
+      Write-Error $responseText
+    }
+    throw "OCR health check HTTP request failed with status $statusCode."
+  }
+
+  try {
+    $response = $responseText | ConvertFrom-Json
+  } catch {
+    throw "OCR health check returned a non-JSON success payload."
+  }
+} finally {
+  if ($null -ne $responseMessage) {
+    $responseMessage.Dispose()
+  }
+  $content.Dispose()
+  $client.Dispose()
+  $handler.Dispose()
 }
 
 $errors = @()

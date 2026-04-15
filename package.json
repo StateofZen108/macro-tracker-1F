@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite --host",
     "dev:ocr": "vercel dev --yes --listen 3000",
+    "dev:ocr:start": "powershell -ExecutionPolicy Bypass -File scripts/ocr-dev-up.ps1 -SkipHealthCheck",
+    "dev:ocr:ready": "powershell -ExecutionPolicy Bypass -File scripts/ocr-dev-up.ps1",
+    "dev:ocr:stop": "powershell -ExecutionPolicy Bypass -File scripts/ocr-dev-down.ps1",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview --host",

@@ -14,7 +14,7 @@ Use this runbook on `codex/integration-preview-2026-04-15` while you build your 
 4. If needed, authenticate once:
    - `vercel login --github`
 5. Start the OCR-capable runtime:
-   - `npm run dev:ocr`
+   - `npm run dev:ocr:start`
 6. Use the app at:
    - `http://127.0.0.1:3000`
 
@@ -28,6 +28,9 @@ Before a real OCR session:
    - `C:\Users\deepp\Downloads\MF\tmp\ocr-healthcheck.jpg`
 2. Run:
    - `npm run health:ocr`
+
+Or run the full startup + health sequence in one command:
+- `npm run dev:ocr:ready`
 
 The check passes only if the OCR route returns:
 - `provider=gemini`
@@ -72,8 +75,8 @@ If the restore test fails, keep using the integration branch and do not manually
 
 Initial proof:
 
-1. Start OCR with `npm run dev:ocr`
-2. Pass `npm run health:ocr`
+1. Start OCR with `npm run dev:ocr:ready`
+2. Pass the built-in health check
 3. Save 5 real OCR foods from 5 clear nutrition-label photos
 4. Log each of those 5 foods to a meal at least once
 5. Export a backup
@@ -91,3 +94,12 @@ Daily-use proof:
    - take 6 or fewer intentional actions after Add Food opens
 
 That is the minimum proof that the saved-food bank is actually making repeated logging faster.
+
+## OCR lifecycle shortcuts
+
+- Start OCR server only:
+  - `npm run dev:ocr:start`
+- Start OCR server and run the health check:
+  - `npm run dev:ocr:ready`
+- Stop the background OCR server:
+  - `npm run dev:ocr:stop`
