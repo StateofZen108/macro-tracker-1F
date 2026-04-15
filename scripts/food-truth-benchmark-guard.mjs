@@ -22,7 +22,7 @@ const allowedBenchmarkSupportChanges = new Set([
   'scripts/run-food-truth-wave1-preview.mjs',
   'scripts/sync-food-truth-branch-protection.mjs',
   'playwright.food-truth-wave1.config.ts',
-  'tests/e2e/preview/food-truth-wave1.acceptance.spec.ts',
+  'tests/e2e/preview/food-truth-wave1.preview.spec.ts',
   'tests/e2e/helpers/foodTruth.ts',
 ])
 

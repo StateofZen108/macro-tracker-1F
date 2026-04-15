@@ -33,6 +33,11 @@ const previewConfigExpectations = [
     label: 'Garmin preview',
   },
   {
+    configFile: 'playwright.food-truth-wave1.config.ts',
+    expectedFile: 'food-truth-wave1.preview.spec.ts',
+    label: 'Food Truth preview',
+  },
+  {
     configFile: 'playwright.psmf-garmin.config.ts',
     expectedFile: 'psmf-garmin.preview.spec.ts',
     label: 'PSMF-Garmin preview',

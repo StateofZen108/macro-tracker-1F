@@ -29,7 +29,7 @@ export const REQUIRED_WAVE1_SCENARIOS = [
 
 const ENGINEERING_EXTRA_PATHS = [
   path.join(repoRoot, 'tests', 'e2e', 'helpers', 'foodTruth.ts'),
-  path.join(repoRoot, 'tests', 'e2e', 'preview', 'food-truth-wave1.acceptance.spec.ts'),
+  path.join(repoRoot, 'tests', 'e2e', 'preview', 'food-truth-wave1.preview.spec.ts'),
   path.join(repoRoot, 'playwright.food-truth-wave1.config.ts'),
 ]
 
