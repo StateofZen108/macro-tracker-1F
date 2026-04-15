@@ -287,16 +287,42 @@ Run lint:
 npm run lint
 ```
 
-Run the mobile regression suite:
+Run the generic dev-server mobile regression suite:
 
 ```bash
 npm run test:e2e
+```
+
+Run the preview-only rollout suites:
+
+```bash
+npm run test:e2e:personal-library-preview
+npm run test:e2e:coach-preview
+npm run test:psmf-phase:preview
+npm run test:recovery-layer:preview
+npm run test:garmin-connect:preview
+npm run test:psmf-garmin:preview
+```
+
+Run the phase and Garmin gate suites:
+
+```bash
+npm run test:psmf-phase
+npm run test:recovery-layer
+npm run test:garmin-connect
+npm run test:psmf-garmin
 ```
 
 Run the full local validation suite:
 
 ```bash
 npm run test:all
+```
+
+Run the release signoff gate:
+
+```bash
+npm run test:release
 ```
 
 ## Environment variables
@@ -377,8 +403,28 @@ After the first push to GitHub, enable branch protection on `main` with:
   - `build`
   - `bundle`
   - `unit`
-  - `e2e`
+  - `e2e-generic`
+  - `e2e-lane-guard`
+  - `e2e-coach-preview`
+  - `e2e-personal-library-preview`
+  - `psmf-phase-domain`
+  - `psmf-phase-storage-integration`
+  - `psmf-phase-preview`
+  - `psmf-phase-replay`
+  - `psmf-phase-baseline-guard`
+  - `recovery-layer-domain`
+  - `recovery-layer-preview`
+  - `recovery-layer-replay`
+  - `recovery-layer-baseline-guard`
+  - `garmin-connect-domain`
+  - `garmin-preview`
+  - `psmf-garmin-domain`
+  - `psmf-garmin-preview`
+  - `psmf-garmin-replay`
+  - `psmf-garmin-baseline-guard`
 - admin bypass left enabled initially for solo maintenance
+
+Before flipping production feature flags such as `VITE_FF_PERSONAL_LIBRARY_V1`, `VITE_FF_COACH_METHOD_V2`, `VITE_FF_PSMF_PHASE_V2`, `VITE_FF_RECOVERY_LAYER_V1`, or `VITE_FF_GARMIN_CONNECT_V1`, require green `release-confidence` and `psmf-garmin-release-confidence` runs on the current `main` commit.
 
 Do not treat local linkage or temp files as source of truth:
 
@@ -393,5 +439,16 @@ Latest local validation run:
 - `npm run build`
 - `npm run test:unit`
 - `npm run test:e2e`
+- `npm run test:e2e:lane-guard`
+- `npm run test:e2e:personal-library-preview`
+- `npm run test:e2e:coach-preview`
+- `npm run test:psmf-phase:preview`
+- `npm run test:recovery-layer:preview`
+- `npm run test:garmin-connect:preview`
+- `npm run test:psmf-garmin:preview`
+- `npm run test:psmf-phase`
+- `npm run test:recovery-layer`
+- `npm run test:garmin-connect`
+- `npm run test:psmf-garmin`
 
-The automated suite is green in the repo. Real-device validation on the target phone browser stack is still recommended before treating the app as the only production tracker on that device.
+The package, CI, baseline, and preview-lane commands above are green locally, including `npm run test:release` and `npm run test:psmf-garmin:release-confidence`. Real-device validation on the target phone browser stack is still recommended before treating the app as the only production tracker on that device.

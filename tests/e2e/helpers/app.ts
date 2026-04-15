@@ -53,11 +53,35 @@ async function expectFullyInViewport(locator: Locator) {
     .toBeTruthy()
 }
 
+function getAddFoodDialog(page: Page) {
+  return page.getByRole('dialog', { name: /add food/i })
+}
+
+function getAddFoodSearchInput(page: Page) {
+  return getAddFoodDialog(page).getByPlaceholder(/Search your (saved foods|library first)/i)
+}
+
+function getSettingsTargetsForm(page: Page) {
+  return page.getByTestId('settings-targets-form')
+}
+
+function getSettingsCalorieTargetInput(page: Page) {
+  return getSettingsTargetsForm(page).getByRole('textbox', { name: /^Calories$/i })
+}
+
+function getSelectedFoodCard(page: Page) {
+  return page.getByTestId('selected-food-card')
+}
+
+function getSelectedFoodServingMeta(page: Page) {
+  return page.getByTestId('selected-food-serving-meta')
+}
+
 async function openMealSheet(
   page: Page,
   meal: 'breakfast' | 'lunch' | 'dinner' | 'snack' = 'breakfast',
 ) {
-  const existingDialog = page.getByRole('dialog', { name: /add food/i })
+  const existingDialog = getAddFoodDialog(page)
   if (await existingDialog.isVisible().catch(() => false)) {
     await expect(existingDialog).toBeVisible()
     return
@@ -75,7 +99,7 @@ async function openMealSheet(
     })
     await quickAddButton.scrollIntoViewIfNeeded()
     await quickAddButton.click({ force: true })
-    const addFoodDialog = page.getByRole('dialog', { name: /add food/i })
+    const addFoodDialog = getAddFoodDialog(page)
     if (!(await addFoodDialog.isVisible().catch(() => false))) {
       const fallbackAddFoodButton = mealSection.getByRole('button', { name: /^add food$/i }).first()
       if (await fallbackAddFoodButton.isVisible().catch(() => false)) {
@@ -88,7 +112,7 @@ async function openMealSheet(
 
   await addFoodButton.scrollIntoViewIfNeeded()
   await addFoodButton.click({ force: true })
-  await expect(page.getByRole('dialog', { name: /add food/i })).toBeVisible()
+  await expect(getAddFoodDialog(page)).toBeVisible()
 }
 
 async function ensureMealExpanded(
@@ -131,23 +155,26 @@ async function addFoodToMeal(
   meal: 'breakfast' | 'lunch' | 'dinner' | 'snack' = 'breakfast',
 ) {
   await openMealSheet(page, meal)
-  await page.getByPlaceholder('Search your saved foods').fill(query)
+  const addFoodDialog = getAddFoodDialog(page)
+  await getAddFoodSearchInput(page).fill(query)
   await page.getByRole('button', { name: new RegExp(query, 'i') }).first().click()
   await page.getByRole('button', { name: /add to meal/i }).click()
 
-  const addFoodDialog = page.getByRole('dialog', { name: /add food/i })
-  if (await addFoodDialog.isVisible().catch(() => false)) {
-    return
-  }
+  const dialogClosed = await addFoodDialog
+    .waitFor({ state: 'hidden', timeout: 1000 })
+    .then(() => true)
+    .catch(() => false)
 
-  await ensureMealExpanded(page, meal)
+  if (dialogClosed) {
+    await ensureMealExpanded(page, meal)
+  }
 }
 
 async function clickNavButton(page: Page, name: RegExp) {
   const button = page.getByRole('button', { name }).first()
   await expect(button).toBeVisible()
   await button.scrollIntoViewIfNeeded()
-  await button.evaluate((element: HTMLElement) => element.click())
+  await button.click()
 }
 
 async function goToSettings(page: Page) {
@@ -173,6 +200,12 @@ export {
   entryRow,
   expectCenterHittable,
   expectFullyInViewport,
+  getAddFoodDialog,
+  getAddFoodSearchInput,
+  getSelectedFoodCard,
+  getSelectedFoodServingMeta,
+  getSettingsCalorieTargetInput,
+  getSettingsTargetsForm,
   goToLog,
   goToSettings,
   goToWeight,

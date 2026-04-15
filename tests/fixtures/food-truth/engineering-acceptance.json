@@ -1,0 +1,30 @@
+{
+  "status": "automated_passed",
+  "executedAt": "2026-04-14T18:43:24.895Z",
+  "buildMode": "production_like",
+  "appVersion": "0.1.0",
+  "inputFingerprint": "8eba1138111d64632fb9f3869f80e5a3217169d199809d585220ad10d5ecca0b",
+  "notes": "Automated Wave 1 engineering acceptance passed.",
+  "scenarios": {
+    "barcodeExactAutolog": {
+      "status": "passed",
+      "notes": ""
+    },
+    "barcodeWeakBasisReview": {
+      "status": "passed",
+      "notes": ""
+    },
+    "ocrExplicitServingReview": {
+      "status": "passed",
+      "notes": ""
+    },
+    "ocrAmbiguousServingBlocked": {
+      "status": "passed",
+      "notes": ""
+    },
+    "diagnosticsReview": {
+      "status": "passed",
+      "notes": ""
+    }
+  }
+}

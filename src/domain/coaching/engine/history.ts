@@ -1,7 +1,9 @@
 import type {
+  CoachingReasonCode,
   CoachingDecisionRecord,
   CoachingDecisionSource,
   CoachingExplanationV1,
+  LegacyCoachingCode,
   CoachingRecommendationV1,
   UserSettings,
 } from '../../../types'
@@ -73,15 +75,24 @@ export function upsertCoachingDecisionRecord(
       ? existing.status
       : record.status
 
+  const nextRecord: CoachingDecisionRecord = {
+    ...record,
+    createdAt: existing.createdAt,
+    appliedAt: existing.appliedAt,
+    overriddenAt: existing.overriddenAt,
+    status: preservedStatus,
+    updatedAt: existing.updatedAt,
+  }
+
+  if (JSON.stringify(nextRecord) === JSON.stringify(existing)) {
+    return history
+  }
+
   return history
     .map((entry) =>
       entry.id === record.id
         ? {
-            ...record,
-            createdAt: entry.createdAt,
-            appliedAt: entry.appliedAt,
-            overriddenAt: entry.overriddenAt,
-            status: preservedStatus,
+            ...nextRecord,
             updatedAt: record.updatedAt ?? new Date().toISOString(),
           }
         : entry,
@@ -112,6 +123,7 @@ export function buildManualOverrideDecisionRecord(
   previousSettings: Pick<UserSettings, 'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget'>,
   nextSettings: Pick<UserSettings, 'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget'>,
   effectiveDate: string,
+  reasonCode: CoachingReasonCode | LegacyCoachingCode = 'manual_override',
 ): CoachingDecisionRecord {
   const previousTargets = buildTargetSet(previousSettings)
   const proposedTargets = buildTargetSet(nextSettings)
@@ -134,7 +146,7 @@ export function buildManualOverrideDecisionRecord(
     effectiveDate,
     confidenceBand: 'high',
     confidenceScore: null,
-    reasonCodes: ['manual_override'],
+    reasonCodes: [reasonCode, 'manual_override'],
     blockedReasons: [],
     explanation: 'Targets were changed manually outside the automatic coaching adjustment flow.',
     previousTargets,

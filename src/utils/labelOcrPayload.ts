@@ -153,6 +153,13 @@ export function buildSessionFromProviderPayload(
     warnings,
     fieldCandidates,
     unmappedFields: [],
+    servingSizeText,
+    servingsPerContainer:
+      readNumber(candidate.servingsPerContainer) ??
+      readNumber(isRecord(fields.servingsPerContainer) ? fields.servingsPerContainer.value : undefined),
+    caloriesPerContainer:
+      readNumber(candidate.caloriesPerContainer) ??
+      readNumber(isRecord(fields.caloriesPerContainer) ? fields.caloriesPerContainer.value : undefined),
     foodDraft: {
       name: readString(candidate.name) ?? 'Label-scanned food',
       brand: readString(candidate.brand),

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { FEATURE_FLAGS } from '../config/featureFlags'
 import { evaluateCheckInWeek, upsertCheckInRecord } from '../domain/checkIns/math'
 import {
   updateCoachingDecisionRecordStatus,
@@ -13,6 +14,7 @@ import {
   subscribeToCoachingDecisionHistory,
 } from '../utils/storage/coachDecisions'
 import { subscribeToStorage } from '../utils/storage/core'
+import { recordDiagnosticsEvent } from '../utils/diagnostics'
 import { loadDayMeta } from '../utils/storage/dayMeta'
 import { loadInterventions } from '../utils/storage/interventions'
 import { loadAllFoodLogs } from '../utils/storage/logs'
@@ -60,6 +62,7 @@ export function useWeeklyCheckIns(
       ),
     [activityLog, dayMeta, interventions, logsByDate, recoveryIssueCount, settings, weights],
   )
+  const lastShadowEventKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     const nextHistory = upsertCheckInRecord(checkInHistory, current.record)
@@ -79,6 +82,48 @@ export function useWeeklyCheckIns(
     void saveCoachingDecisionHistory(nextHistory)
   }, [coachingDecisionHistory, current.decisionRecord])
 
+  useEffect(() => {
+    if (!FEATURE_FLAGS.coachMethodV2 || !current.shadowComparison) {
+      return
+    }
+
+    if (
+      !current.shadowComparison.decisionChanged &&
+      !current.shadowComparison.blockedReasonCodesChanged &&
+      !current.shadowComparison.confidenceChanged
+    ) {
+      return
+    }
+
+    const eventKey = `${current.record.id}:${current.shadowComparison.currentDecisionType}:${current.shadowComparison.nextDecisionType}:${current.shadowComparison.currentBlockedReasonCodes.join(',')}:${current.shadowComparison.nextBlockedReasonCodes.join(',')}`
+    if (lastShadowEventKeyRef.current === eventKey) {
+      return
+    }
+
+    lastShadowEventKeyRef.current = eventKey
+    void recordDiagnosticsEvent({
+      eventType: 'coach_method_v2_diverged',
+      severity: 'info',
+      scope: 'diagnostics',
+      recordKey: current.record.id,
+      message: 'Coach Method V2 diverged from the current weekly coaching decision.',
+      payload: {
+        windowStart: current.decisionRecord.windowStart,
+        windowEnd: current.decisionRecord.windowEnd,
+        v1DecisionType: current.shadowComparison.currentDecisionType,
+        v2DecisionType: current.shadowComparison.nextDecisionType,
+        v1BlockedReasons: current.shadowComparison.currentBlockedReasonCodes,
+        v2BlockedReasons: current.shadowComparison.nextBlockedReasonCodes,
+        isFalseAdjustment: current.shadowComparison.isFalseAdjustment,
+      },
+    })
+  }, [
+    current.decisionRecord.windowEnd,
+    current.decisionRecord.windowStart,
+    current.record.id,
+    current.shadowComparison,
+  ])
+
   const currentRecord = useMemo(() => {
     return checkInHistory.find((entry) => entry.id === current.record.id) ?? current.record
   }, [checkInHistory, current.record])
@@ -94,6 +139,7 @@ export function useWeeklyCheckIns(
       ...existingRecord,
       status,
       appliedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     }
     const nextHistory = upsertCheckInRecord(loadCheckInHistory(), nextRecord).map((entry) =>
       entry.id === nextRecord.id ? nextRecord : entry,

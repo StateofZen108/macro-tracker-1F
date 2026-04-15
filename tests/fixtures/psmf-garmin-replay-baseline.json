@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "wave": "psmf-garmin",
+  "kind": "placeholder-replay-baseline",
+  "note": "Canonical placeholder until a deterministic combined replay artifact is wired into the build."
+}

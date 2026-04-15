@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { searchOpenFoodFactsCatalog } from '../../server/food-catalog'
+import { searchOpenFoodFactsCatalog, searchUsdaFdcCatalog } from '../../server/food-catalog'
 
 describe('searchOpenFoodFactsCatalog', () => {
   it('maps OFF search payloads into the remote catalog response shape', async () => {
@@ -34,6 +34,7 @@ describe('searchOpenFoodFactsCatalog', () => {
     })
 
     expect(response.remoteStatus).toBe('ok')
+    expect(response.providers).toEqual(['open_food_facts'])
     expect(response.results).toHaveLength(1)
     expect(response.results[0]).toMatchObject({
       remoteKey: '1234567890123',
@@ -46,6 +47,11 @@ describe('searchOpenFoodFactsCatalog', () => {
       protein: 31,
       importConfidence: 'weak_match',
       sourceQuality: 'medium',
+      importTrust: {
+        level: 'exact_review',
+        servingBasis: '100g',
+        servingBasisSource: 'per100g_fallback',
+      },
     })
     expect(response.nextCursor).toBe('2')
   })
@@ -61,7 +67,7 @@ describe('searchOpenFoodFactsCatalog', () => {
 
     expect(response).toEqual({
       query: 'chicken',
-      provider: 'open_food_facts',
+      providers: ['open_food_facts'],
       remoteStatus: 'unavailable',
       results: [],
     })
@@ -78,9 +84,61 @@ describe('searchOpenFoodFactsCatalog', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
     expect(response).toEqual({
       query: 'chicken',
-      provider: 'open_food_facts',
+      providers: ['open_food_facts'],
       remoteStatus: 'unavailable',
       results: [],
+    })
+  })
+
+  it('maps USDA branded payloads into the remote catalog response shape', async () => {
+    const fetchImpl = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          currentPage: 1,
+          totalPages: 2,
+          foods: [
+            {
+              fdcId: 12345,
+              description: 'Greek Yogurt',
+              brandName: 'Test Dairy',
+              servingSize: 170,
+              servingSizeUnit: 'g',
+              gtinUpc: '000111222333',
+              labelNutrients: {
+                calories: { value: 120 },
+                protein: { value: 16 },
+                carbohydrates: { value: 6 },
+                fat: { value: 0 },
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const response = await searchUsdaFdcCatalog('yogurt', {
+      apiKey: 'test-key',
+      fetchImpl: fetchImpl as typeof fetch,
+      limit: 1,
+    })
+
+    expect(response.providers).toEqual(['usda_fdc'])
+    expect(response.remoteStatus).toBe('ok')
+    expect(response.nextCursor).toBe('2')
+    expect(response.results).toHaveLength(1)
+    expect(response.results[0]).toMatchObject({
+      remoteKey: '12345',
+      provider: 'usda_fdc',
+      name: 'Greek Yogurt',
+      brand: 'Test Dairy',
+      calories: 120,
+      protein: 16,
+      importTrust: {
+        level: 'exact_autolog',
+        servingBasis: 'serving',
+        servingBasisSource: 'provider_serving',
+      },
     })
   })
 })

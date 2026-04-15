@@ -1,6 +1,8 @@
-import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality'
-import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types'
-import type { RemoteCatalogResponse } from './types'
+import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality.ts'
+import { fetchFoodByBarcode as fetchOpenFoodFactsBarcode } from '../../src/utils/openFoodFacts.ts'
+import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types.ts'
+import type { ActionResult, BarcodeLookupResult } from '../../src/types.ts'
+import type { RemoteCatalogResponse } from './types.ts'
 
 type FetchLike = typeof fetch
 
@@ -161,13 +163,14 @@ function mapOpenFoodFactsProduct(product: Record<string, unknown>): RemoteCatalo
     importConfidence: quality.importConfidence,
     sourceQuality: quality.sourceQuality,
     sourceQualityNote: quality.sourceQualityNote,
+    importTrust: quality.importTrust,
   }
 }
 
 function emptyResponse(query: string): RemoteCatalogResponse {
   return {
     query,
-    provider: 'open_food_facts',
+    providers: ['open_food_facts'],
     remoteStatus: 'unavailable',
     results: [],
   }
@@ -196,7 +199,7 @@ export async function searchOpenFoodFactsCatalog(
   if (trimmedQuery.length < 3) {
     return {
       query: trimmedQuery,
-      provider: 'open_food_facts',
+      providers: ['open_food_facts'],
       remoteStatus: 'ok',
       results: [],
     }
@@ -236,7 +239,7 @@ export async function searchOpenFoodFactsCatalog(
 
     return {
       query: trimmedQuery,
-      provider: 'open_food_facts',
+      providers: ['open_food_facts'],
       remoteStatus: 'ok',
       nextCursor,
       results,
@@ -244,4 +247,10 @@ export async function searchOpenFoodFactsCatalog(
   } catch {
     return emptyResponse(trimmedQuery)
   }
+}
+
+export async function lookupOpenFoodFactsBarcode(
+  barcode: string,
+): Promise<ActionResult<BarcodeLookupResult>> {
+  return fetchOpenFoodFactsBarcode(barcode)
 }

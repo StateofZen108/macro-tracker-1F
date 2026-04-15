@@ -1,6 +1,15 @@
 import { useState, useSyncExternalStore } from 'react'
 import { findDuplicateFoodMatch } from '../domain/foods/dedupe'
+import {
+  buildImportedFoodDraft,
+  MAX_SEARCH_ALIASES,
+  mergeImportedFood,
+  normalizeRemoteReferences,
+  normalizeSearchAlias,
+  resolveFoodLibraryMatch,
+} from '../domain/foods/personalLibrary'
 import type { ActionResult, AppActionError, Food, FoodDraft } from '../types'
+import { recordDiagnosticsEvent } from '../utils/diagnostics'
 import { isSyncEnabled } from '../utils/sync/core'
 import {
   getFoodReferenceCount,
@@ -42,6 +51,12 @@ function sortQuickFoods(foods: Food[]): Food[] {
 }
 
 function normalizeDraft(draft: FoodDraft): FoodDraft {
+  const normalizedAliases = Array.isArray(draft.searchAliases)
+    ? draft.searchAliases
+        .map((alias) => normalizeSearchAlias(alias))
+        .filter((alias): alias is string => Boolean(alias))
+        .slice(-MAX_SEARCH_ALIASES)
+    : undefined
   return {
     ...draft,
     name: draft.name.trim(),
@@ -57,16 +72,21 @@ function normalizeDraft(draft: FoodDraft): FoodDraft {
     importConfidence: draft.importConfidence ?? undefined,
     sourceQuality: draft.sourceQuality ?? undefined,
     sourceQualityNote: draft.sourceQualityNote?.trim() || undefined,
+    importTrust: draft.importTrust ?? undefined,
+    searchAliases: normalizedAliases?.length ? normalizedAliases : undefined,
+    remoteReferences: normalizeRemoteReferences(draft.remoteReferences),
   }
 }
 
 function matchesQuery(food: Food, query: string): boolean {
-  const normalizedQuery = query.trim().toLowerCase()
+  const normalizedQuery = normalizeSearchAlias(query) ?? ''
   if (!normalizedQuery) {
     return true
   }
 
+  const aliases = food.searchAliases ?? []
   return `${food.name} ${food.brand ?? ''} ${food.barcode ?? ''}`.toLowerCase().includes(normalizedQuery)
+    || aliases.some((alias) => alias.includes(normalizedQuery))
 }
 
 function isActiveFood(food: Food): boolean {
@@ -77,16 +97,24 @@ export function isFoodEditable(food: Food): boolean {
   return food.source !== 'seed'
 }
 
-function buildSearchRank(food: Food, query: string): [number, number, string, number, string] {
-  const normalizedQuery = query.trim().toLowerCase()
-  const name = food.name.toLowerCase()
-  const brand = (food.brand ?? '').toLowerCase()
-  const barcode = (food.barcode ?? '').toLowerCase()
-  const hasNamePrefix = name.startsWith(normalizedQuery) || brand.startsWith(normalizedQuery) ? 1 : 0
+function buildSearchRank(food: Food, query: string): [number, number, number, string, number, string] {
+  const normalizedQuery = normalizeSearchAlias(query) ?? ''
+  const name = food.name.trim().toLowerCase()
+  const brand = (food.brand ?? '').trim().toLowerCase()
+  const barcode = (food.barcode ?? '').trim().toLowerCase()
+  const aliases = food.searchAliases ?? []
+  const hasExactAliasOrNameMatch =
+    normalizedQuery &&
+    (name === normalizedQuery ||
+      [brand, name].filter(Boolean).join(' ') === normalizedQuery ||
+      aliases.includes(normalizedQuery))
+      ? 1
+      : 0
+  const hasNamePrefix = normalizedQuery && (name.startsWith(normalizedQuery) || brand.startsWith(normalizedQuery)) ? 1 : 0
   const hasBarcodeMatch = normalizedQuery && barcode.includes(normalizedQuery) ? 1 : 0
   const lastUsed = food.lastUsedAt ?? ''
 
-  return [hasNamePrefix, hasBarcodeMatch, lastUsed, food.usageCount, name]
+  return [hasBarcodeMatch, hasExactAliasOrNameMatch, hasNamePrefix, lastUsed, food.usageCount, name]
 }
 
 export function useFoods() {
@@ -159,6 +187,7 @@ export function useFoods() {
           importConfidence: normalizedDraft.importConfidence ?? food.importConfidence,
           sourceQuality: normalizedDraft.sourceQuality ?? food.sourceQuality,
           sourceQualityNote: normalizedDraft.sourceQualityNote ?? food.sourceQualityNote,
+          importTrust: normalizedDraft.importTrust ?? food.importTrust,
           sugars: normalizedDraft.sugars ?? food.sugars,
           salt: normalizedDraft.salt ?? food.salt,
           sodium: normalizedDraft.sodium ?? food.sodium,
@@ -275,15 +304,19 @@ export function useFoods() {
     }
 
     return [...filteredFoods].sort((left, right) => {
-      const [leftPrefix, leftBarcode, leftLastUsed, leftUsage, leftName] = buildSearchRank(left, query)
-      const [rightPrefix, rightBarcode, rightLastUsed, rightUsage, rightName] = buildSearchRank(right, query)
-
-      if (leftPrefix !== rightPrefix) {
-        return rightPrefix - leftPrefix
-      }
+      const [leftBarcode, leftExact, leftPrefix, leftLastUsed, leftUsage, leftName] = buildSearchRank(left, query)
+      const [rightBarcode, rightExact, rightPrefix, rightLastUsed, rightUsage, rightName] = buildSearchRank(right, query)
 
       if (leftBarcode !== rightBarcode) {
         return rightBarcode - leftBarcode
+      }
+
+      if (leftExact !== rightExact) {
+        return rightExact - leftExact
+      }
+
+      if (leftPrefix !== rightPrefix) {
+        return rightPrefix - leftPrefix
       }
 
       if (leftLastUsed !== rightLastUsed) {
@@ -306,6 +339,83 @@ export function useFoods() {
     setLastError(null)
   }
 
+  function importFood(draft: FoodDraft, options?: { acceptedQuery?: string }): ActionResult<Food> {
+    const normalizedDraft = buildImportedFoodDraft({
+      draft: normalizeDraft(draft),
+      acceptedQuery: options?.acceptedQuery,
+    })
+    const match = resolveFoodLibraryMatch(loadFoods(), normalizedDraft)
+
+    if (
+      match.kind === 'archivedBarcodeMatch' ||
+      match.kind === 'archivedRemoteReferenceMatch' ||
+      match.kind === 'archivedIdentityMatch'
+    ) {
+      const result: ActionResult<Food> = {
+        ok: false,
+        error: {
+          code: 'archivedFoodExists',
+          message: `${match.food.name} already exists in your archived foods. Restore it instead of importing a duplicate.`,
+        },
+      }
+      setLastError(result.error)
+      return result
+    }
+
+    if (
+      match.kind === 'activeBarcodeMatch' ||
+      match.kind === 'activeRemoteReferenceMatch' ||
+      match.kind === 'activeIdentityMatch'
+    ) {
+      const { food: mergedFood, aliasesTrimmed } = mergeImportedFood({
+        existingFood: match.food,
+        draft: normalizedDraft,
+        acceptedQuery: options?.acceptedQuery,
+      })
+      const nextFoods = sortFoodsByName(
+        loadFoods().map((food) => (food.id === match.food.id ? mergedFood : food)),
+      )
+      const saveResult = saveFoods(nextFoods)
+      if (!saveResult.ok) {
+        setLastError(saveResult.error)
+        return {
+          ok: false,
+          error: saveResult.error,
+        }
+      }
+
+      if (aliasesTrimmed) {
+        void recordDiagnosticsEvent({
+          eventType: 'food_alias_trimmed',
+          severity: 'info',
+          scope: 'diagnostics',
+          message: `${mergedFood.name} reached the search alias cap and older aliases were trimmed.`,
+          recordKey: mergedFood.id,
+        })
+      }
+
+      setLastError(null)
+      return ok(mergedFood)
+    }
+
+    const result = createFood(normalizedDraft)
+    if (!result.ok) {
+      return result
+    }
+
+    if ((normalizedDraft.searchAliases?.length ?? 0) >= MAX_SEARCH_ALIASES) {
+      void recordDiagnosticsEvent({
+        eventType: 'food_alias_trimmed',
+        severity: 'info',
+        scope: 'diagnostics',
+        message: `${result.data.name} reached the search alias cap and older aliases were trimmed.`,
+        recordKey: result.data.id,
+      })
+    }
+
+    return result
+  }
+
   return {
     foods,
     createFood,
@@ -314,10 +424,13 @@ export function useFoods() {
     restoreFood,
     purgeFood,
     incrementUsage,
+    importFood,
     searchFoods,
     getQuickFoods,
     findDuplicateFood: (draft: FoodDraft, excludeFoodId?: string) =>
       findDuplicateFoodMatch(loadFoods(), normalizeDraft(draft), excludeFoodId),
+    resolveFoodMatch: (draft: FoodDraft, excludeFoodId?: string) =>
+      resolveFoodLibraryMatch(loadFoods(), normalizeDraft(draft), excludeFoodId),
     getFoodReferenceCount,
     lastError,
     clearError,

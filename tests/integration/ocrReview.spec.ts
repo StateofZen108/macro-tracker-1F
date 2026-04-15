@@ -153,7 +153,12 @@ describe('OCR review draft mapping', () => {
     expect(values.servingUnit).toBe('bar')
 
     const warnings = buildLabelReviewWarnings(session, values)
-    expect(warnings.some((warning) => /no gram or ml serving size/i.test(warning.message))).toBe(true)
+    expect(
+      warnings.some(
+        (warning) =>
+          warning.message === 'Serving basis could not be resolved. Enter a serving size before saving.',
+      ),
+    ).toBe(true)
 
     const draft = buildOcrDraftFromReview(values, session)
     expect(draft.servingSize).toBe(1)

@@ -1,0 +1,43 @@
+{
+  "fixtureId": "ocr-010-label-item-010",
+  "provider": "gemini",
+  "payload": {
+    "candidate": {
+      "name": "Label Item 010",
+      "brand": "Label Bench 010",
+      "servingSize": 170,
+      "servingUnit": "g",
+      "calories": 110,
+      "protein": 16,
+      "carbs": 9,
+      "fat": 1.5,
+      "fiber": 2
+    },
+    "fields": {
+      "servingSizeText": {
+        "value": "170 g"
+      },
+      "calories": {
+        "value": 110,
+        "sourceText": "110 kcal"
+      },
+      "protein": {
+        "value": 16,
+        "sourceText": "16 g"
+      },
+      "carbs": {
+        "value": 9,
+        "sourceText": "9 g"
+      },
+      "fat": {
+        "value": 1.5,
+        "sourceText": "1.5 g"
+      },
+      "fiber": {
+        "value": 2,
+        "sourceText": "2 g"
+      }
+    },
+    "warnings": []
+  }
+}

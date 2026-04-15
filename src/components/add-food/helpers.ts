@@ -1,4 +1,4 @@
-import type { BarcodeLookupResult, Food } from '../../types'
+import type { BarcodeLookupResult, CatalogProvider, Food } from '../../types'
 import type { AddFoodRemoteStatus } from './types'
 
 interface ServingMetaInput {
@@ -86,12 +86,20 @@ export function getRemoteCatalogStatusLabel(
     return 'Searching...'
   }
 
-  return 'Open Food Facts'
+  return 'Open Food Facts + USDA'
 }
 
-export function getCatalogProviderLabel(provider: 'open_food_facts' | undefined): string {
+export function getCatalogProviderLabel(provider: CatalogProvider | undefined): string {
   if (provider === 'open_food_facts') {
     return 'OFF'
+  }
+
+  if (provider === 'usda_fdc') {
+    return 'USDA'
+  }
+
+  if (provider === 'fatsecret') {
+    return 'FatSecret'
   }
 
   return 'Catalog'
@@ -127,11 +135,20 @@ export function getSourceQualityLabel(
 
 export function getCatalogImportButtonLabel(
   value: 'direct_match' | 'weak_match' | 'manual_review_required' | undefined,
+  trustLevel: 'exact_autolog' | 'exact_review' | 'blocked' | undefined,
   addAfterImport: boolean,
 ): string {
-  if (value === 'weak_match' || value === 'manual_review_required') {
-    return addAfterImport ? 'Review and add 1x' : 'Review before saving'
+  if (trustLevel === 'blocked') {
+    return 'Fix and save'
   }
 
-  return addAfterImport ? 'Import and add 1x' : 'Save locally'
+  if (trustLevel === 'exact_review') {
+    return 'Review and import'
+  }
+
+  if (value === 'weak_match' || value === 'manual_review_required') {
+    return addAfterImport ? 'Review and import' : 'Review and import'
+  }
+
+  return addAfterImport ? 'Import and log' : 'Import and log'
 }

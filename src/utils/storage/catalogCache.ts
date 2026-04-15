@@ -1,4 +1,4 @@
-import type { ActionResult, CatalogFood, RemoteCatalogHit } from '../../types'
+import type { ActionResult, CatalogFood, Food, RemoteCatalogHit } from '../../types'
 import { createExtraCollectionStore } from './extraStore'
 
 const STORAGE_KEY = 'mt_catalog_cache'
@@ -14,6 +14,60 @@ function readString(value: unknown): string | undefined {
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function normalizeImportTrust(rawValue: unknown): Food['importTrust'] {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const level =
+    rawValue.level === 'exact_autolog' ||
+    rawValue.level === 'exact_review' ||
+    rawValue.level === 'blocked'
+      ? rawValue.level
+      : null
+  const servingBasis =
+    rawValue.servingBasis === 'serving' ||
+    rawValue.servingBasis === '100g' ||
+    rawValue.servingBasis === '100ml' ||
+    rawValue.servingBasis === 'unknown'
+      ? rawValue.servingBasis
+      : null
+  const servingBasisSource =
+    rawValue.servingBasisSource === 'provider_serving' ||
+    rawValue.servingBasisSource === 'provider_quantity' ||
+    rawValue.servingBasisSource === 'label_metric' ||
+    rawValue.servingBasisSource === 'label_parenthetical_metric' ||
+    rawValue.servingBasisSource === 'per100g_fallback' ||
+    rawValue.servingBasisSource === 'per100ml_fallback' ||
+    rawValue.servingBasisSource === 'manual_review'
+      ? rawValue.servingBasisSource
+      : null
+
+  if (!level || !servingBasis || !servingBasisSource) {
+    return undefined
+  }
+
+  const blockingIssues = Array.isArray(rawValue.blockingIssues)
+    ? rawValue.blockingIssues.filter(
+        (issue) =>
+          issue === 'missing_macros' ||
+          issue === 'estimated_serving' ||
+          issue === 'unknown_serving_basis' ||
+          issue === 'per100_fallback' ||
+          issue === 'provider_conflict' ||
+          issue === 'low_ocr_confidence',
+      )
+    : []
+
+  return {
+    level,
+    servingBasis,
+    servingBasisSource,
+    blockingIssues,
+    verifiedAt: readString(rawValue.verifiedAt),
+  }
 }
 
 function normalizeCatalogFood(rawValue: unknown): CatalogFood | null {
@@ -34,7 +88,12 @@ function normalizeCatalogFood(rawValue: unknown): CatalogFood | null {
   return {
     id,
     remoteKey,
-    provider: rawValue.provider === 'open_food_facts' ? 'open_food_facts' : 'open_food_facts',
+    provider:
+      rawValue.provider === 'usda_fdc' ||
+      rawValue.provider === 'open_food_facts' ||
+      rawValue.provider === 'fatsecret'
+        ? rawValue.provider
+        : 'open_food_facts',
     name,
     brand: readString(rawValue.brand),
     servingSize: readNumber(rawValue.servingSize),
@@ -59,6 +118,7 @@ function normalizeCatalogFood(rawValue: unknown): CatalogFood | null {
         ? rawValue.sourceQuality
         : undefined,
     sourceQualityNote: readString(rawValue.sourceQualityNote),
+    importTrust: normalizeImportTrust(rawValue.importTrust),
     nutrients: isRecord(rawValue.nutrients)
       ? (rawValue.nutrients as unknown as CatalogFood['nutrients'])
       : undefined,
@@ -95,10 +155,12 @@ export function subscribeToCatalogCache(listener: () => void): () => void {
 export function upsertRemoteCatalogHits(hits: RemoteCatalogHit[]): ActionResult<void> {
   const now = new Date().toISOString()
   const staleAt = new Date(Date.now() + CACHE_TTL_MS).toISOString()
-  const currentItems = new Map(loadCatalogCache().map((item) => [item.remoteKey, item]))
+  const currentItems = new Map(
+    loadCatalogCache().map((item) => [`${item.provider}:${item.remoteKey}`, item] as const),
+  )
   for (const hit of hits) {
-    currentItems.set(hit.remoteKey, {
-      id: `catalog-${hit.remoteKey}`,
+    currentItems.set(`${hit.provider}:${hit.remoteKey}`, {
+      id: `catalog-${hit.provider}:${hit.remoteKey}`,
       remoteKey: hit.remoteKey,
       provider: hit.provider,
       name: hit.name,
@@ -115,6 +177,7 @@ export function upsertRemoteCatalogHits(hits: RemoteCatalogHit[]): ActionResult<
       importConfidence: hit.importConfidence,
       sourceQuality: hit.sourceQuality,
       sourceQualityNote: hit.sourceQualityNote,
+      importTrust: hit.importTrust,
       cachedAt: now,
       staleAt,
       updatedAt: now,

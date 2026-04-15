@@ -1,0 +1,16 @@
+{
+  "fixtureId": "barcode-003-fallback-shake",
+  "requestKey": "GET https://platform.fatsecret.com/rest/food/barcode/find-by-id/v2?barcode=700000000003&flag_default_serving=true&format=json&language=en&region=US",
+  "responses": [
+    {
+      "status": 429,
+      "headers": {
+        "content-type": "application/json",
+        "retry-after": "1800"
+      },
+      "body": {
+        "error": "rate_limited"
+      }
+    }
+  ]
+}

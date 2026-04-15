@@ -120,6 +120,8 @@ describe('OCR serving basis resolution', () => {
       servingUnit: 'bar',
       source: 'originalServing',
     })
-    expect(resolution.warningMessage).toMatch(/no gram or ml serving size/i)
+    expect(resolution.warningMessage).toBe(
+      'Serving basis could not be resolved. Enter a serving size before saving.',
+    )
   })
 })

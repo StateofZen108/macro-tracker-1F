@@ -1,6 +1,7 @@
 import type { ActivityEntry, InterventionEntry, WeightEntry } from '../../../types'
 import { convertWeight } from '../../../utils/macros'
 import { buildDailyCoachingSeriesV1 } from '../series'
+import { readCoachRuntimeState, type CoachWellnessRecord } from '../runtime'
 import { COACH_ENGINE_CONFIG } from './_constants'
 import { buildWindowDates, compareDateKeys } from './_helpers'
 import type { CoachingEngineBuildParams, CoachingEngineInputContext } from './_types'
@@ -11,6 +12,12 @@ function buildActivityMap(activityLog: ActivityEntry[]): Map<string, ActivityEnt
 
 function buildWeightMap(weights: WeightEntry[]): Map<string, WeightEntry> {
   return new Map(weights.map((entry) => [entry.date, entry]))
+}
+
+function buildWellnessMap(
+  runtime: ReturnType<typeof readCoachRuntimeState>,
+): Map<string, CoachWellnessRecord> {
+  return new Map((runtime?.recovery?.wellness ?? []).map((entry) => [entry.date, entry] as const))
 }
 
 function buildRecentImportFlag(lastImportAt: string | undefined, windowEnd: string): boolean {
@@ -64,15 +71,18 @@ export function buildCoachingEngineInput(params: CoachingEngineBuildParams): Coa
     params.logsByDate,
     params.dayMeta,
   )
+  const runtime = readCoachRuntimeState(params.settings)
+  const wellnessByDate = buildWellnessMap(runtime)
 
   const series = baseSeries.map((point) => {
     const activity = activityByDate.get(point.date)
+    const wellness = wellnessByDate.get(point.date)
     const weighIn = weightByDate.get(point.date)
     return {
       ...point.series,
       recentImport,
-      steps: activity?.steps,
-      cardioMinutes: activity?.cardioMinutes,
+      steps: activity?.steps ?? wellness?.steps,
+      cardioMinutes: activity?.cardioMinutes ?? wellness?.derivedCardioMinutes,
       cardioType: activity?.cardioType,
       weighIn: weighIn
         ? {
@@ -88,6 +98,7 @@ export function buildCoachingEngineInput(params: CoachingEngineBuildParams): Coa
     windowStart,
     windowEnd: params.windowEnd,
     settings: params.settings,
+    runtime,
     input: {
       windowStart,
       windowEnd: params.windowEnd,

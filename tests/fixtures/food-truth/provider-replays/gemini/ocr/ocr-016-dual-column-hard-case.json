@@ -1,0 +1,43 @@
+{
+  "fixtureId": "ocr-016-dual-column-hard-case",
+  "provider": "gemini",
+  "payload": {
+    "candidate": {
+      "name": "Dual Column Hard Case",
+      "brand": "Label Hard Case",
+      "servingSize": 55,
+      "servingUnit": "g",
+      "calories": 210,
+      "protein": 8,
+      "carbs": 24,
+      "fat": 10,
+      "fiber": 3
+    },
+    "fields": {
+      "servingSizeText": {
+        "value": "55 g"
+      },
+      "calories": {
+        "value": 210,
+        "sourceText": "210 kcal"
+      },
+      "protein": {
+        "value": 8,
+        "sourceText": "8 g"
+      },
+      "carbs": {
+        "value": 24,
+        "sourceText": "24 g"
+      },
+      "fat": {
+        "value": 10,
+        "sourceText": "10 g"
+      },
+      "fiber": {
+        "value": 3,
+        "sourceText": "3 g"
+      }
+    },
+    "warnings": []
+  }
+}

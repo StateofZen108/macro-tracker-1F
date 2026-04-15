@@ -1,8 +1,17 @@
 import type { ActionResult, BootstrapStatusSummary, FavoriteFood, Recipe, SyncCounts } from '../../types'
+import {
+  loadCoachingDecisionHistory,
+  saveCoachingDecisionHistory,
+} from '../storage/coachDecisions'
+import { loadDietPhases } from '../storage/dietPhases'
+import { loadDietPhaseEvents } from '../storage/dietPhaseEvents'
 import { loadFavoriteFoods, saveFavoriteFoods } from '../storage/favorites'
 import { loadRecipes, saveRecipes } from '../storage/recipes'
+import { loadCheckInHistory, saveCheckInHistory } from '../storage/checkIns'
+import { loadRecoveryCheckIns } from '../storage/recoveryCheckIns'
 import { loadFoods } from '../storage/foods'
 import { loadSettings } from '../storage/settings'
+import { loadWellnessEntries } from '../storage/wellness'
 import {
   captureStorageRollbackSnapshot,
   loadStoredActivityLog,
@@ -34,6 +43,8 @@ interface LocalRollbackSnapshot {
   storage: ReturnType<typeof captureStorageRollbackSnapshot>
   recipes: Recipe[]
   favoriteFoods: FavoriteFood[]
+  weeklyCheckIns: ReturnType<typeof loadCheckInHistory>
+  coachDecisions: ReturnType<typeof loadCoachingDecisionHistory>
 }
 
 function getSettingsTimestamps() {
@@ -60,6 +71,12 @@ export function captureLocalSyncedDataset(): SyncedLocalDataset {
     mealTemplates: loadStoredMealTemplates(),
     recipes: loadRecipes(),
     favoriteFoods: loadFavoriteFoods(),
+    weeklyCheckIns: loadCheckInHistory(),
+    wellness: loadWellnessEntries(),
+    recoveryCheckIns: loadRecoveryCheckIns(),
+    dietPhases: loadDietPhases(),
+    dietPhaseEvents: loadDietPhaseEvents(),
+    coachDecisions: loadCoachingDecisionHistory(),
     ...partitionSettingsForSync(settings, getSettingsTimestamps()),
   }
 }
@@ -108,6 +125,8 @@ export function createLocalSyncRollbackSnapshot(): LocalRollbackSnapshot {
     storage: captureStorageRollbackSnapshot(),
     recipes: loadRecipes(),
     favoriteFoods: loadFavoriteFoods(),
+    weeklyCheckIns: loadCheckInHistory(),
+    coachDecisions: loadCoachingDecisionHistory(),
   }
 }
 
@@ -129,6 +148,16 @@ export function restoreLocalSyncRollbackSnapshot(
     return favoritesResult
   }
 
+  const checkInsResult = saveCheckInHistory(snapshot.weeklyCheckIns)
+  if (!checkInsResult.ok) {
+    return checkInsResult
+  }
+
+  const decisionsResult = saveCoachingDecisionHistory(snapshot.coachDecisions)
+  if (!decisionsResult.ok) {
+    return decisionsResult
+  }
+
   return persistSyncIntegrityState(captureLocalSyncedDataset())
 }
 
@@ -143,6 +172,10 @@ export function replaceLocalSyncedDataset(dataset: SyncedLocalDataset): ActionRe
     dayMeta: dataset.dayMeta,
     activityLog: dataset.activity,
     interventions: dataset.interventions,
+    wellness: dataset.wellness,
+    recoveryCheckIns: dataset.recoveryCheckIns,
+    dietPhases: dataset.dietPhases,
+    dietPhaseEvents: dataset.dietPhaseEvents,
     logsByDate: buildLogsByDate(dataset.foodLogEntries),
   })
   if (!replaceResult.ok) {
@@ -159,6 +192,18 @@ export function replaceLocalSyncedDataset(dataset: SyncedLocalDataset): ActionRe
   if (!favoritesResult.ok) {
     void restoreLocalSyncRollbackSnapshot(rollbackSnapshot)
     return favoritesResult
+  }
+
+  const checkInsResult = saveCheckInHistory(dataset.weeklyCheckIns)
+  if (!checkInsResult.ok) {
+    void restoreLocalSyncRollbackSnapshot(rollbackSnapshot)
+    return checkInsResult
+  }
+
+  const decisionsResult = saveCoachingDecisionHistory(dataset.coachDecisions)
+  if (!decisionsResult.ok) {
+    void restoreLocalSyncRollbackSnapshot(rollbackSnapshot)
+    return decisionsResult
   }
 
   const integrityResult = persistSyncIntegrityState(dataset)

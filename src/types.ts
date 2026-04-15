@@ -1,6 +1,6 @@
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 export type FoodSource = 'seed' | 'custom' | 'api' | 'recipe'
-export type CatalogProvider = 'open_food_facts'
+export type CatalogProvider = 'open_food_facts' | 'usda_fdc' | 'fatsecret'
 export type FoodImportConfidence = 'direct_match' | 'weak_match' | 'manual_review_required'
 export type FoodSourceQuality = 'high' | 'medium' | 'low'
 export type TabId = 'log' | 'weight' | 'coach' | 'settings'
@@ -8,6 +8,22 @@ export type WeightRange = '30' | '90' | 'all'
 export type WeightUnit = 'lb' | 'kg'
 export type BarcodeVerification = 'verified' | 'needsConfirmation'
 export type NutritionBasis = 'serving' | '100g' | '100ml' | 'unknown'
+export type ImportTrustLevel = 'exact_autolog' | 'exact_review' | 'blocked'
+export type ServingBasisSource =
+  | 'provider_serving'
+  | 'provider_quantity'
+  | 'label_metric'
+  | 'label_parenthetical_metric'
+  | 'per100g_fallback'
+  | 'per100ml_fallback'
+  | 'manual_review'
+export type ImportTrustBlockingIssue =
+  | 'missing_macros'
+  | 'estimated_serving'
+  | 'unknown_serving_basis'
+  | 'per100_fallback'
+  | 'provider_conflict'
+  | 'low_ocr_confidence'
 export type LabelNutritionFieldKey =
   | 'calories'
   | 'protein'
@@ -19,6 +35,22 @@ export type LabelNutritionFieldKey =
   | 'sodium'
 export type LabelOcrLocale = 'us' | 'uk_eu' | 'mixed' | 'unknown'
 export type LabelOcrProvider = 'gemini'
+export type LabelOcrServingIssueCode =
+  | 'estimated_serving'
+  | 'unknown_serving_basis'
+  | 'per100_fallback'
+  | 'provider_conflict'
+  | 'low_ocr_confidence'
+export type LabelOcrServingInterpretationSource =
+  | 'label'
+  | 'provider'
+  | 'label_and_provider'
+  | 'manual'
+export type LabelOcrServingInterpretationKind =
+  | 'explicit_metric'
+  | 'container_metric'
+  | 'per100_metric'
+  | 'manual'
 export type RecoverableIssueScope =
   | 'foods'
   | 'weights'
@@ -36,10 +68,16 @@ export type SyncScope =
   | 'weights'
   | 'day_meta'
   | 'activity'
+  | 'wellness'
+  | 'recovery_check_ins'
+  | 'diet_phases'
+  | 'diet_phase_events'
   | 'interventions'
   | 'meal_templates'
   | 'recipes'
   | 'favorite_foods'
+  | 'weekly_check_ins'
+  | 'coach_decisions'
   | 'settings_targets'
   | 'settings_preferences'
   | 'settings_coaching_runtime'
@@ -54,6 +92,7 @@ export type SyncStatus =
   | 'error'
   | 'reauthRequired'
 export type GoalMode = 'lose' | 'maintain' | 'gain'
+export type FatLossMode = 'standard_cut' | 'psmf'
 export type CoachingConfidence = 'none' | 'low' | 'medium' | 'high'
 export type CoachingTone = 'neutral' | 'under' | 'over' | 'onTrack'
 export type DayStatus = 'unmarked' | 'complete' | 'partial' | 'fasting'
@@ -61,6 +100,18 @@ export type DayConfounderMarker = 'travel' | 'illness' | 'high_calorie_event'
 export type InterventionCategory = 'supplement' | 'medication' | 'stimulant' | 'peptide' | 'other'
 export type InterventionRoute = 'oral' | 'subcutaneous' | 'intramuscular' | 'topical' | 'other'
 export type CardioType = 'walk' | 'incline_treadmill' | 'bike' | 'run' | 'other'
+export type WellnessProvider = 'garmin'
+export type DietPhaseType = 'psmf' | 'diet_break'
+export type DietPhaseStatus = 'planned' | 'active' | 'expired' | 'completed' | 'cancelled'
+export type DietPhaseEventType = 'refeed_day'
+export type RecoverySeverity = 'green' | 'yellow' | 'red'
+export type GarminConnectionStatus =
+  | 'not_connected'
+  | 'connected'
+  | 'syncing'
+  | 'rate_limited'
+  | 'error'
+  | 'reconnect_required'
 export type CalibrationPhase = 'none' | 'collecting' | 'provisional' | 'calibrated'
 export type CoachMode = 'standard' | 'deep'
 export type CoachProvider = 'none' | 'gemini' | 'openai' | 'anthropic'
@@ -98,6 +149,26 @@ export type DiagnosticsEventType =
   | 'coaching_decision_applied'
   | 'coaching_decision_overridden'
   | 'coaching_backtest_regression'
+  | 'describe_food_draft_failed'
+  | 'catalog_provider_unmapped_hit'
+  | 'food_alias_trimmed'
+  | 'coach_method_v2_diverged'
+  | 'coach_history_roundtrip_failed'
+  | 'feature_flag_dependency_invalid'
+  | 'garmin_sync_failed'
+  | 'garmin_sync_rate_limited'
+  | 'garmin_reconnect_required'
+  | 'garmin_sync_succeeded'
+  | 'barcode_lookup_completed'
+  | 'barcode_lookup_downgraded'
+  | 'barcode_lookup_blocked'
+  | 'barcode_autolog_used'
+  | 'ocr_review_opened'
+  | 'ocr_review_saved'
+  | 'ocr_review_blocked'
+  | 'serving_basis_conflict_detected'
+  | 'barcode_provider_failed'
+  | 'food_truth_rollout_alert'
 export type CoachProposalType =
   | 'applyCalorieTarget'
   | 'applyMacroTargets'
@@ -121,6 +192,14 @@ export interface LabelNutritionField {
   rawLabel: string
   value: number | 'traces'
   unit: string
+}
+
+export interface ImportTrust {
+  level: ImportTrustLevel
+  servingBasis: NutritionBasis
+  servingBasisSource: ServingBasisSource
+  blockingIssues: ImportTrustBlockingIssue[]
+  verifiedAt?: string
 }
 
 export interface LabelNutritionPanel {
@@ -152,6 +231,9 @@ export interface Food {
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
+  importTrust?: ImportTrust
+  searchAliases?: string[]
+  remoteReferences?: FoodRemoteReference[]
   usageCount: number
   createdAt: string
   barcode?: string
@@ -181,12 +263,33 @@ export interface FoodDraft {
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
+  importTrust?: ImportTrust
+  searchAliases?: string[]
+  remoteReferences?: FoodRemoteReference[]
+  barcode?: string
+}
+
+export interface FoodRemoteReference {
+  provider: CatalogProvider
+  remoteKey: string
   barcode?: string
 }
 
 export interface LabelOcrFieldCandidate extends LabelNutritionField {
   sourceText: string
   confidence: number
+  issueCodes?: LabelOcrServingIssueCode[]
+}
+
+export interface LabelOcrServingInterpretation {
+  id: string
+  kind: LabelOcrServingInterpretationKind
+  label: string
+  source: LabelOcrServingInterpretationSource
+  servingSize?: number
+  servingUnit?: string
+  calorieSummary: string
+  selectedByDefault?: boolean
 }
 
 export interface LabelOcrReviewSession {
@@ -196,6 +299,12 @@ export interface LabelOcrReviewSession {
   warnings: string[]
   requiresReview: boolean
   provider: LabelOcrProvider
+  topWarning?: string
+  servingSizeText?: string
+  servingsPerContainer?: number
+  caloriesPerContainer?: number
+  servingFieldIssueCodes?: LabelOcrServingIssueCode[]
+  servingInterpretations?: LabelOcrServingInterpretation[]
 }
 
 export interface FoodSnapshot {
@@ -243,14 +352,19 @@ export interface UserSettings {
   fatTarget: number
   weightUnit: WeightUnit
   goalMode: GoalMode
+  fatLossMode?: FatLossMode
   coachingEnabled: boolean
   checkInWeekday: 0 | 1 | 2 | 3 | 4 | 5 | 6
   targetWeeklyRatePercent: number
   dailyStepTarget?: number
   weeklyCardioMinuteTarget?: number
+  coachingMinCalories?: number
   tdeeEstimate?: number
   lastImportAt?: string
   coachingDismissedAt?: string
+  goalModeChangedAt?: string
+  goalModeChangedFrom?: GoalMode
+  fatLossModeChangedAt?: string
   askCoachEnabled?: boolean
   shareInterventionsWithCoach?: boolean
   coachCitationsExpanded?: boolean
@@ -313,6 +427,108 @@ export interface ActivityDraft {
   notes?: string
 }
 
+export interface WellnessEntry {
+  date: string
+  provider: WellnessProvider
+  steps?: number
+  sleepMinutes?: number
+  restingHeartRate?: number
+  stressScore?: number
+  bodyBatteryMax?: number
+  intensityMinutes?: number
+  derivedCardioMinutes?: number
+  sourceUpdatedAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export interface WellnessDraft {
+  provider: WellnessProvider
+  steps?: number
+  sleepMinutes?: number
+  restingHeartRate?: number
+  stressScore?: number
+  bodyBatteryMax?: number
+  intensityMinutes?: number
+  derivedCardioMinutes?: number
+  sourceUpdatedAt: string
+}
+
+export interface RecoveryCheckIn {
+  date: string
+  energyScore: 1 | 2 | 3 | 4 | 5
+  hungerScore: 1 | 2 | 3 | 4 | 5
+  sorenessScore: 1 | 2 | 3 | 4 | 5
+  sleepQualityScore: 1 | 2 | 3 | 4 | 5
+  notes?: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export interface RecoveryCheckInDraft {
+  energyScore: 1 | 2 | 3 | 4 | 5
+  hungerScore: 1 | 2 | 3 | 4 | 5
+  sorenessScore: 1 | 2 | 3 | 4 | 5
+  sleepQualityScore: 1 | 2 | 3 | 4 | 5
+  notes?: string
+}
+
+export interface DietPhase {
+  id: string
+  type: DietPhaseType
+  status: DietPhaseStatus
+  startDate: string
+  plannedEndDate: string
+  actualEndDate?: string
+  calorieTargetOverride?: number
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DietPhaseDraft {
+  type: DietPhaseType
+  startDate: string
+  plannedEndDate: string
+  calorieTargetOverride?: number
+  notes?: string
+}
+
+export interface DietPhaseEvent {
+  id: string
+  phaseId: string
+  type: DietPhaseEventType
+  date: string
+  calorieTargetOverride: number
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string
+}
+
+export interface DietPhaseEventDraft {
+  phaseId: string
+  type: DietPhaseEventType
+  date: string
+  calorieTargetOverride: number
+  notes?: string
+}
+
+export interface RecoveryAssessment {
+  date: string
+  score: number
+  severity: RecoverySeverity
+  reasons: string[]
+  baselineCoverage: number
+}
+
+export interface GarminConnectionInfo {
+  status: GarminConnectionStatus
+  lastSuccessfulSyncAt?: string
+  retryAfterAt?: string
+  staleData: boolean
+}
+
 export interface CheckInMacroTargets {
   protein: number
   carbs: number
@@ -344,7 +560,7 @@ export interface CheckInRecord {
   confidenceBand?: CoachingConfidence
   confidenceScore?: number | null
   decisionType?: CoachingDecisionType
-  reasonCodes?: string[]
+  reasonCodes?: Array<CoachingReasonCode | LegacyCoachingCode>
   blockedReasons?: CoachingBlockedReason[]
   dataQuality?: DataQualityScore
   adherence?: AdherenceScore
@@ -353,6 +569,7 @@ export interface CheckInRecord {
   status: CheckInStatus
   createdAt: string
   appliedAt?: string
+  updatedAt?: string
 }
 
 export interface NutritionTotals {
@@ -383,6 +600,7 @@ export interface WeightChartPoint {
 
 export interface ImportedFoodCandidate {
   provider: CatalogProvider
+  remoteKey?: string
   barcode: string
   name: string
   brand?: string
@@ -396,6 +614,7 @@ export interface ImportedFoodCandidate {
   source: 'api'
   verification: BarcodeVerification
   nutritionBasis: NutritionBasis
+  importTrust?: ImportTrust
   importConfidence: FoodImportConfidence
   sourceQuality: FoodSourceQuality
   note?: string
@@ -404,6 +623,12 @@ export interface ImportedFoodCandidate {
 export interface BarcodeLookupResult {
   candidate: ImportedFoodCandidate
   missingFields: Array<'calories' | 'protein' | 'carbs' | 'fat'>
+  providerFailures?: Array<{
+    provider: CatalogProvider
+    code: string
+    message?: string
+    retryAfterSeconds?: number
+  }>
 }
 
 export interface AppActionError {
@@ -454,8 +679,14 @@ export interface BackupFile {
   favoriteFoods?: FavoriteFood[]
   dayMeta: DayMeta[]
   activityLog: ActivityEntry[]
+  wellness?: WellnessEntry[]
+  recoveryCheckIns?: RecoveryCheckIn[]
+  dietPhases?: DietPhase[]
+  dietPhaseEvents?: DietPhaseEvent[]
   interventions: InterventionEntry[]
+  weeklyCheckIns?: CheckInRecord[]
   checkInHistory: CheckInRecord[]
+  coachDecisions?: CoachingDecisionRecord[]
   coachingCalibration: CoachingCalibrationRecord[]
   coachThread?: CoachThreadState
   coachFeedback?: CoachFeedback[]
@@ -470,6 +701,10 @@ export interface BackupPreview {
     weights: number
     logDays: number
     logEntries: number
+    wellness: number
+    recoveryCheckIns: number
+    dietPhases: number
+    dietPhaseEvents: number
   }
 }
 
@@ -557,6 +792,7 @@ export interface CatalogFood {
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
+  importTrust?: ImportTrust
   nutrients?: NutrientProfileV1
   cachedAt: string
   staleAt: string
@@ -581,6 +817,7 @@ export interface RemoteCatalogHit {
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
+  importTrust?: ImportTrust
 }
 
 export type UnifiedFoodSearchResultSource =
@@ -610,6 +847,7 @@ export interface UnifiedFoodSearchResult {
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
+  importTrust?: ImportTrust
   lastUsedAt?: string
   updatedAt?: string
   stale?: boolean
@@ -630,6 +868,10 @@ export interface SyncCounts {
   weights: number
   dayMeta: number
   activity: number
+  wellness: number
+  recoveryCheckIns: number
+  dietPhases: number
+  dietPhaseEvents: number
   interventions: number
   savedMeals: number
   recipes: number
@@ -704,10 +946,59 @@ export interface BootstrapStatusSummary {
 
 export interface RemoteCatalogResponse {
   query: string
-  provider: CatalogProvider
+  providers: CatalogProvider[]
   remoteStatus: 'ok' | 'unavailable'
   nextCursor?: string
   results: RemoteCatalogHit[]
+}
+
+export interface NormalizedFoodTruthHit {
+  remoteKey: string
+  provider: CatalogProvider
+  name: string
+  brand?: string
+  barcode?: string
+  servingSize?: number
+  servingUnit?: string
+  calories?: number
+  protein?: number
+  carbs?: number
+  fat?: number
+  fiber?: number
+  imageUrl?: string
+  importConfidence?: FoodImportConfidence
+  sourceQuality?: FoodSourceQuality
+  sourceQualityNote?: string
+  importTrust?: ImportTrust
+}
+
+export type NormalizedCatalogSearchHit = NormalizedFoodTruthHit
+
+export interface NormalizedCatalogSearchPage {
+  query: string
+  providers: CatalogProvider[]
+  remoteStatus: 'ok' | 'unavailable'
+  nextCursor?: string
+  results: NormalizedCatalogSearchHit[]
+}
+
+export interface NormalizedBarcodeLookupResult {
+  hit: NormalizedCatalogSearchHit
+  missingFields: Array<'calories' | 'protein' | 'carbs' | 'fat'>
+}
+
+export interface CatalogProviderAdapter {
+  provider: CatalogProvider
+  search(input: {
+    query: string
+    locale: 'en-GB' | 'en-US'
+    limit: number
+    cursor?: string
+  }): Promise<NormalizedCatalogSearchPage>
+  lookupBarcode(input: {
+    barcode: string
+    locale: 'en-GB' | 'en-US'
+  }): Promise<NormalizedBarcodeLookupResult | null>
 }
 
 export interface SyncState {
@@ -765,11 +1056,33 @@ export interface DiagnosticsEvent {
   payload?: Record<string, unknown>
 }
 
+export interface FoodTruthMetricsSummary {
+  barcodeLookupCount: number
+  barcodeLookupSuccessRate: number
+  exactAutologEligibilityRate: number
+  barcodeBlockedRate: number
+  ocrBlockedRate: number
+  providerConflictRate: number
+  localRescanWinRate: number
+  downgradeRateByIssue: Partial<Record<ImportTrustBlockingIssue, number>>
+  providerFailureRateByProvider: Partial<Record<CatalogProvider, number>>
+}
+
+export interface FoodTruthAlertSummary {
+  id: string
+  message: string
+  threshold: string
+}
+
 export interface DiagnosticsSummary {
   totalCount: number
   lastEventAt?: string
   lastError?: DiagnosticsEvent
   counts: Partial<Record<DiagnosticsEventType, number>>
+  foodTruth?: {
+    metrics: FoodTruthMetricsSummary
+    alerts: FoodTruthAlertSummary[]
+  }
 }
 
 export interface BulkApplyPreview {
@@ -801,6 +1114,32 @@ export interface SyncIntegrityState {
   invalidRecipeIds: string[]
   invalidRecipeMissingFoodIds: Record<string, string[]>
   updatedAt: string
+}
+
+export type DescribeFoodReviewMode = 'local_match' | 'remote_match' | 'manual_only'
+
+export interface DescribeFoodDraftItemV1 {
+  name: string
+  amount?: number
+  unit?: string
+  brand?: string
+  candidateLocalFoodId?: string
+  candidateRemoteKey?: string
+  candidateRemoteProvider?: CatalogProvider
+  calories?: number
+  protein?: number
+  carbs?: number
+  fat?: number
+}
+
+export interface DescribeFoodDraftV1 {
+  id: string
+  rawText: string
+  locale: 'en-GB' | 'en-US'
+  confidence: 'high' | 'medium' | 'low'
+  reviewMode: DescribeFoodReviewMode
+  item: DescribeFoodDraftItemV1
+  createdAt: string
 }
 
 export type CanonicalNutrientKey =
@@ -864,9 +1203,83 @@ export interface CoachingInputV1 {
 }
 
 export interface CoachingBlockedReason {
-  code: string
+  code: CoachingBlockedReasonCode | LegacyCoachingCode
   message: string
 }
+
+export type CoachingBlockedReasonCode =
+  | 'insufficient_eligible_days'
+  | 'insufficient_weighins'
+  | 'low_data_quality'
+  | 'trend_unavailable'
+  | 'explicit_day_confounder'
+  | 'recent_import'
+  | 'intervention_change'
+  | 'recovery_issues'
+  | 'travel'
+  | 'illness'
+  | 'high_calorie_event'
+  | 'goal_mode_recently_changed'
+  | 'fat_loss_mode_recently_changed'
+  | 'eligible_days_low'
+  | 'weighins_low'
+  | 'explicit_days_low'
+  | 'partial_logging_high'
+  | 'unmarked_logging_high'
+  | 'adherence_low'
+  | 'protein_low'
+  | 'step_adherence_low'
+  | 'cardio_adherence_low'
+  | 'psmf_phase_required'
+  | 'psmf_phase_expired'
+  | 'diet_break_active'
+  | 'recovery_hold'
+
+export type CoachingReasonCode =
+  | 'insufficient_eligible_days'
+  | 'insufficient_weighins'
+  | 'low_data_quality'
+  | 'trend_unavailable'
+  | 'explicit_day_confounder'
+  | 'recent_import'
+  | 'intervention_change'
+  | 'recovery_issues'
+  | 'travel'
+  | 'illness'
+  | 'high_calorie_event'
+  | 'goal_mode_recently_changed'
+  | 'fat_loss_mode_recently_changed'
+  | 'eligible_days_low'
+  | 'weighins_low'
+  | 'explicit_days_low'
+  | 'partial_logging_high'
+  | 'unmarked_logging_high'
+  | 'adherence_low'
+  | 'protein_low'
+  | 'step_adherence_low'
+  | 'cardio_adherence_low'
+  | 'loss_faster_than_target'
+  | 'loss_slower_than_target'
+  | 'rate_on_target'
+  | 'maintenance_on_target'
+  | 'maintenance_weight_down'
+  | 'maintenance_weight_up'
+  | 'gain_faster_than_target'
+  | 'gain_slower_than_target'
+  | 'calorieFloorApplied'
+  | 'personal_floor_applied'
+  | 'psmf_no_further_decrease'
+  | 'manual_override'
+  | 'coach_override'
+  | 'diet_break'
+  | 'recovery_adjustment'
+  | 'travel_reset'
+  | 'adherence_reset'
+  | 'recovery_watch'
+  | 'refeed_scheduled'
+  | 'diet_break_review_recommended'
+
+export type LegacyCoachingCode = `legacy:${string}`
 
 export interface DataQualityScore {
   score: number
@@ -913,7 +1326,7 @@ export type CoachingDecisionType =
   | 'hold_for_more_data'
   | 'ignore_period_due_to_confounders'
 
-export type CoachingDecisionSource = 'engine_v1' | 'manual_override'
+export type CoachingDecisionSource = 'engine_v1' | 'engine_v2' | 'manual_override'
 
 export interface CoachingTargetSet {
   calorieTarget: number
@@ -932,7 +1345,7 @@ export interface CoachingDecisionRecord {
   effectiveDate: string
   confidenceBand: CoachingConfidence
   confidenceScore: number | null
-  reasonCodes: string[]
+  reasonCodes: Array<CoachingReasonCode | LegacyCoachingCode>
   blockedReasons: CoachingBlockedReason[]
   explanation: string
   previousTargets: CoachingTargetSet
@@ -941,6 +1354,18 @@ export interface CoachingDecisionRecord {
   appliedAt?: string
   overriddenAt?: string
   updatedAt: string
+}
+
+export interface CoachDecisionSyncRecord {
+  id: string
+  updatedAt: string
+  payload: CoachingDecisionRecord
+}
+
+export interface WeeklyCheckInSyncRecord {
+  id: string
+  updatedAt: string
+  payload: CheckInRecord
 }
 
 export interface CoachingRecommendationV1 {
@@ -962,7 +1387,7 @@ export interface CoachingRecommendationV1 {
   previousTargets: CoachingTargetSet
   proposedTargets?: CoachingTargetSet
   effectiveDate: string
-  reasonCodes: string[]
+  reasonCodes: Array<CoachingReasonCode | LegacyCoachingCode>
   blockedReasons: CoachingBlockedReason[]
   dataQuality: DataQualityScore
   adherence: AdherenceScore
@@ -974,7 +1399,7 @@ export interface CoachingExplanationV1 {
   reason: string
   explanation: string
   reasons: string[]
-  reasonCodes: string[]
+  reasonCodes: Array<CoachingReasonCode | LegacyCoachingCode>
   confounders: string[]
 }
 

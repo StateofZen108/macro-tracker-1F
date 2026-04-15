@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "wave": "recovery-layer",
+  "kind": "placeholder-replay-baseline",
+  "note": "Canonical placeholder until a deterministic recovery replay artifact is wired into the build."
+}

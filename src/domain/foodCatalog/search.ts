@@ -213,6 +213,7 @@ export function buildUnifiedSearchResults(input: {
       importConfidence: food.importConfidence,
       sourceQuality: food.sourceQuality,
       sourceQualityNote: food.sourceQualityNote,
+      importTrust: food.importTrust,
       lastUsedAt: food.lastUsedAt,
       updatedAt: food.updatedAt,
       record: favoriteBoost
@@ -335,6 +336,7 @@ export function buildUnifiedSearchResults(input: {
       importConfidence: cachedFood.importConfidence,
       sourceQuality: cachedFood.sourceQuality,
       sourceQualityNote: cachedFood.sourceQualityNote,
+      importTrust: cachedFood.importTrust,
       lastUsedAt: cachedFood.lastUsedAt,
       updatedAt: cachedFood.updatedAt,
       stale: Date.parse(cachedFood.staleAt) <= Date.now(),

@@ -1,13 +1,31 @@
 import { Camera, Plus, Search, Star, Undo2, X } from 'lucide-react'
 import type { RefObject } from 'react'
-import type { Food, UnifiedFoodSearchResult } from '../../types'
+import type {
+  BarcodeLookupResult,
+  DescribeFoodDraftV1,
+  Food,
+  UnifiedFoodSearchResult,
+} from '../../types'
 import { ServingsInput } from '../ServingsInput'
 import {
   describeFood,
-  formatServingsLabel,
+  formatServingMeta,
+  getCatalogImportButtonLabel,
+  getCatalogProviderLabel,
+  getImportConfidenceLabel,
   getRemoteCatalogStatusLabel,
+  getSourceQualityLabel,
 } from './helpers'
 import type { AddFoodPaneMode, AddFoodRemoteStatus } from './types'
+
+type RepeatCandidateView = {
+  food: Food
+  servings: number
+}
+
+type ArchivedImportCandidateView = {
+  food: Food
+} | null
 
 export interface BrowsePaneProps {
   mode: AddFoodPaneMode
@@ -15,6 +33,11 @@ export interface BrowsePaneProps {
   searchInputRef?: RefObject<HTMLInputElement | null>
   contentRef?: RefObject<HTMLDivElement | null>
   onQueryChange: (value: string) => void
+  describeFoodEnabled: boolean
+  describeDraft: DescribeFoodDraftV1 | null
+  onStartDescribeFood: () => void
+  onApplyDescribeDraft: () => void
+  onDismissDescribeDraft: () => void
   selectedFood: Food | null
   selectedFoodId: string | null
   onSelectFood: (foodId: string) => void
@@ -31,7 +54,7 @@ export interface BrowsePaneProps {
   onOpenCustomFood: () => void
   onOpenScanner: () => void
   onOpenOcr: () => void
-  lastLookupResult?: import('../../types').BarcodeLookupResult | null
+  lastLookupResult?: BarcodeLookupResult | null
   onReviewLastScan: () => void
   quickFoods: Food[]
   favoriteFoodIds: Set<string>
@@ -40,8 +63,14 @@ export interface BrowsePaneProps {
   onApplySavedMealSelection: (savedMealId: string) => void
   recipeSearchResults: UnifiedFoodSearchResult[]
   onConfirmRecipeSelection: (recipeId: string) => void
+  personalLibraryEnabled: boolean
+  repeatCandidates: RepeatCandidateView[]
   foodCatalogSearchEnabled: boolean
   catalogSearchResults: UnifiedFoodSearchResult[]
+  catalogTotalResults: number
+  catalogLibraryMatches: Set<string>
+  catalogCollapsed: boolean
+  onExpandCatalog: () => void
   remoteStatus: AddFoodRemoteStatus
   remoteLoadingMore: boolean
   hasMoreRemoteResults: boolean
@@ -52,9 +81,109 @@ export interface BrowsePaneProps {
   visibleSearchResults: Food[]
   hiddenSearchResultCount: number
   onShowMoreResults: () => void
+  archivedImportCandidate: ArchivedImportCandidateView
+  onRestoreArchivedImport: () => void
   discardAction?: (() => void) | null
   discardMessage: string
   onCancelDiscard: () => void
+}
+
+function SectionHeader({
+  title,
+  detail,
+}: {
+  title: string
+  detail?: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
+        {title}
+      </h3>
+      {detail ? <p className="text-xs text-slate-500 dark:text-slate-300">{detail}</p> : null}
+    </div>
+  )
+}
+
+function LocalFoodCard({
+  food,
+  mode,
+  selectedFoodId,
+  onSelectFood,
+  onSubmitFood,
+  canUseLastAmount,
+  favoriteFoodIds,
+  onToggleFavoriteFood,
+  badge,
+}: {
+  food: Food
+  mode: AddFoodPaneMode
+  selectedFoodId: string | null
+  onSelectFood: (foodId: string) => void
+  onSubmitFood: (food: Food, servings: number, keepOpen: boolean) => void
+  canUseLastAmount: (food: Food) => boolean
+  favoriteFoodIds: Set<string>
+  onToggleFavoriteFood?: (foodId: string) => void
+  badge?: string
+}) {
+  return (
+    <div
+      key={food.id}
+      className={`rounded-[24px] border p-4 text-left transition ${
+        selectedFoodId === food.id
+          ? 'border-teal-400 bg-teal-50 shadow-glow dark:border-teal-500/50 dark:bg-teal-500/10'
+          : 'border-black/5 bg-white/70 hover:bg-white dark:border-white/10 dark:bg-slate-900/70 dark:hover:bg-slate-900'
+      }`}
+    >
+      <button type="button" className="w-full text-left" onClick={() => onSelectFood(food.id)}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="font-semibold text-slate-900 dark:text-white">{food.name}</p>
+            <p className="text-sm text-slate-500 dark:text-slate-300">
+              {food.brand ? `${food.brand} - ` : ''}
+              {food.servingSize}
+              {food.servingUnit}
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            {badge ?? food.source}
+          </span>
+        </div>
+        <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+          {describeFood(food)}
+        </p>
+      </button>
+      {mode === 'add' ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            className="action-button-secondary w-full"
+            onClick={() => onSubmitFood(food, 1, true)}
+          >
+            Add 1x
+          </button>
+          {canUseLastAmount(food) ? (
+            <button
+              type="button"
+              className="action-button-secondary w-full"
+              onClick={() => onSubmitFood(food, food.lastServings ?? 1, true)}
+            >
+              Use last amount
+            </button>
+          ) : null}
+          {onToggleFavoriteFood ? (
+            <button
+              type="button"
+              className="action-button-secondary w-full sm:col-span-2"
+              onClick={() => onToggleFavoriteFood(food.id)}
+            >
+              {favoriteFoodIds.has(food.id) ? 'Remove favorite' : 'Add favorite'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 export function BrowsePane({
@@ -63,6 +192,11 @@ export function BrowsePane({
   searchInputRef,
   contentRef,
   onQueryChange,
+  describeFoodEnabled,
+  describeDraft,
+  onStartDescribeFood,
+  onApplyDescribeDraft,
+  onDismissDescribeDraft,
   selectedFood,
   selectedFoodId,
   onSelectFood,
@@ -88,8 +222,14 @@ export function BrowsePane({
   onApplySavedMealSelection,
   recipeSearchResults,
   onConfirmRecipeSelection,
+  personalLibraryEnabled,
+  repeatCandidates,
   foodCatalogSearchEnabled,
   catalogSearchResults,
+  catalogTotalResults,
+  catalogLibraryMatches,
+  catalogCollapsed,
+  onExpandCatalog,
   remoteStatus,
   remoteLoadingMore,
   hasMoreRemoteResults,
@@ -100,10 +240,14 @@ export function BrowsePane({
   visibleSearchResults,
   hiddenSearchResultCount,
   onShowMoreResults,
+  archivedImportCandidate,
+  onRestoreArchivedImport,
   discardAction,
   discardMessage,
   onCancelDiscard,
 }: BrowsePaneProps) {
+  const shortQuery = debouncedQuery.trim().length < 3
+
   return (
     <div ref={contentRef} className="space-y-4" data-add-food-pane="browse">
       <div className="relative">
@@ -111,22 +255,91 @@ export function BrowsePane({
         <input
           ref={searchInputRef}
           className="field pl-11"
-          placeholder="Search your saved foods"
+          placeholder={personalLibraryEnabled ? 'Search your library first' : 'Search your saved foods'}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
         />
       </div>
 
+      {describeFoodEnabled && query.trim() ? (
+        <button
+          type="button"
+          className="action-button-secondary w-full"
+          onClick={onStartDescribeFood}
+        >
+          Describe food
+        </button>
+      ) : null}
+
+      {describeDraft ? (
+        <div className="space-y-3 rounded-[28px] border border-slate-200 bg-slate-50/90 p-4 dark:border-white/10 dark:bg-slate-900/70">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                Describe food
+              </p>
+              <p className="mt-1 font-semibold text-slate-900 dark:text-white">{describeDraft.rawText}</p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                Parsed as {describeDraft.item.amount ? `${describeDraft.item.amount} ` : ''}
+                {describeDraft.item.unit ? `${describeDraft.item.unit} ` : ''}
+                {describeDraft.item.name}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={onDismissDescribeDraft}
+              aria-label="Dismiss describe food draft"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {describeDraft.reviewMode.replace('_', ' ')}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {describeDraft.confidence} confidence
+            </span>
+          </div>
+
+          <button type="button" className="action-button w-full" onClick={onApplyDescribeDraft}>
+            {describeDraft.reviewMode === 'local_match'
+              ? 'Use matched food'
+              : describeDraft.reviewMode === 'remote_match'
+                ? 'Review remote match'
+                : 'Review manual entry'}
+          </button>
+        </div>
+      ) : null}
+
+      {archivedImportCandidate ? (
+        <div className="space-y-3 rounded-[24px] border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+          <p className="font-semibold">{archivedImportCandidate.food.name} is already in your archived library.</p>
+          <p>Restore the archived food instead of creating a duplicate import.</p>
+          <button type="button" className="action-button w-full" onClick={onRestoreArchivedImport}>
+            Restore existing food
+          </button>
+        </div>
+      ) : null}
+
       {selectedFood ? (
-        <div className="space-y-4 rounded-[28px] border border-teal-300 bg-teal-50/80 p-4 dark:border-teal-500/30 dark:bg-teal-500/10">
+        <div
+          className="space-y-4 rounded-[28px] border border-teal-300 bg-teal-50/80 p-4 dark:border-teal-500/30 dark:bg-teal-500/10"
+          data-testid="selected-food-card"
+        >
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
                 Selected food
               </p>
               <p className="font-display text-2xl text-slate-900 dark:text-white">{selectedFood.name}</p>
-              <p className="text-sm text-slate-500 dark:text-slate-300">
-                {selectedFood.brand ? `${selectedFood.brand} • ` : ''}
+              <p
+                className="text-sm text-slate-500 dark:text-slate-300"
+                data-testid="selected-food-serving-meta"
+              >
+                {selectedFood.brand ? `${selectedFood.brand} - ` : ''}
                 {selectedFood.servingSize}
                 {selectedFood.servingUnit}
               </p>
@@ -245,62 +458,78 @@ export function BrowsePane({
         </button>
       ) : null}
 
-      {quickFoods.length ? (
+      {!personalLibraryEnabled && quickFoods.length ? (
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
-              Quick add
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-300">Sorted by recent use</p>
-          </div>
+          <SectionHeader title="Quick add" detail="Sorted by recent use" />
           <div className="grid gap-3">
             {quickFoods.map((food) => (
-              <div
+              <LocalFoodCard
                 key={food.id}
+                food={food}
+                mode={mode}
+                selectedFoodId={selectedFoodId}
+                onSelectFood={onSelectFood}
+                onSubmitFood={onSubmitFood}
+                canUseLastAmount={canUseLastAmount}
+                favoriteFoodIds={favoriteFoodIds}
+                onToggleFavoriteFood={onToggleFavoriteFood}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {personalLibraryEnabled && shortQuery && repeatCandidates.length ? (
+        <section className="space-y-3">
+          <SectionHeader title="Repeat this meal" detail="From the last 30 days" />
+          <div className="grid gap-3">
+            {repeatCandidates.map((candidate) => (
+              <div
+                key={`repeat-${candidate.food.id}`}
                 className={`rounded-[24px] border p-4 text-left transition ${
-                  selectedFoodId === food.id
+                  selectedFoodId === candidate.food.id
                     ? 'border-teal-400 bg-teal-50 shadow-glow dark:border-teal-500/50 dark:bg-teal-500/10'
                     : 'border-black/5 bg-white/70 hover:bg-white dark:border-white/10 dark:bg-slate-900/70 dark:hover:bg-slate-900'
                 }`}
               >
-                <button type="button" className="w-full text-left" onClick={() => onSelectFood(food.id)}>
-                  <p className="font-semibold text-slate-900 dark:text-white">{food.name}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-300">
-                      {food.brand ? `${food.brand} • ` : ''}
-                    {food.servingSize}
-                    {food.servingUnit}
-                  </p>
+                <button
+                  type="button"
+                  className="w-full text-left"
+                  onClick={() => onSelectFood(candidate.food.id)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900 dark:text-white">{candidate.food.name}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-300">
+                        {candidate.food.brand ? `${candidate.food.brand} - ` : ''}
+                        {candidate.food.servingSize}
+                        {candidate.food.servingUnit}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
+                      repeat
+                    </span>
+                  </div>
                   <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                    {describeFood(food)}
+                    {describeFood(candidate.food)}
                   </p>
                 </button>
                 {mode === 'add' ? (
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     <button
                       type="button"
-                      className="action-button-secondary w-full"
-                      onClick={() => onSubmitFood(food, 1, true)}
+                      className="action-button w-full"
+                      onClick={() => onSubmitFood(candidate.food, candidate.servings, true)}
                     >
-                      Add 1x
+                      Use last amount
                     </button>
-                    {canUseLastAmount(food) ? (
-                      <button
-                        type="button"
-                        className="action-button-secondary w-full"
-                        onClick={() => onSubmitFood(food, food.lastServings ?? 1, true)}
-                      >
-                        Add {formatServingsLabel(food.lastServings ?? 1)}x
-                      </button>
-                    ) : null}
-                    {onToggleFavoriteFood ? (
-                      <button
-                        type="button"
-                        className="action-button-secondary w-full sm:col-span-2"
-                        onClick={() => onToggleFavoriteFood(food.id)}
-                      >
-                        {favoriteFoodIds.has(food.id) ? 'Remove favorite' : 'Add favorite'}
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      className="action-button-secondary w-full"
+                      onClick={() => onSelectFood(candidate.food.id)}
+                    >
+                      Review details
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -311,12 +540,7 @@ export function BrowsePane({
 
       {savedMealSearchResults.length ? (
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
-              Saved meals
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-300">Replay frozen snapshots</p>
-          </div>
+          <SectionHeader title="Saved meals" detail="Replay frozen snapshots" />
           <div className="grid gap-3">
             {savedMealSearchResults.map((result) => (
               <div
@@ -327,9 +551,9 @@ export function BrowsePane({
                   <div>
                     <p className="font-semibold text-slate-900 dark:text-white">{result.name}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-300">
-                      {Math.round(result.calories ?? 0)} cal • {Math.round(result.protein ?? 0)}P • {Math.round(
+                      {Math.round(result.calories ?? 0)} cal | {Math.round(result.protein ?? 0)}P | {Math.round(
                         result.carbs ?? 0,
-                      )}C • {Math.round(result.fat ?? 0)}F
+                      )}C | {Math.round(result.fat ?? 0)}F
                     </p>
                   </div>
                   <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
@@ -353,12 +577,7 @@ export function BrowsePane({
 
       {recipeSearchResults.length ? (
         <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
-              Recipes
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-300">Log as one recipe entry</p>
-          </div>
+          <SectionHeader title="Recipes" detail="Log as one recipe entry" />
           <div className="grid gap-3">
             {recipeSearchResults.map((result) => (
               <div
@@ -369,9 +588,9 @@ export function BrowsePane({
                   <div>
                     <p className="font-semibold text-slate-900 dark:text-white">{result.name}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-300">
-                      {Math.round(result.calories ?? 0)} cal • {Math.round(result.protein ?? 0)}P • {Math.round(
+                      {Math.round(result.calories ?? 0)} cal | {Math.round(result.protein ?? 0)}P | {Math.round(
                         result.carbs ?? 0,
-                      )}C • {Math.round(result.fat ?? 0)}F
+                      )}C | {Math.round(result.fat ?? 0)}F
                     </p>
                   </div>
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -393,83 +612,11 @@ export function BrowsePane({
         </section>
       ) : null}
 
-      {foodCatalogSearchEnabled && catalogSearchResults.length ? (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
-              Remote catalog
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-300">
-              {getRemoteCatalogStatusLabel(remoteStatus, remoteLoadingMore)}
-            </p>
-          </div>
-          <div className="grid gap-3">
-            {catalogSearchResults.map((result) => (
-              <div
-                key={result.id}
-                className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-900 dark:text-white">{result.name}</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-300">
-                      {result.brand ? `${result.brand} • ` : ''}
-                      {result.servingSize ?? 1}
-                      {result.servingUnit ?? 'serving'}
-                    </p>
-                    <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                      {Math.round(result.calories ?? 0)} cal • {Math.round(result.protein ?? 0)}P • {Math.round(
-                        result.carbs ?? 0,
-                      )}C • {Math.round(result.fat ?? 0)}F
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                    {result.stale ? 'cached' : 'remote'}
-                  </span>
-                </div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    className="action-button-secondary w-full"
-                    onClick={() => onImportCatalogFood(result, false)}
-                  >
-                    Save locally
-                  </button>
-                  {mode === 'add' ? (
-                    <button
-                      type="button"
-                      className="action-button w-full"
-                      onClick={() => onImportCatalogFood(result, true)}
-                    >
-                      Import and add 1x
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-          {hasMoreRemoteResults ? (
-            <button
-              type="button"
-              className="action-button-secondary w-full"
-              onClick={onLoadMoreRemoteResults}
-              disabled={remoteLoadingMore}
-            >
-              {remoteLoadingMore ? 'Loading more...' : 'Load more catalog results'}
-            </button>
-          ) : null}
-        </section>
-      ) : debouncedQuery && foodCatalogSearchEnabled && isOnline && remoteStatus === 'unavailable' ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-          Remote catalog search is temporarily unavailable. Local foods, saved meals, and recipes still work.
-        </div>
-      ) : null}
-
       <section className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
-              {debouncedQuery ? 'Search results' : 'All foods'}
+              {personalLibraryEnabled ? 'Your library' : debouncedQuery ? 'Search results' : 'All foods'}
             </h3>
             <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
               Showing {Math.min(displayedSearchResults.length, visibleSearchResults.length)} of {visibleSearchResults.length}{' '}
@@ -489,62 +636,17 @@ export function BrowsePane({
         <div className="grid gap-3">
           {displayedSearchResults.length ? (
             displayedSearchResults.map((food) => (
-              <div
+              <LocalFoodCard
                 key={food.id}
-                className={`rounded-[24px] border p-4 text-left transition ${
-                  selectedFoodId === food.id
-                    ? 'border-teal-400 bg-teal-50 shadow-glow dark:border-teal-500/50 dark:bg-teal-500/10'
-                    : 'border-black/5 bg-white/70 hover:bg-white dark:border-white/10 dark:bg-slate-900/70 dark:hover:bg-slate-900'
-                }`}
-              >
-                <button type="button" className="w-full text-left" onClick={() => onSelectFood(food.id)}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-slate-900 dark:text-white">{food.name}</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-300">
-                        {food.brand ? `${food.brand} • ` : ''}
-                        {food.servingSize}
-                        {food.servingUnit}
-                      </p>
-                    </div>
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                      {food.source}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                    {describeFood(food)}
-                  </p>
-                </button>
-                {mode === 'add' ? (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      className="action-button-secondary w-full"
-                      onClick={() => onSubmitFood(food, 1, true)}
-                    >
-                      Add 1x
-                    </button>
-                    {canUseLastAmount(food) ? (
-                      <button
-                        type="button"
-                        className="action-button-secondary w-full"
-                        onClick={() => onSubmitFood(food, food.lastServings ?? 1, true)}
-                      >
-                        Add {formatServingsLabel(food.lastServings ?? 1)}x
-                      </button>
-                    ) : null}
-                    {onToggleFavoriteFood ? (
-                      <button
-                        type="button"
-                        className="action-button-secondary w-full sm:col-span-2"
-                        onClick={() => onToggleFavoriteFood(food.id)}
-                      >
-                        {favoriteFoodIds.has(food.id) ? 'Remove favorite' : 'Add favorite'}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
+                food={food}
+                mode={mode}
+                selectedFoodId={selectedFoodId}
+                onSelectFood={onSelectFood}
+                onSubmitFood={onSubmitFood}
+                canUseLastAmount={canUseLastAmount}
+                favoriteFoodIds={favoriteFoodIds}
+                onToggleFavoriteFood={onToggleFavoriteFood}
+              />
             ))
           ) : (
             <div className="rounded-[24px] border border-dashed border-teal-300 bg-teal-50/70 px-4 py-6 text-sm text-slate-600 dark:border-teal-500/40 dark:bg-teal-500/10 dark:text-slate-300">
@@ -559,16 +661,111 @@ export function BrowsePane({
         ) : null}
       </section>
 
-      {discardAction ? (
-        <div className="rounded-[28px] border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
-          <p className="font-semibold">Discard current changes?</p>
-          <p className="mt-1">{discardMessage}</p>
-          <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <button type="button" className="action-button-secondary flex-1" onClick={onCancelDiscard}>
-              Keep editing
+      {foodCatalogSearchEnabled && (catalogSearchResults.length || catalogCollapsed) ? (
+        <section className="space-y-3">
+          <SectionHeader title="Catalog" detail={getRemoteCatalogStatusLabel(remoteStatus, remoteLoadingMore)} />
+          {catalogCollapsed ? (
+            <button
+              type="button"
+              className="action-button-secondary w-full"
+              onClick={onExpandCatalog}
+            >
+              More from catalog ({catalogTotalResults})
             </button>
-            <button type="button" className="action-button flex-1" onClick={discardAction}>
-              Discard
+          ) : null}
+          {catalogSearchResults.length ? (
+            <div className="grid gap-3">
+              {catalogSearchResults.map((result) => {
+                const providerLabel = getCatalogProviderLabel(result.provider)
+                const importLabel =
+                  mode === 'add'
+                    ? getCatalogImportButtonLabel(result.importConfidence, result.importTrust?.level, true)
+                    : result.importTrust?.level === 'blocked'
+                      ? 'Fix and save'
+                      : result.importTrust?.level === 'exact_review' ||
+                        result.importConfidence === 'weak_match' ||
+                        result.importConfidence === 'manual_review_required'
+                      ? 'Review and import'
+                      : 'Import food'
+                return (
+                  <div
+                    key={result.id}
+                    className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-slate-900 dark:text-white">{result.name}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-300">
+                          {formatServingMeta({
+                            brand: result.brand,
+                            servingSize: result.servingSize,
+                            servingUnit: result.servingUnit,
+                          })}
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                          {Math.round(result.calories ?? 0)} cal | {Math.round(result.protein ?? 0)}P | {Math.round(
+                            result.carbs ?? 0,
+                          )}C | {Math.round(result.fat ?? 0)}F
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {providerLabel}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {result.stale ? 'cached' : 'remote'}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {getImportConfidenceLabel(result.importConfidence)}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {getSourceQualityLabel(result.sourceQuality)}
+                          </span>
+                          {catalogLibraryMatches.has(result.id) ? (
+                            <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
+                              In your library
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="action-button mt-3 w-full"
+                      onClick={() => onImportCatalogFood(result, mode === 'add')}
+                    >
+                      {importLabel}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+          {hasMoreRemoteResults && !catalogCollapsed ? (
+            <button
+              type="button"
+              className="action-button-secondary w-full"
+              onClick={onLoadMoreRemoteResults}
+              disabled={remoteLoadingMore}
+            >
+              {remoteLoadingMore ? 'Loading more...' : 'Load more catalog results'}
+            </button>
+          ) : null}
+        </section>
+      ) : debouncedQuery && foodCatalogSearchEnabled && isOnline && remoteStatus === 'unavailable' ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          Remote catalog search is temporarily unavailable. Local foods, saved meals, and recipes still work.
+        </div>
+      ) : null}
+
+      {discardAction ? (
+        <div className="space-y-3 rounded-[24px] border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+          <p>{discardMessage}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button type="button" className="action-button" onClick={discardAction}>
+              Discard changes
+            </button>
+            <button type="button" className="action-button-secondary" onClick={onCancelDiscard}>
+              Keep editing
             </button>
           </div>
         </div>

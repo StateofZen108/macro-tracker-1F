@@ -1,0 +1,43 @@
+{
+  "fixtureId": "ocr-013-per100g-item-013",
+  "provider": "gemini",
+  "payload": {
+    "candidate": {
+      "name": "Per100G Item 013",
+      "brand": "Label Bench 013",
+      "servingSize": 100,
+      "servingUnit": "g",
+      "calories": 250,
+      "protein": 15,
+      "carbs": 22,
+      "fat": 9,
+      "fiber": 6
+    },
+    "fields": {
+      "servingSizeText": {
+        "value": "100 g"
+      },
+      "calories": {
+        "value": 250,
+        "sourceText": "250 kcal"
+      },
+      "protein": {
+        "value": 15,
+        "sourceText": "15 g"
+      },
+      "carbs": {
+        "value": 22,
+        "sourceText": "22 g"
+      },
+      "fat": {
+        "value": 9,
+        "sourceText": "9 g"
+      },
+      "fiber": {
+        "value": 6,
+        "sourceText": "6 g"
+      }
+    },
+    "warnings": []
+  }
+}

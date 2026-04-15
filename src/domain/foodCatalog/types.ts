@@ -3,11 +3,12 @@ import type {
   Food,
   FoodDraft,
   FoodImportConfidence,
+  ImportTrust,
   FoodSourceQuality,
   MealType,
-} from '../../types'
+} from '../../types.ts'
 
-export type { CatalogProvider } from '../../types'
+export type { CatalogProvider } from '../../types.ts'
 
 export type UnifiedFoodSource =
   | 'local_food'
@@ -37,6 +38,7 @@ export interface CatalogFoodRecord {
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
+  importTrust?: ImportTrust
   cachedAt: string
   staleAt: string
   lastSeenAt: string
@@ -59,6 +61,7 @@ export interface RemoteCatalogHit {
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
+  importTrust?: ImportTrust
 }
 
 export interface UnifiedFoodSearchResult {
@@ -87,6 +90,7 @@ export interface UnifiedFoodSearchResult {
   stale?: boolean
   importConfidence?: FoodImportConfidence
   sourceQuality?: FoodSourceQuality
+  importTrust?: ImportTrust
 }
 
 export interface UnifiedFoodSearchContext {

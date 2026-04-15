@@ -1,14 +1,20 @@
 import type {
   ActivityEntry,
+  CheckInRecord,
+  CoachingDecisionRecord,
   DayMeta,
+  DietPhase,
+  DietPhaseEvent,
   FavoriteFood,
   Food,
   FoodLogEntry,
   InterventionEntry,
   MealTemplate,
+  RecoveryCheckIn,
   Recipe,
   SyncScope,
   UserSettings,
+  WellnessEntry,
   WeightEntry,
 } from '../../types'
 import { enqueueSyncMutation, isSyncEnabled, touchLocalRecordUpdatedAt } from './core'
@@ -78,6 +84,7 @@ function pickSettingsTargets(settings: UserSettings) {
     carbTarget: settings.carbTarget,
     fatTarget: settings.fatTarget,
     goalMode: settings.goalMode,
+    fatLossMode: settings.fatLossMode ?? 'standard_cut',
     targetWeeklyRatePercent: settings.targetWeeklyRatePercent,
   }
 }
@@ -92,6 +99,7 @@ function pickSettingsPreferences(settings: UserSettings) {
     coachConsentAt: settings.coachConsentAt,
     dailyStepTarget: settings.dailyStepTarget,
     weeklyCardioMinuteTarget: settings.weeklyCardioMinuteTarget,
+    coachingMinCalories: settings.coachingMinCalories,
   }
 }
 
@@ -99,6 +107,9 @@ function pickSettingsCoachingRuntime(settings: UserSettings) {
   return {
     tdeeEstimate: settings.tdeeEstimate,
     coachingDismissedAt: settings.coachingDismissedAt,
+    goalModeChangedAt: settings.goalModeChangedAt,
+    goalModeChangedFrom: settings.goalModeChangedFrom,
+    fatLossModeChangedAt: settings.fatLossModeChangedAt,
   }
 }
 
@@ -225,6 +236,76 @@ export function queueActivitySyncMutations(previousEntries: ActivityEntry[], nex
   )
 }
 
+export function queueWellnessSyncMutations(previousEntries: WellnessEntry[], nextEntries: WellnessEntry[]): void {
+  queueGenericDiff(
+    'wellness',
+    previousEntries,
+    nextEntries,
+    (entry) => `${entry.provider}:${entry.date}`,
+    (entry, deletedAt) => ({
+      ...entry,
+      deletedAt,
+      updatedAt: deletedAt,
+    }),
+    (entry) => entry.updatedAt ?? entry.sourceUpdatedAt ?? entry.date,
+    (entry) => Boolean(entry.deletedAt),
+  )
+}
+
+export function queueRecoveryCheckInSyncMutations(
+  previousEntries: RecoveryCheckIn[],
+  nextEntries: RecoveryCheckIn[],
+): void {
+  queueGenericDiff(
+    'recovery_check_ins',
+    previousEntries,
+    nextEntries,
+    (entry) => entry.date,
+    (entry, deletedAt) => ({
+      ...entry,
+      deletedAt,
+      updatedAt: deletedAt,
+    }),
+    (entry) => entry.updatedAt ?? entry.deletedAt ?? entry.date,
+    (entry) => Boolean(entry.deletedAt),
+  )
+}
+
+export function queueDietPhaseSyncMutations(previousEntries: DietPhase[], nextEntries: DietPhase[]): void {
+  queueGenericDiff(
+    'diet_phases',
+    previousEntries,
+    nextEntries,
+    (entry) => entry.id,
+    (entry, deletedAt) => ({
+      ...entry,
+      status: 'cancelled' as const,
+      updatedAt: deletedAt,
+    }),
+    (entry) => entry.updatedAt,
+    (entry) => entry.status === 'cancelled',
+  )
+}
+
+export function queueDietPhaseEventSyncMutations(
+  previousEntries: DietPhaseEvent[],
+  nextEntries: DietPhaseEvent[],
+): void {
+  queueGenericDiff(
+    'diet_phase_events',
+    previousEntries,
+    nextEntries,
+    (entry) => entry.id,
+    (entry, deletedAt) => ({
+      ...entry,
+      deletedAt,
+      updatedAt: deletedAt,
+    }),
+    (entry) => entry.updatedAt ?? entry.createdAt,
+    (entry) => Boolean(entry.deletedAt),
+  )
+}
+
 export function queueInterventionSyncMutations(
   previousEntries: InterventionEntry[],
   nextEntries: InterventionEntry[],
@@ -295,5 +376,33 @@ export function queueFavoriteFoodSyncMutations(
     }),
     (favorite) => favorite.deletedAt ?? favorite.updatedAt ?? favorite.createdAt,
     (favorite) => Boolean(favorite.deletedAt),
+  )
+}
+
+export function queueWeeklyCheckInSyncMutations(
+  previousCheckIns: CheckInRecord[],
+  nextCheckIns: CheckInRecord[],
+): void {
+  queueGenericDiff(
+    'weekly_check_ins',
+    previousCheckIns,
+    nextCheckIns,
+    (checkIn) => checkIn.id,
+    () => null,
+    (checkIn) => checkIn.updatedAt ?? checkIn.appliedAt ?? checkIn.createdAt,
+  )
+}
+
+export function queueCoachDecisionSyncMutations(
+  previousDecisions: CoachingDecisionRecord[],
+  nextDecisions: CoachingDecisionRecord[],
+): void {
+  queueGenericDiff(
+    'coach_decisions',
+    previousDecisions,
+    nextDecisions,
+    (decision) => decision.id,
+    () => null,
+    (decision) => decision.updatedAt ?? decision.createdAt,
   )
 }

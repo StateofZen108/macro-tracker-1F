@@ -1,6 +1,7 @@
 import type { AdherenceScore, ConfounderSet, DataQualityScore } from '../../../types'
 import { COACH_ENGINE_CONFIG } from './_constants'
 import { compareDateKeys, median, roundTo } from './_helpers'
+import { evaluateCoachRuntimeState } from '../runtime'
 import type {
   CoachingEngineInputContext,
   InterventionSummary,
@@ -456,11 +457,19 @@ export function assessQuality(
   intervention: InterventionSummary,
   trendAvailable: boolean,
 ): QualityAssessment {
+  const runtime = evaluateCoachRuntimeState(
+    context.runtime,
+    {
+      goalMode: context.settings.goalMode,
+      fatLossMode: context.settings.fatLossMode ?? 'standard_cut',
+    },
+    context.windowEnd,
+  )
   const dataQuality = assessDataQuality(context, summary, intervention)
   const adherence = assessAdherence(context, summary)
   const confounders = buildConfounderSet(context, summary, intervention)
   const blockedReasons: QualityAssessment['blockedReasons'] = []
-  const reasonCodes: string[] = []
+  const reasonCodes: QualityAssessment['reasonCodes'] = []
 
   if (dataQuality.eligibleDays < COACH_ENGINE_CONFIG.minEligibleDays) {
     blockedReasons.push({
@@ -562,6 +571,7 @@ export function assessQuality(
     status,
     isActionable: blockedReasons.length === 0,
     adherenceTone,
+    runtime,
   }
 }
 

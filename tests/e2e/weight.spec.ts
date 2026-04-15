@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test'
-import { expectCenterHittable, goToSettings, goToWeight, resetApp } from './helpers/app'
+import {
+  expectCenterHittable,
+  getSettingsCalorieTargetInput,
+  goToSettings,
+  goToWeight,
+  resetApp,
+} from './helpers/app'
 import { seedWeeklyCheckInWindow } from './helpers/seed'
 
 test.beforeEach(async ({ page }) => {
@@ -50,6 +56,6 @@ test('weekly check-in can apply an athlete prep recommendation', async ({ page }
   await expect(page.getByText(/applied/i).first()).toBeVisible()
 
   await goToSettings(page)
-  await expect(page.getByLabel('Calories')).toHaveValue('1900')
+  await expect(getSettingsCalorieTargetInput(page)).toHaveValue('1900')
   await expect(page.getByLabel(/Carbs \(g\)/i)).toHaveValue('175')
 })

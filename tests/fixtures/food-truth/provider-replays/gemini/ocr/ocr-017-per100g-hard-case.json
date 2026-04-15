@@ -1,0 +1,43 @@
+{
+  "fixtureId": "ocr-017-per100g-hard-case",
+  "provider": "gemini",
+  "payload": {
+    "candidate": {
+      "name": "Per100G Hard Case",
+      "brand": "Label Hard Case",
+      "servingSize": 100,
+      "servingUnit": "g",
+      "calories": 380,
+      "protein": 12,
+      "carbs": 41,
+      "fat": 18,
+      "fiber": 8
+    },
+    "fields": {
+      "servingSizeText": {
+        "value": "100 g"
+      },
+      "calories": {
+        "value": 380,
+        "sourceText": "380 kcal"
+      },
+      "protein": {
+        "value": 12,
+        "sourceText": "12 g"
+      },
+      "carbs": {
+        "value": 41,
+        "sourceText": "41 g"
+      },
+      "fat": {
+        "value": 18,
+        "sourceText": "18 g"
+      },
+      "fiber": {
+        "value": 8,
+        "sourceText": "8 g"
+      }
+    },
+    "warnings": []
+  }
+}

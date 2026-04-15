@@ -1,5 +1,16 @@
 import { expect, test } from '@playwright/test'
-import { addFoodToMeal, ensureMealExpanded, entryRow, goToLog, goToSettings, openMealSheet, resetApp } from './helpers/app'
+import {
+  addFoodToMeal,
+  ensureMealExpanded,
+  entryRow,
+  getAddFoodSearchInput,
+  getSelectedFoodCard,
+  getSelectedFoodServingMeta,
+  goToLog,
+  goToSettings,
+  openMealSheet,
+  resetApp,
+} from './helpers/app'
 
 const OCR_SESSION_RESPONSE = {
   session: {
@@ -186,7 +197,7 @@ test('custom food history stays frozen after edit and archive', async ({ page })
   await expect(betaChickenRow).toContainText('200 cal')
 
   await page.getByRole('button', { name: /add food to breakfast/i }).click()
-  await page.getByPlaceholder('Search your saved foods').fill('Beta Chicken')
+  await getAddFoodSearchInput(page).fill('Beta Chicken')
   await expect(page.getByText(/no local foods matched that search/i)).toBeVisible()
 })
 
@@ -266,9 +277,11 @@ test('nutrition-label OCR review saves a new food and logs it', async ({ page })
   await expect(addFoodSheet.getByLabel('Serving unit')).toHaveValue('g')
   await addFoodSheet.getByRole('button', { name: /save reviewed food/i }).click()
 
-  await expect(addFoodSheet.getByText('Selected food')).toBeVisible()
-  await expect(addFoodSheet.getByText('OCR Oats').first()).toBeVisible()
-  await expect(addFoodSheet.getByText('Test Brand • 28g').first()).toBeVisible()
+  const selectedFoodCard = getSelectedFoodCard(page)
+  await expect(selectedFoodCard.getByText('Selected food')).toBeVisible()
+  await expect(selectedFoodCard.getByText('OCR Oats')).toBeVisible()
+  await expect(selectedFoodCard.getByText('Test Brand')).toBeVisible()
+  await expect(getSelectedFoodServingMeta(page)).toContainText('28g')
   await addFoodSheet.getByRole('button', { name: /add to meal/i }).click()
 
   await goToLog(page)
@@ -320,3 +333,4 @@ test('nutrition-label review blocks save when a required field is cleared', asyn
   await addFoodSheet.getByLabel('Calories').fill('')
   await expect(addFoodSheet.getByRole('button', { name: /save reviewed food/i })).toBeDisabled()
 })
+

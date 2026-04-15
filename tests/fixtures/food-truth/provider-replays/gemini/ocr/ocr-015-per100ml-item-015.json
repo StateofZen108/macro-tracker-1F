@@ -1,0 +1,43 @@
+{
+  "fixtureId": "ocr-015-per100ml-item-015",
+  "provider": "gemini",
+  "payload": {
+    "candidate": {
+      "name": "Per100ML Item 015",
+      "brand": "Label Bench 015",
+      "servingSize": 100,
+      "servingUnit": "ml",
+      "calories": 45,
+      "protein": 9,
+      "carbs": 4,
+      "fat": 1,
+      "fiber": 0
+    },
+    "fields": {
+      "servingSizeText": {
+        "value": "100 ml"
+      },
+      "calories": {
+        "value": 45,
+        "sourceText": "45 kcal"
+      },
+      "protein": {
+        "value": 9,
+        "sourceText": "9 g"
+      },
+      "carbs": {
+        "value": 4,
+        "sourceText": "4 g"
+      },
+      "fat": {
+        "value": 1,
+        "sourceText": "1 g"
+      },
+      "fiber": {
+        "value": 0,
+        "sourceText": "0 g"
+      }
+    },
+    "warnings": []
+  }
+}

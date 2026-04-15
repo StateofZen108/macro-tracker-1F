@@ -1,0 +1,576 @@
+[
+  {
+    "id": "barcode-001-pantry-yogurt-local",
+    "barcode": "700000000001",
+    "productSlug": "pantry-yogurt-local",
+    "expectedName": "Pantry Yogurt Local",
+    "expectedBrand": "Pantry Dairy",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 120,
+      "protein": 18,
+      "carbs": 7,
+      "fat": 0,
+      "fiber": 0
+    },
+    "localStateSeedId": "seed-local-barcode-001",
+    "notes": "Local exact barcode precedence."
+  },
+  {
+    "id": "barcode-002-pantry-remote-link",
+    "barcode": "700000000002",
+    "productSlug": "pantry-remote-link",
+    "expectedName": "Pantry Remote Link",
+    "expectedBrand": "Pantry Snacks",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 210,
+      "protein": 20,
+      "carbs": 15,
+      "fat": 8,
+      "fiber": 5
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-local-002",
+    "localStateSeedId": "seed-local-remote-002",
+    "notes": "Local remote-reference precedence."
+  },
+  {
+    "id": "barcode-003-fallback-shake",
+    "barcode": "700000000003",
+    "productSlug": "fallback-shake-003",
+    "expectedName": "Fallback Shake 003",
+    "expectedBrand": "Fallback Brand",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100ml",
+    "expectedServingBasisSource": "per100ml_fallback",
+    "expectedNutrition": {
+      "calories": 45,
+      "protein": 9,
+      "carbs": 3,
+      "fat": 0.5,
+      "fiber": 0
+    },
+    "expectedProvider": "open_food_facts",
+    "expectedRemoteKey": "700000000003",
+    "notes": "FatSecret failure with OFF fallback."
+  },
+  {
+    "id": "barcode-004-granola-per100",
+    "barcode": "700000000004",
+    "productSlug": "granola-004",
+    "expectedName": "Granola 004",
+    "expectedBrand": "Bench Pantry",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100g",
+    "expectedServingBasisSource": "per100g_fallback",
+    "expectedNutrition": {
+      "calories": 420,
+      "protein": 11,
+      "carbs": 64,
+      "fat": 13,
+      "fiber": 7
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-004",
+    "notes": "Per-100 downgrade case."
+  },
+  {
+    "id": "barcode-005-protein-item-005",
+    "barcode": "000000000005",
+    "productSlug": "protein-item-005",
+    "expectedName": "Protein Item 005",
+    "expectedBrand": "Bench Brand 005",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 95,
+      "protein": 15,
+      "carbs": 9,
+      "fat": 1,
+      "fiber": 1
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-005"
+  },
+  {
+    "id": "barcode-006-protein-item-006",
+    "barcode": "000000000006",
+    "productSlug": "protein-item-006",
+    "expectedName": "Protein Item 006",
+    "expectedBrand": "Bench Brand 006",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 96,
+      "protein": 16,
+      "carbs": 10,
+      "fat": 1.5,
+      "fiber": 2
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-006"
+  },
+  {
+    "id": "barcode-007-protein-item-007",
+    "barcode": "000000000007",
+    "productSlug": "protein-item-007",
+    "expectedName": "Protein Item 007",
+    "expectedBrand": "Bench Brand 007",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 97,
+      "protein": 17,
+      "carbs": 4,
+      "fat": 2,
+      "fiber": 3
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-007"
+  },
+  {
+    "id": "barcode-008-protein-item-008",
+    "barcode": "000000000008",
+    "productSlug": "protein-item-008",
+    "expectedName": "Protein Item 008",
+    "expectedBrand": "Bench Brand 008",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 98,
+      "protein": 18,
+      "carbs": 5,
+      "fat": 2.5,
+      "fiber": 0
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-008"
+  },
+  {
+    "id": "barcode-009-protein-item-009",
+    "barcode": "000000000009",
+    "productSlug": "protein-item-009",
+    "expectedName": "Protein Item 009",
+    "expectedBrand": "Bench Brand 009",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 99,
+      "protein": 10,
+      "carbs": 6,
+      "fat": 3,
+      "fiber": 1
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-009"
+  },
+  {
+    "id": "barcode-010-protein-item-010",
+    "barcode": "000000000010",
+    "productSlug": "protein-item-010",
+    "expectedName": "Protein Item 010",
+    "expectedBrand": "Bench Brand 010",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 100,
+      "protein": 11,
+      "carbs": 7,
+      "fat": 1,
+      "fiber": 2
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-010"
+  },
+  {
+    "id": "barcode-011-protein-item-011",
+    "barcode": "000000000011",
+    "productSlug": "protein-item-011",
+    "expectedName": "Protein Item 011",
+    "expectedBrand": "Bench Brand 011",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 101,
+      "protein": 12,
+      "carbs": 8,
+      "fat": 1.5,
+      "fiber": 3
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-011"
+  },
+  {
+    "id": "barcode-012-protein-item-012",
+    "barcode": "000000000012",
+    "productSlug": "protein-item-012",
+    "expectedName": "Protein Item 012",
+    "expectedBrand": "Bench Brand 012",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 102,
+      "protein": 13,
+      "carbs": 9,
+      "fat": 2,
+      "fiber": 0
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-012"
+  },
+  {
+    "id": "barcode-013-protein-item-013",
+    "barcode": "000000000013",
+    "productSlug": "protein-item-013",
+    "expectedName": "Protein Item 013",
+    "expectedBrand": "Bench Brand 013",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 103,
+      "protein": 14,
+      "carbs": 10,
+      "fat": 2.5,
+      "fiber": 1
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-013"
+  },
+  {
+    "id": "barcode-014-protein-item-014",
+    "barcode": "000000000014",
+    "productSlug": "protein-item-014",
+    "expectedName": "Protein Item 014",
+    "expectedBrand": "Bench Brand 014",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 104,
+      "protein": 15,
+      "carbs": 4,
+      "fat": 3,
+      "fiber": 2
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-014"
+  },
+  {
+    "id": "barcode-015-protein-item-015",
+    "barcode": "000000000015",
+    "productSlug": "protein-item-015",
+    "expectedName": "Protein Item 015",
+    "expectedBrand": "Bench Brand 015",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 105,
+      "protein": 16,
+      "carbs": 5,
+      "fat": 1,
+      "fiber": 3
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-015"
+  },
+  {
+    "id": "barcode-016-protein-item-016",
+    "barcode": "000000000016",
+    "productSlug": "protein-item-016",
+    "expectedName": "Protein Item 016",
+    "expectedBrand": "Bench Brand 016",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 106,
+      "protein": 17,
+      "carbs": 6,
+      "fat": 1.5,
+      "fiber": 0
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-016"
+  },
+  {
+    "id": "barcode-017-protein-item-017",
+    "barcode": "000000000017",
+    "productSlug": "protein-item-017",
+    "expectedName": "Protein Item 017",
+    "expectedBrand": "Bench Brand 017",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 107,
+      "protein": 18,
+      "carbs": 7,
+      "fat": 2,
+      "fiber": 1
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-017"
+  },
+  {
+    "id": "barcode-018-protein-item-018",
+    "barcode": "000000000018",
+    "productSlug": "protein-item-018",
+    "expectedName": "Protein Item 018",
+    "expectedBrand": "Bench Brand 018",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 108,
+      "protein": 10,
+      "carbs": 8,
+      "fat": 2.5,
+      "fiber": 2
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-018"
+  },
+  {
+    "id": "barcode-019-protein-item-019",
+    "barcode": "000000000019",
+    "productSlug": "protein-item-019",
+    "expectedName": "Protein Item 019",
+    "expectedBrand": "Bench Brand 019",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 109,
+      "protein": 11,
+      "carbs": 9,
+      "fat": 3,
+      "fiber": 3
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-019"
+  },
+  {
+    "id": "barcode-020-protein-item-020",
+    "barcode": "000000000020",
+    "productSlug": "protein-item-020",
+    "expectedName": "Protein Item 020",
+    "expectedBrand": "Bench Brand 020",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 110,
+      "protein": 12,
+      "carbs": 10,
+      "fat": 1,
+      "fiber": 0
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-020"
+  },
+  {
+    "id": "barcode-021-protein-item-021",
+    "barcode": "000000000021",
+    "productSlug": "protein-item-021",
+    "expectedName": "Protein Item 021",
+    "expectedBrand": "Bench Brand 021",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 111,
+      "protein": 13,
+      "carbs": 4,
+      "fat": 1.5,
+      "fiber": 1
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-021"
+  },
+  {
+    "id": "barcode-022-protein-item-022",
+    "barcode": "000000000022",
+    "productSlug": "protein-item-022",
+    "expectedName": "Protein Item 022",
+    "expectedBrand": "Bench Brand 022",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 112,
+      "protein": 14,
+      "carbs": 5,
+      "fat": 2,
+      "fiber": 2
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-022"
+  },
+  {
+    "id": "barcode-023-protein-item-023",
+    "barcode": "000000000023",
+    "productSlug": "protein-item-023",
+    "expectedName": "Protein Item 023",
+    "expectedBrand": "Bench Brand 023",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 113,
+      "protein": 15,
+      "carbs": 6,
+      "fat": 2.5,
+      "fiber": 3
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-023"
+  },
+  {
+    "id": "barcode-024-protein-item-024",
+    "barcode": "000000000024",
+    "productSlug": "protein-item-024",
+    "expectedName": "Protein Item 024",
+    "expectedBrand": "Bench Brand 024",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 114,
+      "protein": 16,
+      "carbs": 7,
+      "fat": 3,
+      "fiber": 0
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-024"
+  },
+  {
+    "id": "barcode-025-protein-item-025",
+    "barcode": "000000000025",
+    "productSlug": "protein-item-025",
+    "expectedName": "Protein Item 025",
+    "expectedBrand": "Bench Brand 025",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 115,
+      "protein": 17,
+      "carbs": 8,
+      "fat": 1,
+      "fiber": 1
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-025"
+  },
+  {
+    "id": "barcode-026-protein-item-026",
+    "barcode": "000000000026",
+    "productSlug": "protein-item-026",
+    "expectedName": "Protein Item 026",
+    "expectedBrand": "Bench Brand 026",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 116,
+      "protein": 18,
+      "carbs": 9,
+      "fat": 1.5,
+      "fiber": 2
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-026"
+  },
+  {
+    "id": "barcode-027-protein-item-027",
+    "barcode": "000000000027",
+    "productSlug": "protein-item-027",
+    "expectedName": "Protein Item 027",
+    "expectedBrand": "Bench Brand 027",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 117,
+      "protein": 10,
+      "carbs": 10,
+      "fat": 2,
+      "fiber": 3
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-027"
+  },
+  {
+    "id": "barcode-028-protein-item-028",
+    "barcode": "000000000028",
+    "productSlug": "protein-item-028",
+    "expectedName": "Protein Item 028",
+    "expectedBrand": "Bench Brand 028",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 118,
+      "protein": 11,
+      "carbs": 4,
+      "fat": 2.5,
+      "fiber": 0
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-028"
+  },
+  {
+    "id": "barcode-029-protein-item-029",
+    "barcode": "000000000029",
+    "productSlug": "protein-item-029",
+    "expectedName": "Protein Item 029",
+    "expectedBrand": "Bench Brand 029",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 119,
+      "protein": 12,
+      "carbs": 5,
+      "fat": 3,
+      "fiber": 1
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-029"
+  },
+  {
+    "id": "barcode-030-protein-item-030",
+    "barcode": "000000000030",
+    "productSlug": "protein-item-030",
+    "expectedName": "Protein Item 030",
+    "expectedBrand": "Bench Brand 030",
+    "expectedTrustLevel": "exact_autolog",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "provider_serving",
+    "expectedNutrition": {
+      "calories": 120,
+      "protein": 13,
+      "carbs": 6,
+      "fat": 1,
+      "fiber": 2
+    },
+    "expectedProvider": "fatsecret",
+    "expectedRemoteKey": "fs-030"
+  }
+]

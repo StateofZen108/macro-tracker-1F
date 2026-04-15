@@ -1,0 +1,39 @@
+name: Food Truth Branch Protection
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  food-truth-branch-protection-apply:
+    name: food-truth-branch-protection-apply
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/sync-food-truth-branch-protection.mjs apply
+        env:
+          BRANCH_PROTECTION_REPOSITORY: ${{ github.repository }}
+          BRANCH_PROTECTION_ADMIN_TOKEN: ${{ secrets.BRANCH_PROTECTION_ADMIN_TOKEN }}
+
+  food-truth-branch-protection-verify:
+    name: food-truth-branch-protection-verify
+    runs-on: ubuntu-latest
+    needs:
+      - food-truth-branch-protection-apply
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/sync-food-truth-branch-protection.mjs verify
+        env:
+          BRANCH_PROTECTION_REPOSITORY: ${{ github.repository }}
+          BRANCH_PROTECTION_ADMIN_TOKEN: ${{ secrets.BRANCH_PROTECTION_ADMIN_TOKEN }}

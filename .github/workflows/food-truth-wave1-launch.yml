@@ -1,0 +1,41 @@
+name: Food Truth Wave 1 Launch Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  food-truth-wave1-launch-gate:
+    name: food-truth-wave1-launch-gate
+    runs-on: ubuntu-latest
+    env:
+      MODE: production
+      VITE_FF_IMPORT_TRUST_V1: 'true'
+      VITE_FF_BARCODE_TRUTH_UI_V1: 'true'
+      VITE_FF_LABEL_OCR_TRUST_V1: 'true'
+      VITE_FF_BARCODE_PROVIDER_FATSECRET_V1: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:food-truth:unit
+      - run: npm run test:food-truth:integration
+      - run: npm run test:food-truth:preview
+      - run: npm run test:food-truth:benchmark
+      - run: npm run test:food-truth:benchmark-guard
+      - run: npm run test:food-truth:wave1-launch
+        env:
+          MODE: production
+          VITE_FF_IMPORT_TRUST_V1: 'true'
+          VITE_FF_BARCODE_TRUTH_UI_V1: 'true'
+          VITE_FF_LABEL_OCR_TRUST_V1: 'true'
+          VITE_FF_BARCODE_PROVIDER_FATSECRET_V1: 'false'
+          BRANCH_PROTECTION_REPOSITORY: ${{ github.repository }}
+          BRANCH_PROTECTION_ADMIN_TOKEN: ${{ secrets.BRANCH_PROTECTION_ADMIN_TOKEN }}

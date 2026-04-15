@@ -1,0 +1,16 @@
+{
+  "fixtureId": "barcode-003-fallback-shake",
+  "requestKey": "POST https://oauth.fatsecret.com/connect/token",
+  "responses": [
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "access_token": "benchmark-token",
+        "expires_in": 3600
+      }
+    }
+  ]
+}

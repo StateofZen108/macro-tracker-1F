@@ -22,6 +22,14 @@ function parseLimit(value: string | null): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+function parseLocale(value: string | null): 'en-GB' | 'en-US' | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  return value === 'en-US' ? 'en-US' : value === 'en-GB' ? 'en-GB' : undefined
+}
+
 async function handleGet(request: Request): Promise<Response> {
   const startedAt = Date.now()
   try {
@@ -46,6 +54,7 @@ async function handleGet(request: Request): Promise<Response> {
     const response = await searchCatalogProviders(query, {
       limit: parseLimit(url.searchParams.get('limit')),
       cursor: url.searchParams.get('cursor') ?? undefined,
+      locale: parseLocale(url.searchParams.get('locale')),
     })
 
     logApiEvent({

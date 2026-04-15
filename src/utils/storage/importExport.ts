@@ -7,8 +7,13 @@ import {
   exportBackupFile as exportLegacyBackupFile,
   validateBackupText as validateLegacyBackupText,
 } from './internal'
+import {
+  loadCoachingDecisionHistory,
+  saveCoachingDecisionHistory,
+} from './coachDecisions'
 import { loadFavoriteFoods, saveFavoriteFoods } from './favorites'
 import { loadFoods } from './foods'
+import { loadCheckInHistory, saveCheckInHistory } from './checkIns'
 import { loadRecipes, saveRecipes } from './recipes'
 
 function ok<T>(data: T): ActionResult<T> {
@@ -25,12 +30,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizeBackupAliases(rawBackup: BackupFile): BackupFile {
   const savedMeals = rawBackup.savedMeals ?? rawBackup.mealTemplates ?? []
+  const weeklyCheckIns = rawBackup.weeklyCheckIns ?? rawBackup.checkInHistory ?? []
   return {
     ...rawBackup,
     savedMeals,
     mealTemplates: savedMeals,
+    weeklyCheckIns,
+    checkInHistory: weeklyCheckIns,
     recipes: rawBackup.recipes ?? [],
     favoriteFoods: rawBackup.favoriteFoods ?? [],
+    coachDecisions: rawBackup.coachDecisions ?? [],
   }
 }
 
@@ -52,7 +61,7 @@ function normalizeBackupText(rawText: string): ActionResult<BackupFile> {
   }
 }
 
-function mergeExtraRecords<T extends { deletedAt?: string }>(
+function mergeExtraRecords<T>(
   currentItems: T[],
   importedItems: T[],
   getId: (value: T) => string,
@@ -99,8 +108,10 @@ export function exportBackupFile(): ActionResult<BackupFile> {
     ...legacyResult.data,
     mealTemplates: undefined,
     savedMeals: legacyResult.data.mealTemplates ?? [],
+    weeklyCheckIns: legacyResult.data.checkInHistory ?? [],
     recipes: loadRecipes(),
     favoriteFoods: loadFavoriteFoods(),
+    coachDecisions: loadCoachingDecisionHistory(),
   })
 }
 
@@ -122,8 +133,13 @@ export function validateBackupText(rawText: string): ActionResult<BackupPreview>
       ...validationResult.data.backup,
       savedMeals: normalizedResult.data.savedMeals ?? validationResult.data.backup.mealTemplates ?? [],
       mealTemplates: normalizedResult.data.savedMeals ?? validationResult.data.backup.mealTemplates,
+      weeklyCheckIns:
+        normalizedResult.data.weeklyCheckIns ?? validationResult.data.backup.checkInHistory ?? [],
+      checkInHistory:
+        normalizedResult.data.weeklyCheckIns ?? validationResult.data.backup.checkInHistory ?? [],
       recipes: normalizedResult.data.recipes ?? [],
       favoriteFoods: normalizedResult.data.favoriteFoods ?? [],
+      coachDecisions: normalizedResult.data.coachDecisions ?? [],
     },
   })
 }
@@ -153,6 +169,8 @@ export function applyBackupImport(
 
   const importedRecipes = normalizedBackup.recipes ?? []
   const importedFavorites = normalizedBackup.favoriteFoods ?? []
+  const importedWeeklyCheckIns = normalizedBackup.weeklyCheckIns ?? normalizedBackup.checkInHistory ?? []
+  const importedCoachDecisions = normalizedBackup.coachDecisions ?? []
 
   const recipeResult = saveRecipes(
     mode === 'replace'
@@ -175,6 +193,34 @@ export function applyBackupImport(
   )
   if (!favoriteResult.ok) {
     return favoriteResult as ActionResult<BackupPreview['counts']>
+  }
+
+  const checkInResult = saveCheckInHistory(
+    mode === 'replace'
+      ? importedWeeklyCheckIns
+      : mergeExtraRecords(
+          loadCheckInHistory(),
+          importedWeeklyCheckIns,
+          (checkIn) => checkIn.id,
+          (checkIn) => checkIn.updatedAt ?? checkIn.appliedAt ?? checkIn.createdAt,
+        ),
+  )
+  if (!checkInResult.ok) {
+    return checkInResult as ActionResult<BackupPreview['counts']>
+  }
+
+  const coachDecisionResult = saveCoachingDecisionHistory(
+    mode === 'replace'
+      ? importedCoachDecisions
+      : mergeExtraRecords(
+          loadCoachingDecisionHistory(),
+          importedCoachDecisions,
+          (decision) => decision.id,
+          (decision) => decision.updatedAt ?? decision.createdAt,
+        ),
+  )
+  if (!coachDecisionResult.ok) {
+    return coachDecisionResult as ActionResult<BackupPreview['counts']>
   }
 
   const integrityResult = recomputeImportedSyncIntegrity()

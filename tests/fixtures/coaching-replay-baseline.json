@@ -1,0 +1,9 @@
+{
+  "overallDecisionMatchRate": 75,
+  "overallBlockedReasonMatchRate": 78.57142857142857,
+  "overallFalseAdjustmentRate": 14.285714285714285,
+  "fatLossDecisionMatchRate": 66.66666666666666,
+  "fatLossFalseAdjustmentRate": 22.22222222222222,
+  "maintenanceMismatchCount": 1,
+  "gainMismatchCount": 0
+}

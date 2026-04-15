@@ -4,6 +4,7 @@ import type {
   AppActionError,
   BackupFile,
   BackupPreview,
+  CatalogProvider,
   CheckInRecord,
   CoachingCalibrationRecord,
   CoachFeedback,
@@ -11,6 +12,8 @@ import type {
   CoachQueuedQuestion,
   CoachThreadState,
   DayMeta,
+  DietPhase,
+  DietPhaseEvent,
   Food,
   FoodLogEntry,
   LabelNutritionField,
@@ -22,11 +25,20 @@ import type {
   MealTemplate,
   MealType,
   RecoverableDataIssue,
+  RecoveryCheckIn,
   UiPrefs,
   UserSettings,
+  WellnessEntry,
   WeightEntry,
   WeightUnit,
 } from '../../types'
+import { normalizeBlockedReasonCode, normalizeReasonCode } from '../../domain/coaching/codes'
+import {
+  buildSystemSearchAliases,
+  mergeFoodRemoteReferences,
+  mergeSearchAliases,
+  normalizeRemoteReferences,
+} from '../../domain/foods/personalLibrary'
 import {
   queueActivitySyncMutations,
   queueDayMetaSyncMutations,
@@ -56,6 +68,10 @@ export const STORAGE_KEYS = {
   activityLog: 'mt_activity_log',
   interventions: 'mt_interventions',
   checkInHistory: 'mt_checkin_history',
+  wellness: 'mt_wellness',
+  recoveryCheckIns: 'mt_recovery_check_ins',
+  dietPhases: 'mt_diet_phases',
+  dietPhaseEvents: 'mt_diet_phase_events',
   coachingCalibration: 'mt_coaching_calibration',
   coachThread: 'mt_coach_thread',
   coachFeedback: 'mt_coach_feedback',
@@ -93,6 +109,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   fatTarget: 65,
   weightUnit: 'lb',
   goalMode: 'maintain',
+  fatLossMode: 'standard_cut',
   coachingEnabled: true,
   checkInWeekday: 1,
   targetWeeklyRatePercent: getDefaultTargetWeeklyRatePercent('maintain'),
@@ -148,6 +165,10 @@ interface StorageCache {
   activityLog: ActivityEntry[]
   interventions: InterventionEntry[]
   checkInHistory: CheckInRecord[]
+  wellness: WellnessEntry[]
+  recoveryCheckIns: RecoveryCheckIn[]
+  dietPhases: DietPhase[]
+  dietPhaseEvents: DietPhaseEvent[]
   coachingCalibration: CoachingCalibrationRecord[]
   coachThread: CoachThreadState
   coachFeedback: CoachFeedback[]
@@ -175,6 +196,10 @@ interface RawStorageSnapshot {
   activityLog: string | null
   interventions: string | null
   checkInHistory: string | null
+  wellness: string | null
+  recoveryCheckIns: string | null
+  dietPhases: string | null
+  dietPhaseEvents: string | null
   coachingCalibration: string | null
   coachThread: string | null
   coachFeedback: string | null
@@ -193,6 +218,10 @@ interface NormalizedStorageState {
   activityLog: ActivityEntry[]
   interventions: InterventionEntry[]
   checkInHistory: CheckInRecord[]
+  wellness: WellnessEntry[]
+  recoveryCheckIns: RecoveryCheckIn[]
+  dietPhases: DietPhase[]
+  dietPhaseEvents: DietPhaseEvent[]
   coachingCalibration: CoachingCalibrationRecord[]
   coachThread: CoachThreadState
   coachFeedback: CoachFeedback[]
@@ -214,6 +243,10 @@ const storageCache: StorageCache = {
   activityLog: [],
   interventions: [],
   checkInHistory: [],
+  wellness: [],
+  recoveryCheckIns: [],
+  dietPhases: [],
+  dietPhaseEvents: [],
   coachingCalibration: [],
   coachThread: {
     messages: [],
@@ -379,6 +412,10 @@ function captureRawStorageSnapshot(): RawStorageSnapshot {
       activityLog: null,
       interventions: null,
       checkInHistory: null,
+      wellness: null,
+      recoveryCheckIns: null,
+      dietPhases: null,
+      dietPhaseEvents: null,
       coachingCalibration: null,
       coachThread: null,
       coachFeedback: null,
@@ -403,6 +440,10 @@ function captureRawStorageSnapshot(): RawStorageSnapshot {
     activityLog: window.localStorage.getItem(STORAGE_KEYS.activityLog),
     interventions: window.localStorage.getItem(STORAGE_KEYS.interventions),
     checkInHistory: window.localStorage.getItem(STORAGE_KEYS.checkInHistory),
+    wellness: window.localStorage.getItem(STORAGE_KEYS.wellness),
+    recoveryCheckIns: window.localStorage.getItem(STORAGE_KEYS.recoveryCheckIns),
+    dietPhases: window.localStorage.getItem(STORAGE_KEYS.dietPhases),
+    dietPhaseEvents: window.localStorage.getItem(STORAGE_KEYS.dietPhaseEvents),
     coachingCalibration: window.localStorage.getItem(STORAGE_KEYS.coachingCalibration),
     coachThread: window.localStorage.getItem(STORAGE_KEYS.coachThread),
     coachFeedback: window.localStorage.getItem(STORAGE_KEYS.coachFeedback),
@@ -433,12 +474,44 @@ function broadcastStorageChange(): void {
   })
 }
 
+function scheduleDeferredStorageTail(options: {
+  broadcast: boolean
+  persistCoreSnapshotReason?: string
+}): void {
+  const run = async () => {
+    if (options.broadcast) {
+      broadcastStorageChange()
+    }
+
+    if (options.persistCoreSnapshotReason) {
+      await persistCoreDomainsToIndexedDb(options.persistCoreSnapshotReason)
+    }
+  }
+
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        void run()
+      }, 0)
+    })
+    return
+  }
+
+  setTimeout(() => {
+    void run()
+  }, 0)
+}
+
 function buildCoreIndexedDbSnapshot() {
   return {
     foods: storageCache.foods,
     settings: storageCache.settings,
     weights: storageCache.weights,
     mealTemplates: storageCache.mealTemplates,
+    wellness: storageCache.wellness,
+    recoveryCheckIns: storageCache.recoveryCheckIns,
+    dietPhases: storageCache.dietPhases,
+    dietPhaseEvents: storageCache.dietPhaseEvents,
     logsByDate: storageCache.logsByDate,
   }
 }
@@ -448,6 +521,10 @@ function clearCoreProtectedKeys(): void {
   storageCache.protectedKeys.delete(STORAGE_KEYS.settings)
   storageCache.protectedKeys.delete(STORAGE_KEYS.weights)
   storageCache.protectedKeys.delete(STORAGE_KEYS.mealTemplates)
+  storageCache.protectedKeys.delete(STORAGE_KEYS.wellness)
+  storageCache.protectedKeys.delete(STORAGE_KEYS.recoveryCheckIns)
+  storageCache.protectedKeys.delete(STORAGE_KEYS.dietPhases)
+  storageCache.protectedKeys.delete(STORAGE_KEYS.dietPhaseEvents)
   for (const key of [...storageCache.protectedKeys]) {
     if (key.startsWith(LOG_KEY_PREFIX)) {
       storageCache.protectedKeys.delete(key)
@@ -473,18 +550,38 @@ function clearCoreRecoveryIssues(): void {
       return false
     }
 
+    if (issue.key === STORAGE_KEYS.wellness) {
+      return false
+    }
+
+    if (issue.key === STORAGE_KEYS.recoveryCheckIns) {
+      return false
+    }
+
+    if (issue.key === STORAGE_KEYS.dietPhases) {
+      return false
+    }
+
+    if (issue.key === STORAGE_KEYS.dietPhaseEvents) {
+      return false
+    }
+
     return !issue.key.startsWith(LOG_KEY_PREFIX)
   })
 }
 
 function syncCoreDomainsFromIndexedDb(
   snapshot: {
-  foods: Food[]
-  settings: UserSettings
-  weights: WeightEntry[]
-  mealTemplates: MealTemplate[]
-  logsByDate: Record<string, FoodLogEntry[]>
-},
+    foods: Food[]
+    settings: UserSettings
+    weights: WeightEntry[]
+    mealTemplates: MealTemplate[]
+    wellness: WellnessEntry[]
+    recoveryCheckIns: RecoveryCheckIn[]
+    dietPhases: DietPhase[]
+    dietPhaseEvents: DietPhaseEvent[]
+    logsByDate: Record<string, FoodLogEntry[]>
+  },
   options?: {
     preserveRecoveryKeys?: Set<string>
   },
@@ -493,6 +590,14 @@ function syncCoreDomainsFromIndexedDb(
   storageCache.settings = normalizeSettings(snapshot.settings)
   storageCache.weights = dedupeWeightsByDate(snapshot.weights.map(normalizeWeightEntry))
   storageCache.mealTemplates = sortTemplatesByUsage(snapshot.mealTemplates.map(normalizeMealTemplate))
+  storageCache.wellness = sortWellnessEntries(snapshot.wellness.map(normalizeWellnessEntry))
+  storageCache.recoveryCheckIns = sortRecoveryCheckIns(
+    snapshot.recoveryCheckIns.map(normalizeRecoveryCheckIn),
+  )
+  storageCache.dietPhases = sortDietPhases(snapshot.dietPhases.map(normalizeDietPhase))
+  storageCache.dietPhaseEvents = sortDietPhaseEvents(
+    snapshot.dietPhaseEvents.map(normalizeDietPhaseEvent),
+  )
   storageCache.logsByDate = Object.fromEntries(
     Object.entries(snapshot.logsByDate).map(([date, entries]) => [
       date,
@@ -516,6 +621,10 @@ function applyNormalizedStateToCache(state: NormalizedStorageState): void {
   storageCache.activityLog = state.activityLog
   storageCache.interventions = state.interventions
   storageCache.checkInHistory = state.checkInHistory
+  storageCache.wellness = state.wellness
+  storageCache.recoveryCheckIns = state.recoveryCheckIns
+  storageCache.dietPhases = state.dietPhases
+  storageCache.dietPhaseEvents = state.dietPhaseEvents
   storageCache.coachingCalibration = state.coachingCalibration
   storageCache.coachThread = state.coachThread
   storageCache.coachFeedback = state.coachFeedback
@@ -714,9 +823,68 @@ function readLabelNutritionNumber(
   return matchedField && typeof matchedField.value === 'number' ? matchedField.value : undefined
 }
 
+function normalizeImportTrust(food: Pick<Food, 'importTrust'>): Food['importTrust'] {
+  if (!food.importTrust) {
+    return undefined
+  }
+
+  const level =
+    food.importTrust.level === 'exact_autolog' ||
+    food.importTrust.level === 'exact_review' ||
+    food.importTrust.level === 'blocked'
+      ? food.importTrust.level
+      : null
+  const servingBasis =
+    food.importTrust.servingBasis === 'serving' ||
+    food.importTrust.servingBasis === '100g' ||
+    food.importTrust.servingBasis === '100ml' ||
+    food.importTrust.servingBasis === 'unknown'
+      ? food.importTrust.servingBasis
+      : null
+  const servingBasisSource =
+    food.importTrust.servingBasisSource === 'provider_serving' ||
+    food.importTrust.servingBasisSource === 'provider_quantity' ||
+    food.importTrust.servingBasisSource === 'label_metric' ||
+    food.importTrust.servingBasisSource === 'label_parenthetical_metric' ||
+    food.importTrust.servingBasisSource === 'per100g_fallback' ||
+    food.importTrust.servingBasisSource === 'per100ml_fallback' ||
+    food.importTrust.servingBasisSource === 'manual_review'
+      ? food.importTrust.servingBasisSource
+      : null
+
+  if (!level || !servingBasis || !servingBasisSource) {
+    return undefined
+  }
+
+  const blockingIssues = Array.isArray(food.importTrust.blockingIssues)
+    ? food.importTrust.blockingIssues.filter(
+        (issue) =>
+          issue === 'missing_macros' ||
+          issue === 'estimated_serving' ||
+          issue === 'unknown_serving_basis' ||
+          issue === 'per100_fallback' ||
+          issue === 'provider_conflict' ||
+          issue === 'low_ocr_confidence',
+      )
+    : []
+
+  return {
+    level,
+    servingBasis,
+    servingBasisSource,
+    blockingIssues,
+    verifiedAt: readOptionalString(food.importTrust.verifiedAt),
+  }
+}
+
 function normalizeFoodRecord(food: Food): Food {
   const labelNutrition = normalizeLabelNutritionPanel(food.labelNutrition)
-  const provider = food.provider === 'open_food_facts' ? 'open_food_facts' : undefined
+  const provider =
+    food.provider === 'open_food_facts' ||
+    food.provider === 'usda_fdc' ||
+    food.provider === 'fatsecret'
+      ? food.provider
+      : undefined
   const importConfidence =
     food.importConfidence === 'direct_match' ||
     food.importConfidence === 'weak_match' ||
@@ -727,6 +895,15 @@ function normalizeFoodRecord(food: Food): Food {
     food.sourceQuality === 'high' || food.sourceQuality === 'medium' || food.sourceQuality === 'low'
       ? food.sourceQuality
       : undefined
+  const searchAliases = mergeSearchAliases({
+    existing: food.searchAliases,
+    additions: [],
+    systemAliases: buildSystemSearchAliases({
+      name: food.name,
+      brand: food.brand,
+      barcode: food.barcode,
+    }),
+  }).aliases
 
   return {
     ...food,
@@ -738,6 +915,9 @@ function normalizeFoodRecord(food: Food): Food {
     importConfidence,
     sourceQuality,
     sourceQualityNote: food.sourceQualityNote?.trim() || undefined,
+    importTrust: normalizeImportTrust(food),
+    searchAliases,
+    remoteReferences: normalizeRemoteReferences(food.remoteReferences),
     usageCount: Number.isFinite(food.usageCount) ? food.usageCount : 0,
     fiber: food.fiber ?? undefined,
     sugars: Number.isFinite(food.sugars) ? food.sugars : readLabelNutritionNumber(labelNutrition, 'sugars'),
@@ -759,11 +939,13 @@ function normalizeSettings(settings: Partial<UserSettings> | null): UserSettings
     settings?.goalMode === 'lose' || settings?.goalMode === 'gain' || settings?.goalMode === 'maintain'
       ? settings.goalMode
       : DEFAULT_SETTINGS.goalMode
+  const fatLossMode = settings?.fatLossMode === 'psmf' ? 'psmf' : 'standard_cut'
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
     weightUnit: settings?.weightUnit === 'kg' ? 'kg' : 'lb',
     goalMode,
+    fatLossMode,
     coachingEnabled: settings?.coachingEnabled ?? DEFAULT_SETTINGS.coachingEnabled,
     checkInWeekday:
       settings?.checkInWeekday !== undefined &&
@@ -786,8 +968,20 @@ function normalizeSettings(settings: Partial<UserSettings> | null): UserSettings
       Number.isFinite(settings.weeklyCardioMinuteTarget)
         ? settings.weeklyCardioMinuteTarget
         : undefined,
+    coachingMinCalories:
+      typeof settings?.coachingMinCalories === 'number' && Number.isFinite(settings.coachingMinCalories)
+        ? settings.coachingMinCalories
+        : undefined,
     lastImportAt: settings?.lastImportAt?.trim() || undefined,
     coachingDismissedAt: settings?.coachingDismissedAt?.trim() || undefined,
+    goalModeChangedAt: settings?.goalModeChangedAt?.trim() || undefined,
+    goalModeChangedFrom:
+      settings?.goalModeChangedFrom === 'lose' ||
+      settings?.goalModeChangedFrom === 'maintain' ||
+      settings?.goalModeChangedFrom === 'gain'
+        ? settings.goalModeChangedFrom
+        : undefined,
+    fatLossModeChangedAt: settings?.fatLossModeChangedAt?.trim() || undefined,
     askCoachEnabled: settings?.askCoachEnabled ?? DEFAULT_SETTINGS.askCoachEnabled,
     shareInterventionsWithCoach:
       settings?.shareInterventionsWithCoach ?? DEFAULT_SETTINGS.shareInterventionsWithCoach,
@@ -980,6 +1174,16 @@ function normalizeCheckInRecord(record: CheckInRecord): CheckInRecord {
         ? record.recommendedMacroTargets
         : undefined,
     recommendationReason: record.recommendationReason.trim(),
+    reasonCodes: Array.isArray(record.reasonCodes)
+      ? record.reasonCodes.map((code) => normalizeReasonCode(String(code)))
+      : [],
+    blockedReasons: Array.isArray(record.blockedReasons)
+      ? record.blockedReasons.map((reason) => ({
+          ...reason,
+          code: normalizeBlockedReasonCode(typeof reason.code === 'string' ? reason.code : undefined),
+          message: reason.message.trim(),
+        }))
+      : [],
     status:
       record.status === 'applied' ||
       record.status === 'kept' ||
@@ -988,6 +1192,131 @@ function normalizeCheckInRecord(record: CheckInRecord): CheckInRecord {
         ? record.status
         : 'insufficientData',
     appliedAt: record.appliedAt?.trim() || undefined,
+  }
+}
+
+function sortWellnessEntries(entries: WellnessEntry[]): WellnessEntry[] {
+  return [...entries].sort((left, right) => {
+    if (left.date !== right.date) {
+      return left.date.localeCompare(right.date)
+    }
+
+    return left.sourceUpdatedAt.localeCompare(right.sourceUpdatedAt)
+  })
+}
+
+function normalizeWellnessEntry(entry: WellnessEntry): WellnessEntry {
+  return {
+    ...entry,
+    date: entry.date.trim(),
+    provider: 'garmin',
+    steps: Number.isFinite(entry.steps) ? Math.max(0, Math.round(entry.steps ?? 0)) : undefined,
+    sleepMinutes: Number.isFinite(entry.sleepMinutes) ? Math.max(0, Math.round(entry.sleepMinutes ?? 0)) : undefined,
+    restingHeartRate:
+      Number.isFinite(entry.restingHeartRate) ? Math.max(0, Math.round(entry.restingHeartRate ?? 0)) : undefined,
+    stressScore: Number.isFinite(entry.stressScore) ? Math.max(0, Math.round(entry.stressScore ?? 0)) : undefined,
+    bodyBatteryMax:
+      Number.isFinite(entry.bodyBatteryMax) ? Math.max(0, Math.round(entry.bodyBatteryMax ?? 0)) : undefined,
+    intensityMinutes:
+      Number.isFinite(entry.intensityMinutes) ? Math.max(0, Math.round(entry.intensityMinutes ?? 0)) : undefined,
+    derivedCardioMinutes:
+      Number.isFinite(entry.derivedCardioMinutes)
+        ? Math.max(0, Math.round(entry.derivedCardioMinutes ?? 0))
+        : undefined,
+    sourceUpdatedAt: entry.sourceUpdatedAt.trim(),
+    updatedAt: entry.updatedAt.trim(),
+    deletedAt: entry.deletedAt?.trim() || undefined,
+  }
+}
+
+function sortRecoveryCheckIns(records: RecoveryCheckIn[]): RecoveryCheckIn[] {
+  return [...records].sort((left, right) => {
+    if (left.date !== right.date) {
+      return right.date.localeCompare(left.date)
+    }
+
+    return right.updatedAt.localeCompare(left.updatedAt)
+  })
+}
+
+function normalizeRecoveryCheckIn(record: RecoveryCheckIn): RecoveryCheckIn {
+  const clampScore = (value: number): 1 | 2 | 3 | 4 | 5 => {
+    const rounded = Math.round(value)
+    return Math.min(5, Math.max(1, rounded)) as 1 | 2 | 3 | 4 | 5
+  }
+
+  return {
+    ...record,
+    date: record.date.trim(),
+    energyScore: clampScore(record.energyScore),
+    hungerScore: clampScore(record.hungerScore),
+    sorenessScore: clampScore(record.sorenessScore),
+    sleepQualityScore: clampScore(record.sleepQualityScore),
+    notes: record.notes?.trim() || undefined,
+    updatedAt: record.updatedAt.trim(),
+    deletedAt: record.deletedAt?.trim() || undefined,
+  }
+}
+
+function sortDietPhases(records: DietPhase[]): DietPhase[] {
+  return [...records].sort((left, right) => {
+    if (left.startDate !== right.startDate) {
+      return left.startDate.localeCompare(right.startDate)
+    }
+
+    return left.updatedAt.localeCompare(right.updatedAt)
+  })
+}
+
+function normalizeDietPhase(record: DietPhase): DietPhase {
+  const type = record.type === 'diet_break' ? 'diet_break' : 'psmf'
+  const status =
+    record.status === 'planned' ||
+    record.status === 'active' ||
+    record.status === 'expired' ||
+    record.status === 'completed' ||
+    record.status === 'cancelled'
+      ? record.status
+      : 'planned'
+
+  return {
+    ...record,
+    id: record.id.trim(),
+    type,
+    status,
+    startDate: record.startDate.trim(),
+    plannedEndDate: record.plannedEndDate.trim(),
+    actualEndDate: record.actualEndDate?.trim() || undefined,
+    calorieTargetOverride:
+      Number.isFinite(record.calorieTargetOverride) ? record.calorieTargetOverride : undefined,
+    notes: record.notes?.trim() || undefined,
+    createdAt: record.createdAt.trim(),
+    updatedAt: record.updatedAt.trim(),
+  }
+}
+
+function sortDietPhaseEvents(records: DietPhaseEvent[]): DietPhaseEvent[] {
+  return [...records].sort((left, right) => {
+    if (left.date !== right.date) {
+      return left.date.localeCompare(right.date)
+    }
+
+    return left.createdAt.localeCompare(right.createdAt)
+  })
+}
+
+function normalizeDietPhaseEvent(record: DietPhaseEvent): DietPhaseEvent {
+  return {
+    ...record,
+    id: record.id.trim(),
+    phaseId: record.phaseId.trim(),
+    type: 'refeed_day',
+    date: record.date.trim(),
+    calorieTargetOverride: Math.round(record.calorieTargetOverride),
+    notes: record.notes?.trim() || undefined,
+    createdAt: record.createdAt.trim(),
+    updatedAt: record.updatedAt.trim(),
+    deletedAt: record.deletedAt?.trim() || undefined,
   }
 }
 
@@ -1317,7 +1646,12 @@ function parseFoodRecordStrict(rawFood: unknown, index: number): ActionResult<Fo
       sodium: readNumber(rawFood.sodium) ?? undefined,
       labelNutrition: labelNutritionResult.data,
       source: rawFood.source === 'seed' || rawFood.source === 'api' ? rawFood.source : 'custom',
-      provider: rawFood.provider === 'open_food_facts' ? 'open_food_facts' : undefined,
+      provider:
+        rawFood.provider === 'open_food_facts' ||
+        rawFood.provider === 'usda_fdc' ||
+        rawFood.provider === 'fatsecret'
+          ? rawFood.provider
+          : undefined,
       importConfidence:
         rawFood.importConfidence === 'direct_match' ||
         rawFood.importConfidence === 'weak_match' ||
@@ -1331,6 +1665,11 @@ function parseFoodRecordStrict(rawFood: unknown, index: number): ActionResult<Fo
           ? rawFood.sourceQuality
           : undefined,
       sourceQualityNote: readOptionalString(rawFood.sourceQualityNote),
+      importTrust: normalizeImportTrust({
+        importTrust: isRecord(rawFood.importTrust)
+          ? (rawFood.importTrust as unknown as Food['importTrust'])
+          : undefined,
+      }),
       usageCount: readNumber(rawFood.usageCount) ?? 0,
       createdAt: readString(rawFood.createdAt) ?? new Date().toISOString(),
       updatedAt: readOptionalString(rawFood.updatedAt),
@@ -1674,6 +2013,154 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
   )
 }
 
+function parseWellnessEntryStrict(rawEntry: unknown, index: number): ActionResult<WellnessEntry> {
+  if (!isRecord(rawEntry)) {
+    return fail('invalidBackup', `Backup wellness entry #${index + 1} is malformed.`)
+  }
+
+  const date = isValidDateKey(rawEntry.date) ? rawEntry.date : null
+  const provider = rawEntry.provider === 'garmin' ? 'garmin' : null
+  const sourceUpdatedAt = readString(rawEntry.sourceUpdatedAt)
+  const updatedAt = readString(rawEntry.updatedAt) ?? sourceUpdatedAt
+  if (!date || !provider || !sourceUpdatedAt || !updatedAt) {
+    return fail('invalidBackup', `Backup wellness entry #${index + 1} is incomplete.`)
+  }
+
+  return ok(
+    normalizeWellnessEntry({
+      date,
+      provider,
+      steps: readNumber(rawEntry.steps) ?? undefined,
+      sleepMinutes: readNumber(rawEntry.sleepMinutes) ?? undefined,
+      restingHeartRate: readNumber(rawEntry.restingHeartRate) ?? undefined,
+      stressScore: readNumber(rawEntry.stressScore) ?? undefined,
+      bodyBatteryMax: readNumber(rawEntry.bodyBatteryMax) ?? undefined,
+      intensityMinutes: readNumber(rawEntry.intensityMinutes) ?? undefined,
+      derivedCardioMinutes: readNumber(rawEntry.derivedCardioMinutes) ?? undefined,
+      sourceUpdatedAt,
+      updatedAt,
+      deletedAt: readOptionalString(rawEntry.deletedAt),
+    }),
+  )
+}
+
+function parseRecoveryCheckInStrict(
+  rawRecord: unknown,
+  index: number,
+): ActionResult<RecoveryCheckIn> {
+  if (!isRecord(rawRecord)) {
+    return fail('invalidBackup', `Backup recovery check-in #${index + 1} is malformed.`)
+  }
+
+  const date = isValidDateKey(rawRecord.date) ? rawRecord.date : null
+  const energyScore = readNumber(rawRecord.energyScore)
+  const hungerScore = readNumber(rawRecord.hungerScore)
+  const sorenessScore = readNumber(rawRecord.sorenessScore)
+  const sleepQualityScore = readNumber(rawRecord.sleepQualityScore)
+  const updatedAt = readString(rawRecord.updatedAt)
+  if (
+    !date ||
+    energyScore === null ||
+    hungerScore === null ||
+    sorenessScore === null ||
+    sleepQualityScore === null ||
+    !updatedAt
+  ) {
+    return fail('invalidBackup', `Backup recovery check-in #${index + 1} is incomplete.`)
+  }
+
+  return ok(
+    normalizeRecoveryCheckIn({
+      date,
+      energyScore: Math.round(energyScore) as 1 | 2 | 3 | 4 | 5,
+      hungerScore: Math.round(hungerScore) as 1 | 2 | 3 | 4 | 5,
+      sorenessScore: Math.round(sorenessScore) as 1 | 2 | 3 | 4 | 5,
+      sleepQualityScore: Math.round(sleepQualityScore) as 1 | 2 | 3 | 4 | 5,
+      notes: readOptionalString(rawRecord.notes),
+      updatedAt,
+      deletedAt: readOptionalString(rawRecord.deletedAt),
+    }),
+  )
+}
+
+function parseDietPhaseStrict(rawRecord: unknown, index: number): ActionResult<DietPhase> {
+  if (!isRecord(rawRecord)) {
+    return fail('invalidBackup', `Backup diet phase #${index + 1} is malformed.`)
+  }
+
+  const id = readString(rawRecord.id)
+  const type = rawRecord.type === 'diet_break' || rawRecord.type === 'psmf' ? rawRecord.type : null
+  const status =
+    rawRecord.status === 'planned' ||
+    rawRecord.status === 'active' ||
+    rawRecord.status === 'expired' ||
+    rawRecord.status === 'completed' ||
+    rawRecord.status === 'cancelled'
+      ? rawRecord.status
+      : null
+  const startDate = isValidDateKey(rawRecord.startDate) ? rawRecord.startDate : null
+  const plannedEndDate = isValidDateKey(rawRecord.plannedEndDate) ? rawRecord.plannedEndDate : null
+  const createdAt = readString(rawRecord.createdAt)
+  const updatedAt = readString(rawRecord.updatedAt)
+  if (!id || !type || !status || !startDate || !plannedEndDate || !createdAt || !updatedAt) {
+    return fail('invalidBackup', `Backup diet phase #${index + 1} is incomplete.`)
+  }
+
+  return ok(
+    normalizeDietPhase({
+      id,
+      type,
+      status,
+      startDate,
+      plannedEndDate,
+      actualEndDate: readOptionalString(rawRecord.actualEndDate),
+      calorieTargetOverride: readNumber(rawRecord.calorieTargetOverride) ?? undefined,
+      notes: readOptionalString(rawRecord.notes),
+      createdAt,
+      updatedAt,
+    }),
+  )
+}
+
+function parseDietPhaseEventStrict(rawRecord: unknown, index: number): ActionResult<DietPhaseEvent> {
+  if (!isRecord(rawRecord)) {
+    return fail('invalidBackup', `Backup diet phase event #${index + 1} is malformed.`)
+  }
+
+  const id = readString(rawRecord.id)
+  const phaseId = readString(rawRecord.phaseId)
+  const type = rawRecord.type === 'refeed_day' ? 'refeed_day' : null
+  const date = isValidDateKey(rawRecord.date) ? rawRecord.date : null
+  const calorieTargetOverride = readNumber(rawRecord.calorieTargetOverride)
+  const createdAt = readString(rawRecord.createdAt)
+  const updatedAt = readString(rawRecord.updatedAt)
+  if (
+    !id ||
+    !phaseId ||
+    !type ||
+    !date ||
+    calorieTargetOverride === null ||
+    !createdAt ||
+    !updatedAt
+  ) {
+    return fail('invalidBackup', `Backup diet phase event #${index + 1} is incomplete.`)
+  }
+
+  return ok(
+    normalizeDietPhaseEvent({
+      id,
+      phaseId,
+      type,
+      date,
+      calorieTargetOverride,
+      notes: readOptionalString(rawRecord.notes),
+      createdAt,
+      updatedAt,
+      deletedAt: readOptionalString(rawRecord.deletedAt),
+    }),
+  )
+}
+
 function parseCalibrationRecordStrict(
   rawRecord: unknown,
   index: number,
@@ -1870,7 +2357,12 @@ function parseFoods(rawFoods: unknown): Food[] {
         fat,
         fiber: readNumber(rawFood.fiber) ?? undefined,
         source: rawFood.source === 'seed' || rawFood.source === 'api' ? rawFood.source : 'custom',
-        provider: rawFood.provider === 'open_food_facts' ? 'open_food_facts' : undefined,
+        provider:
+          rawFood.provider === 'open_food_facts' ||
+          rawFood.provider === 'usda_fdc' ||
+          rawFood.provider === 'fatsecret'
+            ? rawFood.provider
+            : undefined,
         importConfidence:
           rawFood.importConfidence === 'direct_match' ||
           rawFood.importConfidence === 'weak_match' ||
@@ -1884,10 +2376,35 @@ function parseFoods(rawFoods: unknown): Food[] {
             ? rawFood.sourceQuality
             : undefined,
         sourceQualityNote: readOptionalString(rawFood.sourceQualityNote),
+        importTrust: normalizeImportTrust({
+          importTrust: isRecord(rawFood.importTrust)
+            ? (rawFood.importTrust as unknown as Food['importTrust'])
+            : undefined,
+        }),
         usageCount: readNumber(rawFood.usageCount) ?? 0,
         createdAt: readString(rawFood.createdAt) ?? new Date().toISOString(),
         updatedAt: readOptionalString(rawFood.updatedAt),
         barcode: readOptionalString(rawFood.barcode),
+        searchAliases: Array.isArray(rawFood.searchAliases)
+          ? rawFood.searchAliases.flatMap((alias) => (typeof alias === 'string' ? [alias] : []))
+          : undefined,
+        remoteReferences: Array.isArray(rawFood.remoteReferences)
+          ? rawFood.remoteReferences.flatMap((reference) =>
+              isRecord(reference) &&
+              (reference.provider === 'open_food_facts' ||
+                reference.provider === 'usda_fdc' ||
+                reference.provider === 'fatsecret') &&
+              typeof reference.remoteKey === 'string'
+                ? [
+                    {
+                      provider: reference.provider as CatalogProvider,
+                      remoteKey: reference.remoteKey,
+                      barcode: readOptionalString(reference.barcode),
+                    },
+                  ]
+                : [],
+            )
+          : undefined,
         archivedAt: readOptionalString(rawFood.archivedAt),
         lastUsedAt: readOptionalString(rawFood.lastUsedAt),
         lastServings: readNumber(rawFood.lastServings) ?? undefined,
@@ -2100,6 +2617,10 @@ function parseSettings(rawSettings: unknown): UserSettings {
       rawSettings.goalMode === 'lose' || rawSettings.goalMode === 'gain' || rawSettings.goalMode === 'maintain'
         ? rawSettings.goalMode
         : undefined,
+    fatLossMode:
+      rawSettings.fatLossMode === 'psmf' || rawSettings.fatLossMode === 'standard_cut'
+        ? rawSettings.fatLossMode
+        : undefined,
     coachingEnabled: typeof rawSettings.coachingEnabled === 'boolean' ? rawSettings.coachingEnabled : undefined,
     checkInWeekday:
       typeof rawCheckInWeekday === 'number' &&
@@ -2111,9 +2632,18 @@ function parseSettings(rawSettings: unknown): UserSettings {
     targetWeeklyRatePercent: readNumber(rawSettings.targetWeeklyRatePercent) ?? undefined,
     dailyStepTarget: readNumber(rawSettings.dailyStepTarget) ?? undefined,
     weeklyCardioMinuteTarget: readNumber(rawSettings.weeklyCardioMinuteTarget) ?? undefined,
+    coachingMinCalories: readNumber(rawSettings.coachingMinCalories) ?? undefined,
     tdeeEstimate: readNumber(rawSettings.tdeeEstimate) ?? undefined,
     lastImportAt: readOptionalString(rawSettings.lastImportAt),
     coachingDismissedAt: readOptionalString(rawSettings.coachingDismissedAt),
+    goalModeChangedAt: readOptionalString(rawSettings.goalModeChangedAt),
+    goalModeChangedFrom:
+      rawSettings.goalModeChangedFrom === 'lose' ||
+      rawSettings.goalModeChangedFrom === 'maintain' ||
+      rawSettings.goalModeChangedFrom === 'gain'
+        ? rawSettings.goalModeChangedFrom
+        : undefined,
+    fatLossModeChangedAt: readOptionalString(rawSettings.fatLossModeChangedAt),
     askCoachEnabled: typeof rawSettings.askCoachEnabled === 'boolean' ? rawSettings.askCoachEnabled : undefined,
     shareInterventionsWithCoach:
       typeof rawSettings.shareInterventionsWithCoach === 'boolean'
@@ -2319,6 +2849,10 @@ function buildNormalizedState(
   activityLog: ActivityEntry[],
   interventions: InterventionEntry[],
   checkInHistory: CheckInRecord[],
+  wellness: WellnessEntry[],
+  recoveryCheckIns: RecoveryCheckIn[],
+  dietPhases: DietPhase[],
+  dietPhaseEvents: DietPhaseEvent[],
   coachingCalibration: CoachingCalibrationRecord[],
   coachThread: CoachThreadState,
   coachFeedback: CoachFeedback[],
@@ -2338,6 +2872,10 @@ function buildNormalizedState(
     activityLog: sortActivityLog(activityLog.map(normalizeActivityEntry)),
     interventions: sortInterventions(interventions.map(normalizeInterventionEntry)),
     checkInHistory: sortCheckInHistory(checkInHistory.map(normalizeCheckInRecord)),
+    wellness: sortWellnessEntries(wellness.map(normalizeWellnessEntry)),
+    recoveryCheckIns: sortRecoveryCheckIns(recoveryCheckIns.map(normalizeRecoveryCheckIn)),
+    dietPhases: sortDietPhases(dietPhases.map(normalizeDietPhase)),
+    dietPhaseEvents: sortDietPhaseEvents(dietPhaseEvents.map(normalizeDietPhaseEvent)),
     coachingCalibration: sortCalibrationRecords(
       coachingCalibration.map(normalizeCalibrationRecord),
     ),
@@ -2358,6 +2896,10 @@ function buildBackupCounts(backup: BackupFile): BackupPreview['counts'] {
     weights: backup.weights.length,
     logDays,
     logEntries,
+    wellness: backup.wellness?.length ?? 0,
+    recoveryCheckIns: backup.recoveryCheckIns?.length ?? 0,
+    dietPhases: backup.dietPhases?.length ?? 0,
+    dietPhaseEvents: backup.dietPhaseEvents?.length ?? 0,
   }
 }
 
@@ -2375,6 +2917,10 @@ function buildBackupFileFromState(state: NormalizedStorageState): BackupFile {
     activityLog: state.activityLog,
     interventions: state.interventions,
     checkInHistory: state.checkInHistory,
+    wellness: state.wellness,
+    recoveryCheckIns: state.recoveryCheckIns,
+    dietPhases: state.dietPhases,
+    dietPhaseEvents: state.dietPhaseEvents,
     coachingCalibration: state.coachingCalibration,
     coachThread: state.coachThread,
     coachFeedback: state.coachFeedback,
@@ -2435,6 +2981,22 @@ function parseBackupObject(rawValue: unknown): ActionResult<BackupPreview> {
 
   if (rawValue.checkInHistory !== undefined && !Array.isArray(rawValue.checkInHistory)) {
     return fail('invalidBackup', 'The backup file is missing a valid checkInHistory array.')
+  }
+
+  if (rawValue.wellness !== undefined && !Array.isArray(rawValue.wellness)) {
+    return fail('invalidBackup', 'The backup file is missing a valid wellness array.')
+  }
+
+  if (rawValue.recoveryCheckIns !== undefined && !Array.isArray(rawValue.recoveryCheckIns)) {
+    return fail('invalidBackup', 'The backup file is missing a valid recoveryCheckIns array.')
+  }
+
+  if (rawValue.dietPhases !== undefined && !Array.isArray(rawValue.dietPhases)) {
+    return fail('invalidBackup', 'The backup file is missing a valid dietPhases array.')
+  }
+
+  if (rawValue.dietPhaseEvents !== undefined && !Array.isArray(rawValue.dietPhaseEvents)) {
+    return fail('invalidBackup', 'The backup file is missing a valid dietPhaseEvents array.')
   }
 
   if (rawValue.coachingCalibration !== undefined && !Array.isArray(rawValue.coachingCalibration)) {
@@ -2525,6 +3087,42 @@ function parseBackupObject(rawValue: unknown): ActionResult<BackupPreview> {
     checkInHistory.push(parsedRecord.data)
   }
 
+  const wellness: WellnessEntry[] = []
+  for (const [index, rawEntry] of (rawValue.wellness ?? []).entries()) {
+    const parsedEntry = parseWellnessEntryStrict(rawEntry, index)
+    if (!parsedEntry.ok) {
+      return parsedEntry
+    }
+    wellness.push(parsedEntry.data)
+  }
+
+  const recoveryCheckIns: RecoveryCheckIn[] = []
+  for (const [index, rawRecord] of (rawValue.recoveryCheckIns ?? []).entries()) {
+    const parsedRecord = parseRecoveryCheckInStrict(rawRecord, index)
+    if (!parsedRecord.ok) {
+      return parsedRecord
+    }
+    recoveryCheckIns.push(parsedRecord.data)
+  }
+
+  const dietPhases: DietPhase[] = []
+  for (const [index, rawRecord] of (rawValue.dietPhases ?? []).entries()) {
+    const parsedRecord = parseDietPhaseStrict(rawRecord, index)
+    if (!parsedRecord.ok) {
+      return parsedRecord
+    }
+    dietPhases.push(parsedRecord.data)
+  }
+
+  const dietPhaseEvents: DietPhaseEvent[] = []
+  for (const [index, rawRecord] of (rawValue.dietPhaseEvents ?? []).entries()) {
+    const parsedRecord = parseDietPhaseEventStrict(rawRecord, index)
+    if (!parsedRecord.ok) {
+      return parsedRecord
+    }
+    dietPhaseEvents.push(parsedRecord.data)
+  }
+
   const coachingCalibration: CoachingCalibrationRecord[] = []
   for (const [index, rawRecord] of (rawValue.coachingCalibration ?? []).entries()) {
     const parsedRecord = parseCalibrationRecordStrict(rawRecord, index)
@@ -2567,6 +3165,10 @@ function parseBackupObject(rawValue: unknown): ActionResult<BackupPreview> {
       activityLog,
       interventions,
       checkInHistory,
+      wellness,
+      recoveryCheckIns,
+      dietPhases,
+      dietPhaseEvents,
       coachingCalibration,
       parseCoachThreadState(rawValue.coachThread),
       parseCoachFeedback(rawValue.coachFeedback),
@@ -2597,21 +3199,25 @@ function restoreRawStorageSnapshot(snapshot: RawStorageSnapshot): ActionResult<v
       }
     }
 
-  restoreRawValue(STORAGE_KEYS.schemaVersion, snapshot.schemaVersion)
-  restoreRawValue(STORAGE_KEYS.foods, snapshot.foods)
-  restoreRawValue(STORAGE_KEYS.settings, snapshot.settings)
-  restoreRawValue(STORAGE_KEYS.uiPrefs, snapshot.uiPrefs)
-  restoreRawValue(STORAGE_KEYS.weights, snapshot.weights)
-  restoreRawValue(STORAGE_KEYS.mealTemplates, snapshot.mealTemplates)
-  restoreRawValue(STORAGE_KEYS.dayMeta, snapshot.dayMeta)
-  restoreRawValue(STORAGE_KEYS.activityLog, snapshot.activityLog)
-  restoreRawValue(STORAGE_KEYS.interventions, snapshot.interventions)
-  restoreRawValue(STORAGE_KEYS.checkInHistory, snapshot.checkInHistory)
-  restoreRawValue(STORAGE_KEYS.coachingCalibration, snapshot.coachingCalibration)
-  restoreRawValue(STORAGE_KEYS.coachThread, snapshot.coachThread)
-  restoreRawValue(STORAGE_KEYS.coachFeedback, snapshot.coachFeedback)
-  restoreRawValue(STORAGE_KEYS.coachQueue, snapshot.coachQueue)
-  restoreRawValue(STORAGE_KEYS.coachConfig, snapshot.coachConfig)
+    restoreRawValue(STORAGE_KEYS.schemaVersion, snapshot.schemaVersion)
+    restoreRawValue(STORAGE_KEYS.foods, snapshot.foods)
+    restoreRawValue(STORAGE_KEYS.settings, snapshot.settings)
+    restoreRawValue(STORAGE_KEYS.uiPrefs, snapshot.uiPrefs)
+    restoreRawValue(STORAGE_KEYS.weights, snapshot.weights)
+    restoreRawValue(STORAGE_KEYS.mealTemplates, snapshot.mealTemplates)
+    restoreRawValue(STORAGE_KEYS.dayMeta, snapshot.dayMeta)
+    restoreRawValue(STORAGE_KEYS.activityLog, snapshot.activityLog)
+    restoreRawValue(STORAGE_KEYS.interventions, snapshot.interventions)
+    restoreRawValue(STORAGE_KEYS.checkInHistory, snapshot.checkInHistory)
+    restoreRawValue(STORAGE_KEYS.wellness, snapshot.wellness)
+    restoreRawValue(STORAGE_KEYS.recoveryCheckIns, snapshot.recoveryCheckIns)
+    restoreRawValue(STORAGE_KEYS.dietPhases, snapshot.dietPhases)
+    restoreRawValue(STORAGE_KEYS.dietPhaseEvents, snapshot.dietPhaseEvents)
+    restoreRawValue(STORAGE_KEYS.coachingCalibration, snapshot.coachingCalibration)
+    restoreRawValue(STORAGE_KEYS.coachThread, snapshot.coachThread)
+    restoreRawValue(STORAGE_KEYS.coachFeedback, snapshot.coachFeedback)
+    restoreRawValue(STORAGE_KEYS.coachQueue, snapshot.coachQueue)
+    restoreRawValue(STORAGE_KEYS.coachConfig, snapshot.coachConfig)
 
     for (const [key, rawValue] of Object.entries(snapshot.logsByKey)) {
       restoreRawValue(key, rawValue)
@@ -2676,6 +3282,10 @@ function replacePersistedState(nextState: NormalizedStorageState): ActionResult<
       rawWriteJson(STORAGE_KEYS.activityLog, nextState.activityLog),
       rawWriteJson(STORAGE_KEYS.interventions, nextState.interventions),
       rawWriteJson(STORAGE_KEYS.checkInHistory, nextState.checkInHistory),
+      rawWriteJson(STORAGE_KEYS.wellness, nextState.wellness),
+      rawWriteJson(STORAGE_KEYS.recoveryCheckIns, nextState.recoveryCheckIns),
+      rawWriteJson(STORAGE_KEYS.dietPhases, nextState.dietPhases),
+      rawWriteJson(STORAGE_KEYS.dietPhaseEvents, nextState.dietPhaseEvents),
       rawWriteJson(STORAGE_KEYS.coachingCalibration, nextState.coachingCalibration),
       rawWriteJson(STORAGE_KEYS.coachThread, nextState.coachThread),
       rawWriteJson(STORAGE_KEYS.coachFeedback, nextState.coachFeedback),
@@ -2699,13 +3309,7 @@ function replacePersistedState(nextState: NormalizedStorageState): ActionResult<
       return failedStep
     }
 
-    void writeIndexedDbCoreSnapshot({
-      foods: nextState.foods,
-      settings: nextState.settings,
-      weights: nextState.weights,
-      mealTemplates: nextState.mealTemplates,
-      logsByDate: nextState.logsByDate,
-    })
+    void writeIndexedDbCoreSnapshot(buildCoreIndexedDbSnapshot())
     applyNormalizedStateToCache(nextState)
     clearCoreProtectedKeys()
     void persistCoreDomainsToIndexedDb('replacePersistedState')
@@ -2733,6 +3337,10 @@ export function replaceSyncedPersistedState(nextState: {
   dayMeta: DayMeta[]
   activityLog: ActivityEntry[]
   interventions: InterventionEntry[]
+  wellness: WellnessEntry[]
+  recoveryCheckIns: RecoveryCheckIn[]
+  dietPhases: DietPhase[]
+  dietPhaseEvents: DietPhaseEvent[]
   logsByDate: Record<string, FoodLogEntry[]>
 }): ActionResult<void> {
   ensureStorageInitialized()
@@ -2748,6 +3356,10 @@ export function replaceSyncedPersistedState(nextState: {
       nextState.activityLog,
       nextState.interventions,
       storageCache.checkInHistory,
+      nextState.wellness,
+      nextState.recoveryCheckIns,
+      nextState.dietPhases,
+      nextState.dietPhaseEvents,
       storageCache.coachingCalibration,
       storageCache.coachThread,
       storageCache.coachFeedback,
@@ -2786,6 +3398,15 @@ function mergeFoods(
 
     const localFood = mergedFoods[matchIndex]
     const preferredFood = chooseNewerByUpdatedAt(localFood, importedFood)
+    const aliasMerge = mergeSearchAliases({
+      existing: localFood.searchAliases,
+      additions: preferredFood.searchAliases ?? [],
+      systemAliases: buildSystemSearchAliases({
+        name: preferredFood.name,
+        brand: preferredFood.brand,
+        barcode: preferredFood.barcode,
+      }),
+    })
     mergedFoods[matchIndex] = normalizeFoodRecord({
       ...preferredFood,
       id: localFood.id,
@@ -2794,6 +3415,8 @@ function mergeFoods(
       lastUsedAt:
         [localFood.lastUsedAt, importedFood.lastUsedAt].filter(Boolean).sort().at(-1) ?? undefined,
       lastServings: importedFood.lastServings ?? localFood.lastServings,
+      searchAliases: aliasMerge.aliases,
+      remoteReferences: mergeFoodRemoteReferences(localFood.remoteReferences, importedFood.remoteReferences),
     })
     importedIdMap.set(importedFood.id, localFood.id)
   }
@@ -2970,6 +3593,98 @@ function mergeCheckInHistory(
   return sortCheckInHistory([...historyById.values()])
 }
 
+function mergeWellnessEntries(
+  localEntries: WellnessEntry[],
+  importedEntries: WellnessEntry[],
+): WellnessEntry[] {
+  const entriesByKey = new Map(localEntries.map((entry) => [`${entry.provider}:${entry.date}`, entry]))
+
+  for (const importedEntry of importedEntries) {
+    const key = `${importedEntry.provider}:${importedEntry.date}`
+    const existingEntry = entriesByKey.get(key)
+    if (!existingEntry) {
+      entriesByKey.set(key, importedEntry)
+      continue
+    }
+
+    entriesByKey.set(
+      key,
+      compareTimestamps(existingEntry.updatedAt, importedEntry.updatedAt) > 0 ? existingEntry : importedEntry,
+    )
+  }
+
+  return sortWellnessEntries([...entriesByKey.values()])
+}
+
+function mergeRecoveryCheckIns(
+  localRecords: RecoveryCheckIn[],
+  importedRecords: RecoveryCheckIn[],
+): RecoveryCheckIn[] {
+  const recordsByDate = new Map(localRecords.map((record) => [record.date, record]))
+
+  for (const importedRecord of importedRecords) {
+    const existingRecord = recordsByDate.get(importedRecord.date)
+    if (!existingRecord) {
+      recordsByDate.set(importedRecord.date, importedRecord)
+      continue
+    }
+
+    recordsByDate.set(
+      importedRecord.date,
+      compareTimestamps(existingRecord.updatedAt, importedRecord.updatedAt) > 0
+        ? existingRecord
+        : importedRecord,
+    )
+  }
+
+  return sortRecoveryCheckIns([...recordsByDate.values()])
+}
+
+function mergeDietPhases(localRecords: DietPhase[], importedRecords: DietPhase[]): DietPhase[] {
+  const recordsById = new Map(localRecords.map((record) => [record.id, record]))
+
+  for (const importedRecord of importedRecords) {
+    const existingRecord = recordsById.get(importedRecord.id)
+    if (!existingRecord) {
+      recordsById.set(importedRecord.id, importedRecord)
+      continue
+    }
+
+    recordsById.set(
+      importedRecord.id,
+      compareTimestamps(existingRecord.updatedAt, importedRecord.updatedAt) > 0
+        ? existingRecord
+        : importedRecord,
+    )
+  }
+
+  return sortDietPhases([...recordsById.values()])
+}
+
+function mergeDietPhaseEvents(
+  localRecords: DietPhaseEvent[],
+  importedRecords: DietPhaseEvent[],
+): DietPhaseEvent[] {
+  const recordsById = new Map(localRecords.map((record) => [record.id, record]))
+
+  for (const importedRecord of importedRecords) {
+    const existingRecord = recordsById.get(importedRecord.id)
+    if (!existingRecord) {
+      recordsById.set(importedRecord.id, importedRecord)
+      continue
+    }
+
+    recordsById.set(
+      importedRecord.id,
+      compareTimestamps(existingRecord.updatedAt, importedRecord.updatedAt) > 0
+        ? existingRecord
+        : importedRecord,
+    )
+  }
+
+  return sortDietPhaseEvents([...recordsById.values()])
+}
+
 function mergeMealTemplates(
   localTemplates: MealTemplate[],
   importedTemplates: MealTemplate[],
@@ -3031,6 +3746,10 @@ function persistBootstrapState(): void {
     directWriteJson(STORAGE_KEYS.activityLog, storageCache.activityLog),
     directWriteJson(STORAGE_KEYS.interventions, storageCache.interventions),
     directWriteJson(STORAGE_KEYS.checkInHistory, storageCache.checkInHistory),
+    directWriteJson(STORAGE_KEYS.wellness, storageCache.wellness),
+    directWriteJson(STORAGE_KEYS.recoveryCheckIns, storageCache.recoveryCheckIns),
+    directWriteJson(STORAGE_KEYS.dietPhases, storageCache.dietPhases),
+    directWriteJson(STORAGE_KEYS.dietPhaseEvents, storageCache.dietPhaseEvents),
     directWriteJson(STORAGE_KEYS.coachingCalibration, storageCache.coachingCalibration),
     directWriteJson(STORAGE_KEYS.coachThread, storageCache.coachThread),
     directWriteJson(STORAGE_KEYS.coachFeedback, storageCache.coachFeedback),
@@ -3172,6 +3891,46 @@ export async function initializeStorage(): Promise<void> {
     )
   }
 
+  const rawWellness = safeParse<unknown>(rawSnapshot.wellness)
+  if (rawWellness.status === 'invalid') {
+    storageCache.protectedKeys.add(STORAGE_KEYS.wellness)
+    recordIssue(
+      'activity',
+      STORAGE_KEYS.wellness,
+      'Imported wellness data was unreadable. Garmin history saves are blocked until the stored data is repaired.',
+    )
+  }
+
+  const rawRecoveryCheckIns = safeParse<unknown>(rawSnapshot.recoveryCheckIns)
+  if (rawRecoveryCheckIns.status === 'invalid') {
+    storageCache.protectedKeys.add(STORAGE_KEYS.recoveryCheckIns)
+    recordIssue(
+      'checkins',
+      STORAGE_KEYS.recoveryCheckIns,
+      'Recovery check-in history was unreadable. Recovery saves are blocked until the stored data is repaired.',
+    )
+  }
+
+  const rawDietPhases = safeParse<unknown>(rawSnapshot.dietPhases)
+  if (rawDietPhases.status === 'invalid') {
+    storageCache.protectedKeys.add(STORAGE_KEYS.dietPhases)
+    recordIssue(
+      'migration',
+      STORAGE_KEYS.dietPhases,
+      'Diet phase history was unreadable. Phase saves are blocked until the stored data is repaired.',
+    )
+  }
+
+  const rawDietPhaseEvents = safeParse<unknown>(rawSnapshot.dietPhaseEvents)
+  if (rawDietPhaseEvents.status === 'invalid') {
+    storageCache.protectedKeys.add(STORAGE_KEYS.dietPhaseEvents)
+    recordIssue(
+      'migration',
+      STORAGE_KEYS.dietPhaseEvents,
+      'Diet phase events were unreadable. Phase event saves are blocked until the stored data is repaired.',
+    )
+  }
+
   const rawCoachingCalibration = safeParse<unknown>(rawSnapshot.coachingCalibration)
   if (rawCoachingCalibration.status === 'invalid') {
     storageCache.protectedKeys.add(STORAGE_KEYS.coachingCalibration)
@@ -3258,6 +4017,14 @@ export async function initializeStorage(): Promise<void> {
     storageCache.activityLog = parseActivityLog(rawActivityLog.value)
     storageCache.interventions = parseInterventions(rawInterventions.value)
     storageCache.checkInHistory = parseCheckInHistory(rawCheckInHistory.value)
+    storageCache.wellness = sortWellnessEntries((rawWellness.value ?? []) as WellnessEntry[])
+    storageCache.recoveryCheckIns = sortRecoveryCheckIns(
+      (rawRecoveryCheckIns.value ?? []) as RecoveryCheckIn[],
+    )
+    storageCache.dietPhases = sortDietPhases((rawDietPhases.value ?? []) as DietPhase[])
+    storageCache.dietPhaseEvents = sortDietPhaseEvents(
+      (rawDietPhaseEvents.value ?? []) as DietPhaseEvent[],
+    )
     storageCache.coachingCalibration = parseCoachingCalibration(rawCoachingCalibration.value)
     storageCache.coachThread = parseCoachThreadState(rawCoachThread.value)
     storageCache.coachFeedback = parseCoachFeedback(rawCoachFeedback.value)
@@ -3275,6 +4042,10 @@ export async function initializeStorage(): Promise<void> {
       rawSnapshot.activityLog !== null ||
       rawSnapshot.interventions !== null ||
       rawSnapshot.checkInHistory !== null ||
+      rawSnapshot.wellness !== null ||
+      rawSnapshot.recoveryCheckIns !== null ||
+      rawSnapshot.dietPhases !== null ||
+      rawSnapshot.dietPhaseEvents !== null ||
       rawSnapshot.coachingCalibration !== null ||
       rawSnapshot.coachThread !== null ||
       rawSnapshot.coachFeedback !== null ||
@@ -3297,6 +4068,10 @@ export async function initializeStorage(): Promise<void> {
         rawActivityLog.status === 'invalid' ||
         rawInterventions.status === 'invalid' ||
         rawCheckInHistory.status === 'invalid' ||
+        rawWellness.status === 'invalid' ||
+        rawRecoveryCheckIns.status === 'invalid' ||
+        rawDietPhases.status === 'invalid' ||
+        rawDietPhaseEvents.status === 'invalid' ||
         rawCoachingCalibration.status === 'invalid' ||
         rawCoachThread.status === 'invalid' ||
         rawCoachFeedback.status === 'invalid' ||
@@ -3318,6 +4093,18 @@ export async function initializeStorage(): Promise<void> {
     }
     if (rawMealTemplates.status === 'invalid') {
       preserveIndexedDbRecoveryKeys.add(STORAGE_KEYS.mealTemplates)
+    }
+    if (rawWellness.status === 'invalid') {
+      preserveIndexedDbRecoveryKeys.add(STORAGE_KEYS.wellness)
+    }
+    if (rawRecoveryCheckIns.status === 'invalid') {
+      preserveIndexedDbRecoveryKeys.add(STORAGE_KEYS.recoveryCheckIns)
+    }
+    if (rawDietPhases.status === 'invalid') {
+      preserveIndexedDbRecoveryKeys.add(STORAGE_KEYS.dietPhases)
+    }
+    if (rawDietPhaseEvents.status === 'invalid') {
+      preserveIndexedDbRecoveryKeys.add(STORAGE_KEYS.dietPhaseEvents)
     }
     for (const [key, rawValue] of Object.entries(rawSnapshot.logsByKey)) {
       if (safeParse<unknown>(rawValue).status === 'invalid') {
@@ -3342,6 +4129,10 @@ export async function initializeStorage(): Promise<void> {
           settings: idbSnapshot.settings,
           weights: idbSnapshot.weights,
           mealTemplates: idbSnapshot.mealTemplates,
+          wellness: idbSnapshot.wellness,
+          recoveryCheckIns: idbSnapshot.recoveryCheckIns,
+          dietPhases: idbSnapshot.dietPhases,
+          dietPhaseEvents: idbSnapshot.dietPhaseEvents,
           logsByDate: idbSnapshot.logsByDate,
         }, {
           preserveRecoveryKeys: preserveIndexedDbRecoveryKeys,
@@ -3442,9 +4233,11 @@ export function saveFoods(foods: Food[]): ActionResult<void> {
 
   storageCache.foods = nextFoods
   queueFoodSyncMutations(previousFoods, nextFoods)
-  void persistCoreDomainsToIndexedDb('saveFoods')
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({
+    broadcast: true,
+    persistCoreSnapshotReason: 'saveFoods',
+  })
   return ok(undefined)
 }
 
@@ -3457,7 +4250,25 @@ export function saveSettings(settings: UserSettings): ActionResult<void> {
   ensureStorageInitialized()
 
   const previousSettings = storageCache.settings
-  const nextSettings = normalizeSettings(settings)
+  const now = new Date().toISOString()
+  const goalModeChanged = previousSettings.goalMode !== settings.goalMode
+  const fatLossModeChanged =
+    previousSettings.goalMode === 'lose' &&
+    settings.goalMode === 'lose' &&
+    previousSettings.fatLossMode !== (settings.fatLossMode ?? 'standard_cut')
+  const nextSettings = normalizeSettings({
+    ...settings,
+    goalModeChangedAt: goalModeChanged
+      ? now
+      : settings.goalModeChangedAt ?? previousSettings.goalModeChangedAt,
+    goalModeChangedFrom: goalModeChanged
+      ? previousSettings.goalMode
+      : settings.goalModeChangedFrom ?? previousSettings.goalModeChangedFrom,
+    fatLossModeChangedAt:
+      fatLossModeChanged
+        ? now
+        : settings.fatLossModeChangedAt ?? previousSettings.fatLossModeChangedAt,
+  })
   const result = directWriteJson(STORAGE_KEYS.settings, nextSettings)
   if (!result.ok) {
     return result
@@ -3465,9 +4276,11 @@ export function saveSettings(settings: UserSettings): ActionResult<void> {
 
   storageCache.settings = nextSettings
   queueSettingsSyncMutations(previousSettings, nextSettings)
-  void persistCoreDomainsToIndexedDb('saveSettings')
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({
+    broadcast: true,
+    persistCoreSnapshotReason: 'saveSettings',
+  })
   return ok(undefined)
 }
 
@@ -3487,7 +4300,7 @@ export function saveUiPrefs(prefs: UiPrefs): ActionResult<void> {
 
   storageCache.uiPrefs = nextPrefs
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3513,9 +4326,11 @@ export function saveWeights(weights: WeightEntry[]): ActionResult<void> {
 
   storageCache.weights = nextWeights
   queueWeightSyncMutations(previousWeights, nextWeights)
-  void persistCoreDomainsToIndexedDb('saveWeights')
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({
+    broadcast: true,
+    persistCoreSnapshotReason: 'saveWeights',
+  })
   return ok(undefined)
 }
 
@@ -3541,9 +4356,11 @@ export function saveMealTemplates(templates: MealTemplate[]): ActionResult<void>
 
   storageCache.mealTemplates = nextTemplates
   queueMealTemplateSyncMutations(previousTemplates, nextTemplates)
-  void persistCoreDomainsToIndexedDb('saveMealTemplates')
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({
+    broadcast: true,
+    persistCoreSnapshotReason: 'saveMealTemplates',
+  })
   return ok(undefined)
 }
 
@@ -3570,7 +4387,7 @@ export function saveDayMeta(dayMeta: DayMeta[]): ActionResult<void> {
   storageCache.dayMeta = nextDayMeta
   queueDayMetaSyncMutations(previousDayMeta, nextDayMeta)
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3597,7 +4414,7 @@ export function saveActivityLog(activityLog: ActivityEntry[]): ActionResult<void
   storageCache.activityLog = nextActivityLog
   queueActivitySyncMutations(previousActivityLog, nextActivityLog)
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3624,7 +4441,7 @@ export function saveInterventions(entries: InterventionEntry[]): ActionResult<vo
   storageCache.interventions = nextEntries
   queueInterventionSyncMutations(previousEntries, nextEntries)
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3644,7 +4461,87 @@ export function saveCheckInHistory(records: CheckInRecord[]): ActionResult<void>
 
   storageCache.checkInHistory = nextRecords
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
+  return ok(undefined)
+}
+
+export function loadWellnessEntries(): WellnessEntry[] {
+  ensureStorageInitialized()
+  return storageCache.wellness
+}
+
+export function saveWellnessEntries(entries: WellnessEntry[]): ActionResult<void> {
+  ensureStorageInitialized()
+
+  const nextEntries = sortWellnessEntries(entries.map(normalizeWellnessEntry))
+  const result = directWriteJson(STORAGE_KEYS.wellness, nextEntries)
+  if (!result.ok) {
+    return result
+  }
+
+  storageCache.wellness = nextEntries
+  emitStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
+  return ok(undefined)
+}
+
+export function loadRecoveryCheckIns(): RecoveryCheckIn[] {
+  ensureStorageInitialized()
+  return storageCache.recoveryCheckIns
+}
+
+export function saveRecoveryCheckIns(records: RecoveryCheckIn[]): ActionResult<void> {
+  ensureStorageInitialized()
+
+  const nextRecords = sortRecoveryCheckIns(records.map(normalizeRecoveryCheckIn))
+  const result = directWriteJson(STORAGE_KEYS.recoveryCheckIns, nextRecords)
+  if (!result.ok) {
+    return result
+  }
+
+  storageCache.recoveryCheckIns = nextRecords
+  emitStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
+  return ok(undefined)
+}
+
+export function loadDietPhases(): DietPhase[] {
+  ensureStorageInitialized()
+  return storageCache.dietPhases
+}
+
+export function saveDietPhases(records: DietPhase[]): ActionResult<void> {
+  ensureStorageInitialized()
+
+  const nextRecords = sortDietPhases(records.map(normalizeDietPhase))
+  const result = directWriteJson(STORAGE_KEYS.dietPhases, nextRecords)
+  if (!result.ok) {
+    return result
+  }
+
+  storageCache.dietPhases = nextRecords
+  emitStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
+  return ok(undefined)
+}
+
+export function loadDietPhaseEvents(): DietPhaseEvent[] {
+  ensureStorageInitialized()
+  return storageCache.dietPhaseEvents
+}
+
+export function saveDietPhaseEvents(records: DietPhaseEvent[]): ActionResult<void> {
+  ensureStorageInitialized()
+
+  const nextRecords = sortDietPhaseEvents(records.map(normalizeDietPhaseEvent))
+  const result = directWriteJson(STORAGE_KEYS.dietPhaseEvents, nextRecords)
+  if (!result.ok) {
+    return result
+  }
+
+  storageCache.dietPhaseEvents = nextRecords
+  emitStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3664,7 +4561,7 @@ export function saveCoachingCalibration(records: CoachingCalibrationRecord[]): A
 
   storageCache.coachingCalibration = nextRecords
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3684,7 +4581,7 @@ export function saveCoachThread(thread: CoachThreadState): ActionResult<void> {
 
   storageCache.coachThread = nextThread
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3704,7 +4601,7 @@ export function saveCoachFeedback(feedback: CoachFeedback[]): ActionResult<void>
 
   storageCache.coachFeedback = nextFeedback
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3724,7 +4621,7 @@ export function saveCoachQueue(queue: CoachQueuedQuestion[]): ActionResult<void>
 
   storageCache.coachQueue = nextQueue
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3744,7 +4641,7 @@ export function saveCoachConfig(config: CoachProviderConfig): ActionResult<void>
 
   storageCache.coachConfig = nextConfig
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({ broadcast: true })
   return ok(undefined)
 }
 
@@ -3790,6 +4687,10 @@ export function exportBackupFile(): ActionResult<BackupFile> {
         storageCache.activityLog,
         storageCache.interventions,
         storageCache.checkInHistory,
+        storageCache.wellness,
+        storageCache.recoveryCheckIns,
+        storageCache.dietPhases,
+        storageCache.dietPhaseEvents,
         storageCache.coachingCalibration,
         storageCache.coachThread,
         storageCache.coachFeedback,
@@ -3828,6 +4729,10 @@ export function applyBackupImport(backup: BackupFile, mode: ImportMode): ActionR
     backup.activityLog ?? [],
     backup.interventions ?? [],
     backup.checkInHistory ?? [],
+    backup.wellness ?? [],
+    backup.recoveryCheckIns ?? [],
+    backup.dietPhases ?? [],
+    backup.dietPhaseEvents ?? [],
     backup.coachingCalibration ?? [],
     backup.coachThread ?? { messages: [], updatedAt: new Date(0).toISOString() },
     backup.coachFeedback ?? [],
@@ -3851,6 +4756,10 @@ export function applyBackupImport(backup: BackupFile, mode: ImportMode): ActionR
           importedState.activityLog,
           importedState.interventions,
           importedState.checkInHistory,
+          importedState.wellness,
+          importedState.recoveryCheckIns,
+          importedState.dietPhases,
+          importedState.dietPhaseEvents,
           importedState.coachingCalibration,
           importedState.coachThread,
           importedState.coachFeedback,
@@ -3869,6 +4778,10 @@ export function applyBackupImport(backup: BackupFile, mode: ImportMode): ActionR
             storageCache.activityLog,
             storageCache.interventions,
             storageCache.checkInHistory,
+            storageCache.wellness,
+            storageCache.recoveryCheckIns,
+            storageCache.dietPhases,
+            storageCache.dietPhaseEvents,
             storageCache.coachingCalibration,
             storageCache.coachThread,
             storageCache.coachFeedback,
@@ -3891,6 +4804,10 @@ export function applyBackupImport(backup: BackupFile, mode: ImportMode): ActionR
             mergeActivityLog(localState.activityLog, importedState.activityLog),
             mergeInterventions(localState.interventions, importedState.interventions),
             mergeCheckInHistory(localState.checkInHistory, importedState.checkInHistory),
+            mergeWellnessEntries(localState.wellness, importedState.wellness),
+            mergeRecoveryCheckIns(localState.recoveryCheckIns, importedState.recoveryCheckIns),
+            mergeDietPhases(localState.dietPhases, importedState.dietPhases),
+            mergeDietPhaseEvents(localState.dietPhaseEvents, importedState.dietPhaseEvents),
             mergeCoachingCalibration(localState.coachingCalibration, importedState.coachingCalibration),
             importedState.coachThread.messages.length ? importedState.coachThread : localState.coachThread,
             [
@@ -4003,9 +4920,11 @@ export function saveFoodLogWithUsages(
   storageCache.foods = nextFoods
   queueFoodLogSyncMutations(previousEntries, nextEntries)
   queueFoodSyncMutations(previousFoods, nextFoods)
-  void persistCoreDomainsToIndexedDb('saveFoodLogWithUsages')
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({
+    broadcast: true,
+    persistCoreSnapshotReason: 'saveFoodLogWithUsages',
+  })
   return ok(undefined)
 }
 
@@ -4024,9 +4943,11 @@ export function saveFoodLog(date: string, entries: FoodLogEntry[]): ActionResult
     [date]: nextEntries,
   }
   queueFoodLogSyncMutations(previousEntries, nextEntries)
-  void persistCoreDomainsToIndexedDb('saveFoodLog')
   emitStorageChange()
-  broadcastStorageChange()
+  scheduleDeferredStorageTail({
+    broadcast: true,
+    persistCoreSnapshotReason: 'saveFoodLog',
+  })
   return ok(undefined)
 }
 

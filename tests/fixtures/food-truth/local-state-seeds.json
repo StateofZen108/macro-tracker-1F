@@ -1,0 +1,67 @@
+[
+  {
+    "id": "seed-local-barcode-001",
+    "purpose": "Exact local barcode precedence benchmark.",
+    "food": {
+      "id": "local-food-001",
+      "name": "Pantry Yogurt Local",
+      "brand": "Pantry Dairy",
+      "barcode": "700000000001",
+      "servingSize": 170,
+      "servingUnit": "g",
+      "calories": 120,
+      "protein": 18,
+      "carbs": 7,
+      "fat": 0,
+      "fiber": 0,
+      "source": "api",
+      "usageCount": 18,
+      "createdAt": "2026-02-10T08:00:00.000Z",
+      "importTrust": {
+        "level": "exact_autolog",
+        "servingBasis": "serving",
+        "servingBasisSource": "provider_serving",
+        "blockingIssues": [],
+        "verifiedAt": "2026-04-10T12:00:00.000Z"
+      },
+      "lastUsedAt": "2026-04-13T07:00:00.000Z",
+      "updatedAt": "2026-04-13T07:00:00.000Z"
+    }
+  },
+  {
+    "id": "seed-local-remote-002",
+    "purpose": "Exact local remote-reference precedence benchmark.",
+    "food": {
+      "id": "local-food-002",
+      "name": "Pantry Remote Link",
+      "brand": "Pantry Snacks",
+      "servingSize": 50,
+      "servingUnit": "g",
+      "calories": 210,
+      "protein": 20,
+      "carbs": 15,
+      "fat": 8,
+      "fiber": 5,
+      "source": "api",
+      "usageCount": 9,
+      "createdAt": "2026-02-12T08:00:00.000Z",
+      "provider": "fatsecret",
+      "remoteReferences": [
+        {
+          "provider": "fatsecret",
+          "remoteKey": "fs-local-002",
+          "barcode": "700000000002"
+        }
+      ],
+      "importTrust": {
+        "level": "exact_review",
+        "servingBasis": "serving",
+        "servingBasisSource": "manual_review",
+        "blockingIssues": [],
+        "verifiedAt": "2026-04-09T12:00:00.000Z"
+      },
+      "lastUsedAt": "2026-04-12T07:00:00.000Z",
+      "updatedAt": "2026-04-12T07:00:00.000Z"
+    }
+  }
+]

@@ -16,6 +16,7 @@ export function buildSettings(overrides: Partial<UserSettings> = {}): UserSettin
     fatTarget: 60,
     weightUnit: 'lb',
     goalMode: 'lose',
+    fatLossMode: 'standard_cut',
     coachingEnabled: true,
     checkInWeekday: 1,
     targetWeeklyRatePercent: -0.5,

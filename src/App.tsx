@@ -1,6 +1,12 @@
 import { FileText, LoaderCircle, MessageSquare, Scale, Settings2, TriangleAlert, Wifi, WifiOff, X } from 'lucide-react'
-import { lazy, Suspense, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { useAppShell } from './app/useAppShell'
+import {
+  getDefaultPsmfPhaseSelection,
+  resolveSelectedPsmfPhaseId,
+  sortHistoricalPhases,
+  sortSelectablePsmfPhases,
+} from './app/phasePlanner'
 import { useBulkApplyController } from './app/useBulkApplyController'
 import { useCoachController } from './app/useCoachController'
 import { useFoodEntryController } from './app/useFoodEntryController'
@@ -17,31 +23,54 @@ import { SaveRecipeSheet } from './components/SaveRecipeSheet'
 import { SaveTemplateSheet } from './components/SaveTemplateSheet'
 import { TemplateSheet } from './components/TemplateSheet'
 import { UndoToastStack } from './components/UndoToastStack'
+import type { RepeatMealCandidate } from './components/add-food/types'
 import { useActivityLog } from './hooks/useActivityLog'
 import { useCoach } from './hooks/useCoach'
 import { useCoaching } from './hooks/useCoaching'
 import { useDayMeta } from './hooks/useDayMeta'
 import { useDiagnostics } from './hooks/useDiagnostics'
+import { useDietPhases } from './hooks/useDietPhases'
 import { useFavoriteFoods } from './hooks/useFavoriteFoods'
 import { useFoodLog } from './hooks/useFoodLog'
 import { useFoods } from './hooks/useFoods'
+import { useGarmin } from './hooks/useGarmin'
 import { useInterventions } from './hooks/useInterventions'
 import { useMealTemplates } from './hooks/useMealTemplates'
+import { useRecoveryCheckIns } from './hooks/useRecoveryCheckIns'
 import { useRecipes } from './hooks/useRecipes'
 import { useSettings } from './hooks/useSettings'
 import { useSync } from './hooks/useSync'
 import { useUiPrefs } from './hooks/useUiPrefs'
 import { useWeeklyCheckIns } from './hooks/useWeeklyCheckIns'
+import { useWellness } from './hooks/useWellness'
 import { useWeights } from './hooks/useWeights'
 import { LogScreen } from './screens/LogScreen'
-import type { ActionResult, DayStatus, FoodLogEntry, MealType, TabId } from './types'
+import type {
+  ActionResult,
+  CoachingReasonCode,
+  DayStatus,
+  DietPhase,
+  DietPhaseEvent,
+  FoodLogEntry,
+  RecoveryCheckIn,
+  LegacyCoachingCode,
+  MealType,
+  TabId,
+  UserSettings,
+} from './types'
 import { FEATURE_FLAGS } from './config/featureFlags'
+import {
+  evaluateCoachRuntimeState,
+  type CoachRuntimeState,
+} from './domain/coaching/runtime'
 import { initializeDiagnosticsPersistence } from './utils/diagnostics'
 import { recordDiagnosticsEvent } from './utils/diagnostics'
 import { getNutrientAmountV1 } from './domain/nutrition'
 import { buildManualOverrideDecisionRecord } from './domain/coaching'
+import { formatShortDate, getTodayDateKey } from './utils/dates'
 import { calculateFoodNutrition, sumNutrition } from './utils/macros'
 import { appendCoachingDecision } from './utils/storage/coachDecisions'
+import { subscribeToStorage } from './utils/storage/core'
 import { loadAllFoodLogs, loadFoodLog, saveFoodLog } from './utils/storage/logs'
 import { getInitializationError, getRecoveryIssues } from './utils/storage/recovery'
 import { initializeStorage, isStorageInitialized } from './utils/storage/schema'
@@ -71,6 +100,148 @@ const TAB_ITEMS: Array<{
   { id: 'coach', label: 'Coach', icon: MessageSquare },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ]
+
+interface PreviewPsmfGarminUiState {
+  dietPhase?: {
+    kind: 'no_active_phase' | 'active_psmf' | 'expired_psmf' | 'diet_break_active'
+    activeUntilLabel?: string
+    expiredOnLabel?: string
+  }
+  recovery?: {
+    severity: 'green' | 'yellow' | 'red'
+  }
+  garmin?: {
+    kind: 'not_connected' | 'connected' | 'syncing' | 'rate_limited' | 'reconnect_required' | 'error'
+    lastSyncedLabel?: string
+    rateLimitedUntilLabel?: string
+    stale?: boolean
+  }
+  weight?: {
+    supplementalLines?: string[]
+    blockedReasonLabels?: string[]
+  }
+}
+
+const PREVIEW_UI_STORAGE_KEY = 'mt_preview_psmf_garmin_ui'
+
+function readPreviewPsmfGarminUiState(): PreviewPsmfGarminUiState | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const raw = window.localStorage.getItem(PREVIEW_UI_STORAGE_KEY)
+  if (!raw) {
+    return null
+  }
+
+  try {
+    return JSON.parse(raw) as PreviewPsmfGarminUiState
+  } catch {
+    return null
+  }
+}
+
+function formatDateLabel(dateKey: string | undefined): string | undefined {
+  return dateKey ? formatShortDate(dateKey) : undefined
+}
+
+function formatDateTimeLabel(timestamp: string | undefined): string | undefined {
+  if (!timestamp) {
+    return undefined
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(timestamp))
+}
+
+function normalizePhaseStatus(phase: DietPhase, today: string): DietPhase['status'] {
+  if (phase.status === 'cancelled' || phase.status === 'completed') {
+    return phase.status
+  }
+
+  if (phase.plannedEndDate < today) {
+    return 'expired'
+  }
+
+  if (phase.startDate <= today) {
+    return 'active'
+  }
+
+  return 'planned'
+}
+
+function mapBlockedReasonLabel(code: string): string | null {
+  switch (code) {
+    case 'psmf_phase_required':
+      return 'PSMF phase required'
+    case 'psmf_phase_expired':
+      return 'PSMF phase expired'
+    case 'diet_break_active':
+      return 'Diet break active'
+    case 'recovery_hold':
+      return 'Recovery hold'
+    default:
+      return null
+  }
+}
+
+function mergePreviewUiState(
+  derivedState: PreviewPsmfGarminUiState | null,
+  overrideState: PreviewPsmfGarminUiState | null,
+): PreviewPsmfGarminUiState | null {
+  if (!derivedState && !overrideState) {
+    return null
+  }
+
+  if (!derivedState) {
+    return overrideState
+  }
+
+  if (!overrideState) {
+    return derivedState
+  }
+
+  const dietPhase =
+    overrideState.dietPhase || derivedState.dietPhase
+      ? {
+          kind: overrideState.dietPhase?.kind ?? derivedState.dietPhase!.kind,
+          activeUntilLabel:
+            overrideState.dietPhase?.activeUntilLabel ?? derivedState.dietPhase?.activeUntilLabel,
+          expiredOnLabel:
+            overrideState.dietPhase?.expiredOnLabel ?? derivedState.dietPhase?.expiredOnLabel,
+        }
+      : undefined
+  const recovery =
+    overrideState.recovery || derivedState.recovery
+      ? {
+          severity: overrideState.recovery?.severity ?? derivedState.recovery!.severity,
+        }
+      : undefined
+  const garmin =
+    overrideState.garmin || derivedState.garmin
+      ? {
+          kind: overrideState.garmin?.kind ?? derivedState.garmin!.kind,
+          lastSyncedLabel:
+            overrideState.garmin?.lastSyncedLabel ?? derivedState.garmin?.lastSyncedLabel,
+          rateLimitedUntilLabel:
+            overrideState.garmin?.rateLimitedUntilLabel ??
+            derivedState.garmin?.rateLimitedUntilLabel,
+          stale: overrideState.garmin?.stale ?? derivedState.garmin?.stale,
+        }
+      : undefined
+
+  return {
+    dietPhase,
+    recovery,
+    garmin,
+    weight: {
+      ...derivedState.weight,
+      ...overrideState.weight,
+    },
+  }
+}
 
 function renderLazyFallback(message: string) {
   return <div className="app-card px-4 py-6 text-sm text-slate-600 dark:text-slate-300">{message}</div>
@@ -105,15 +276,40 @@ function AppContent() {
     archiveFood,
     restoreFood,
     purgeFood,
+    importFood,
     searchFoods,
     getQuickFoods,
     findDuplicateFood,
+    resolveFoodMatch,
     getFoodReferenceCount,
   } = useFoods()
   const allLogsByDate = loadAllFoodLogs()
   const { settings, updateSettings } = useSettings()
   const sync = useSync()
   const diagnostics = useDiagnostics()
+  const {
+    dietPhases,
+    dietPhaseEvents,
+    updatePlannedPhase,
+    startPsmfPhase,
+    extendPhase,
+    completePhase,
+    startDietBreak,
+    scheduleRefeed,
+    updateRefeed,
+    deleteRefeed,
+    cancelPhase,
+    updatePhaseNotes,
+  } = useDietPhases()
+  const allFoodLogs = useSyncExternalStore(subscribeToStorage, loadAllFoodLogs, loadAllFoodLogs)
+  const {
+    recoveryCheckIns,
+    getEntry: getRecoveryCheckInEntry,
+    saveEntry: saveRecoveryCheckInEntry,
+    deleteEntry: deleteRecoveryCheckInEntry,
+  } = useRecoveryCheckIns()
+  const { wellnessEntries } = useWellness()
+  const garmin = useGarmin(sync.session)
   const { uiPrefs, updateUiPrefs } = useUiPrefs()
   const { weights, saveWeight, deleteWeight } = useWeights()
   const { getDayMeta, getDayStatus, setDayStatus, toggleDayMarker } = useDayMeta()
@@ -173,7 +369,89 @@ function AppContent() {
     deleteEntry,
     restoreEntry,
   } = useFoodLog(selectedDate)
-  const coachingInsight = useCoaching(settings, weights, recoveryIssues.length)
+  const todayDateKey = getTodayDateKey()
+  const normalizedDietPhases = useMemo(
+    () => {
+      const today = getTodayDateKey()
+      return (
+      dietPhases.map((phase) => ({
+        ...phase,
+        status: normalizePhaseStatus(phase, today),
+      }))
+      )
+    },
+    [dietPhases],
+  )
+  const coachRuntime = useMemo<CoachRuntimeState | undefined>(() => {
+    if (
+      !FEATURE_FLAGS.psmfPhaseV2 &&
+      !FEATURE_FLAGS.recoveryLayerV1 &&
+      !FEATURE_FLAGS.garminConnectV1 &&
+      !FEATURE_FLAGS.recoveryHybridGates
+    ) {
+      return undefined
+    }
+
+    return {
+      phasePlan: {
+        phases: normalizedDietPhases.map((phase) => ({
+          type: phase.type,
+          status: phase.status,
+          startDate: phase.startDate,
+          plannedEndDate: phase.plannedEndDate,
+          actualEndDate: phase.actualEndDate,
+          notes: phase.notes,
+        })),
+        refeeds: dietPhaseEvents
+          .filter((event) => !event.deletedAt)
+          .map((event) => ({
+            date: event.date,
+            calorieTargetOverride: event.calorieTargetOverride,
+            notes: event.notes,
+          })),
+      },
+      recovery: {
+        checkIns: FEATURE_FLAGS.recoveryLayerV1
+          ? recoveryCheckIns.map((entry) => ({
+              date: entry.date,
+              energyScore: entry.energyScore,
+              hungerScore: entry.hungerScore,
+              sorenessScore: entry.sorenessScore,
+              sleepQualityScore: entry.sleepQualityScore,
+              notes: entry.notes,
+            }))
+          : [],
+        wellness: FEATURE_FLAGS.garminConnectV1 || FEATURE_FLAGS.recoveryHybridGates
+          ? wellnessEntries.map((entry) => ({
+              date: entry.date,
+              steps: entry.steps,
+              sleepMinutes: entry.sleepMinutes,
+              restingHeartRate: entry.restingHeartRate,
+              stressScore: entry.stressScore,
+              bodyBatteryMax: entry.bodyBatteryMax,
+              intensityMinutes: entry.intensityMinutes,
+              derivedCardioMinutes: entry.derivedCardioMinutes,
+            }))
+          : [],
+      },
+    }
+  }, [
+    dietPhaseEvents,
+    normalizedDietPhases,
+    recoveryCheckIns,
+    wellnessEntries,
+  ])
+  const coachingSettings = useMemo(
+    () =>
+      coachRuntime
+        ? ({
+            ...settings,
+            coachRuntime,
+          } as UserSettings)
+        : settings,
+    [coachRuntime, settings],
+  )
+  const coachingInsight = useCoaching(coachingSettings, weights, recoveryIssues.length)
   const {
     currentCheckIn,
     canApplyTargets: canApplyCheckInTargets,
@@ -181,7 +459,7 @@ function AppContent() {
     coachingDecisionHistory,
     markApplied,
     markKept,
-  } = useWeeklyCheckIns(settings, weights, recoveryIssues.length)
+  } = useWeeklyCheckIns(coachingSettings, weights, recoveryIssues.length)
   const visibleCurrentCheckIn = FEATURE_FLAGS.weeklyDecisionCard ? currentCheckIn : null
   const visibleCheckInHistory = FEATURE_FLAGS.weeklyDecisionCard ? checkInHistory : []
   const visibleCoachingDecisionHistory = FEATURE_FLAGS.weeklyDecisionCard
@@ -194,11 +472,223 @@ function AppContent() {
   const selectedDayMeta = getDayMeta(selectedDate)
   const selectedDateActivity = getActivityEntry(selectedDate)
   const selectedDateInterventions = getInterventionsForDate(selectedDate)
-  const visibleSavedMeals = FEATURE_FLAGS.savedMeals
-    ? templates.filter((template) => !template.archivedAt)
-    : []
-  const visibleFavorites = FEATURE_FLAGS.favoriteFoods ? favorites : []
-  const visibleRecipes = FEATURE_FLAGS.recipes ? recipes : []
+  const visibleSavedMeals = useMemo(
+    () => (FEATURE_FLAGS.savedMeals ? templates.filter((template) => !template.archivedAt) : []),
+    [templates],
+  )
+  const visibleFavorites = useMemo(
+    () => (FEATURE_FLAGS.favoriteFoods ? favorites : []),
+    [favorites],
+  )
+  const visibleRecipes = useMemo(
+    () => (FEATURE_FLAGS.recipes ? recipes : []),
+    [recipes],
+  )
+  const previewPsmfGarminUiOverride = readPreviewPsmfGarminUiState()
+  const activePsmfPhase = useMemo(
+    () =>
+      normalizedDietPhases.find((phase) => phase.type === 'psmf' && phase.status === 'active') ??
+      null,
+    [normalizedDietPhases],
+  )
+  const activeDietBreakPhase = useMemo(
+    () =>
+      normalizedDietPhases.find((phase) => phase.type === 'diet_break' && phase.status === 'active') ??
+      null,
+    [normalizedDietPhases],
+  )
+  const expiredPsmfPhase = useMemo(
+    () =>
+      sortHistoricalPhases(
+        normalizedDietPhases.filter((phase) => phase.type === 'psmf' && phase.status === 'expired'),
+      )[0] ??
+      null,
+    [normalizedDietPhases],
+  )
+  const plannedPhases = useMemo(
+    () =>
+      [...normalizedDietPhases]
+        .filter((phase) => phase.status === 'planned')
+        .sort((left, right) => left.startDate.localeCompare(right.startDate)),
+    [normalizedDietPhases],
+  )
+  const historicalPhases = useMemo(
+    () =>
+      sortHistoricalPhases(
+        normalizedDietPhases.filter(
+          (phase) => phase.status === 'completed' || phase.status === 'cancelled',
+        ),
+      ),
+    [normalizedDietPhases],
+  )
+  const selectablePsmfPhases = useMemo(
+    () =>
+      sortSelectablePsmfPhases(
+        normalizedDietPhases.filter(
+          (phase) => phase.type === 'psmf' && phase.status !== 'cancelled',
+        ),
+      ),
+    [normalizedDietPhases],
+  )
+  const refeedsByPhaseId = useMemo(() => {
+    const grouped: Record<string, DietPhaseEvent[]> = {}
+
+    for (const event of dietPhaseEvents) {
+      if (event.deletedAt) {
+        continue
+      }
+
+      grouped[event.phaseId] ??= []
+      grouped[event.phaseId].push(event)
+    }
+
+    for (const phaseId of Object.keys(grouped)) {
+      grouped[phaseId] = [...grouped[phaseId]].sort((left, right) => left.date.localeCompare(right.date))
+    }
+
+    return grouped
+  }, [dietPhaseEvents])
+  const [selectedPsmfPhaseId, setSelectedPsmfPhaseId] = useState<string | null>(() =>
+    getDefaultPsmfPhaseSelection(selectablePsmfPhases),
+  )
+  useEffect(() => {
+    setSelectedPsmfPhaseId((currentSelection) =>
+      resolveSelectedPsmfPhaseId(selectablePsmfPhases, currentSelection),
+    )
+  }, [selectablePsmfPhases])
+  const selectedPsmfPhase = useMemo(
+    () => selectablePsmfPhases.find((phase) => phase.id === selectedPsmfPhaseId) ?? null,
+    [selectablePsmfPhases, selectedPsmfPhaseId],
+  )
+  const selectedPsmfPhaseRefeeds = useMemo(
+    () => (selectedPsmfPhase ? refeedsByPhaseId[selectedPsmfPhase.id] ?? [] : []),
+    [refeedsByPhaseId, selectedPsmfPhase],
+  )
+  const currentWindowRefeeds = useMemo(
+    () =>
+      visibleCurrentCheckIn
+        ? dietPhaseEvents
+            .filter(
+              (event) =>
+                !event.deletedAt &&
+                event.date >= visibleCurrentCheckIn.weekStartDate &&
+                event.date <= visibleCurrentCheckIn.weekEndDate,
+            )
+            .sort((left, right) => left.date.localeCompare(right.date))
+        : [],
+    [dietPhaseEvents, visibleCurrentCheckIn],
+  )
+  const todayRecoveryCheckIn = getRecoveryCheckInEntry(todayDateKey)
+  const runtimeAssessment = useMemo(
+    () => {
+      const today = getTodayDateKey()
+      return (
+      evaluateCoachRuntimeState(
+        coachRuntime,
+        {
+          goalMode: settings.goalMode,
+          fatLossMode: settings.fatLossMode ?? 'standard_cut',
+        },
+        visibleCurrentCheckIn?.weekEndDate ?? today,
+      )
+      )
+    },
+    [coachRuntime, settings.fatLossMode, settings.goalMode, visibleCurrentCheckIn?.weekEndDate],
+  )
+  const derivedPsmfGarminUiState: PreviewPsmfGarminUiState | null = (() => {
+    const supplementalLines: string[] = []
+    const blockedReasonLabels = new Set<string>()
+
+    if (activePsmfPhase) {
+      supplementalLines.push(`PSMF active until ${formatDateLabel(activePsmfPhase.plannedEndDate)}`)
+    }
+    if (activeDietBreakPhase) {
+      supplementalLines.push(`Diet break active until ${formatDateLabel(activeDietBreakPhase.plannedEndDate)}`)
+    }
+
+    for (const refeed of currentWindowRefeeds) {
+      supplementalLines.push(`Planned refeed on ${formatDateLabel(refeed.date)}`)
+    }
+
+    if (visibleCurrentCheckIn?.reasonCodes?.includes('recovery_watch')) {
+      supplementalLines.push('Recovery strain is elevated this week.')
+    }
+
+    for (const blockedReason of visibleCurrentCheckIn?.blockedReasons ?? []) {
+      const label = mapBlockedReasonLabel(blockedReason.code)
+      if (label) {
+        blockedReasonLabels.add(label)
+      }
+    }
+
+    const dietPhase: PreviewPsmfGarminUiState['dietPhase'] =
+      FEATURE_FLAGS.psmfPhaseV2 && settings.goalMode === 'lose'
+        ? activeDietBreakPhase
+          ? {
+              kind: 'diet_break_active' as const,
+              activeUntilLabel: formatDateLabel(activeDietBreakPhase.plannedEndDate),
+            }
+          : activePsmfPhase
+            ? {
+                kind: 'active_psmf' as const,
+                activeUntilLabel: formatDateLabel(activePsmfPhase.plannedEndDate),
+              }
+            : expiredPsmfPhase
+              ? {
+                  kind: 'expired_psmf' as const,
+                  expiredOnLabel: formatDateLabel(expiredPsmfPhase.plannedEndDate),
+                }
+              : {
+                  kind: 'no_active_phase' as const,
+                }
+        : undefined
+
+    const recovery: PreviewPsmfGarminUiState['recovery'] =
+      FEATURE_FLAGS.recoveryLayerV1 || FEATURE_FLAGS.recoveryHybridGates
+        ? {
+            severity: runtimeAssessment.recovery.latestSeverity ?? 'green',
+          }
+        : undefined
+
+    const garminKind: NonNullable<PreviewPsmfGarminUiState['garmin']>['kind'] =
+      garmin.connection.status === 'connected' ||
+      garmin.connection.status === 'syncing' ||
+      garmin.connection.status === 'rate_limited' ||
+      garmin.connection.status === 'reconnect_required' ||
+      garmin.connection.status === 'error'
+        ? garmin.connection.status
+        : 'not_connected'
+    const garminState: PreviewPsmfGarminUiState['garmin'] =
+      FEATURE_FLAGS.garminConnectV1
+        ? {
+            kind: garminKind,
+            lastSyncedLabel: formatDateTimeLabel(garmin.connection.lastSuccessfulSyncAt),
+            rateLimitedUntilLabel: formatDateTimeLabel(garmin.connection.retryAfterAt),
+            stale: garmin.connection.staleData,
+          }
+        : undefined
+
+    if (!dietPhase && !recovery && !garminState && supplementalLines.length === 0) {
+      return null
+    }
+
+    return {
+      dietPhase,
+      recovery,
+      garmin: garminState,
+      weight:
+        supplementalLines.length > 0 || blockedReasonLabels.size > 0
+          ? {
+              supplementalLines,
+              blockedReasonLabels: [...blockedReasonLabels],
+            }
+          : undefined,
+    }
+  })()
+  const previewPsmfGarminUiState = mergePreviewUiState(
+    derivedPsmfGarminUiState,
+    previewPsmfGarminUiOverride,
+  )
   const selectedDateTotals = sumNutrition(
     entries.map((entry) => calculateFoodNutrition(entry.snapshot, entry.servings)),
   )
@@ -238,7 +728,6 @@ function AppContent() {
 
     return byMeal
   }, [allLogsByDate, selectedDate])
-
   function scrollEntryIntoView(entryId: string, meal: MealType): void {
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
@@ -315,6 +804,107 @@ function AppContent() {
     scrollEntryIntoView,
     ensureEditableIntakeDay,
   })
+  const repeatCandidates = useMemo<RepeatMealCandidate[]>(() => {
+    if (
+      !FEATURE_FLAGS.personalLibraryV1 ||
+      !foodEntryController.foodSheetContext ||
+      foodEntryController.foodSheetContext.kind !== 'add'
+    ) {
+      return []
+    }
+
+    const targetMeal = foodEntryController.foodSheetContext.meal
+    const activeFoodsById = new Map(
+      foods.filter((food) => !food.archivedAt).map((food) => [food.id, food] as const),
+    )
+    const favoriteFoodIds = new Set(visibleFavorites.map((favorite) => favorite.foodId))
+    const selectedDateValue = Date.parse(`${selectedDate}T00:00:00`)
+    const thirtyDayCutoff = selectedDateValue - 30 * 24 * 60 * 60 * 1000
+    const fourteenDayCutoff = selectedDateValue - 14 * 24 * 60 * 60 * 1000
+    const candidates = new Map<
+      string,
+      {
+        foodId: string
+        foodName: string
+        servings: number
+        lastUsedAt?: string
+        sameMealRecent: boolean
+        usageCount: number
+        hasLastServings: boolean
+        favorite: boolean
+      }
+    >()
+
+    for (const [date, dayEntries] of Object.entries(allLogsByDate)) {
+      if (date === selectedDate) {
+        continue
+      }
+
+      const dateValue = Date.parse(`${date}T00:00:00`)
+      if (!Number.isFinite(dateValue) || dateValue < thirtyDayCutoff) {
+        continue
+      }
+
+      for (const entry of dayEntries) {
+        if (entry.deletedAt || !entry.foodId) {
+          continue
+        }
+
+        const food = activeFoodsById.get(entry.foodId)
+        if (!food) {
+          continue
+        }
+
+        const servings =
+          typeof entry.servings === 'number' && Number.isFinite(entry.servings) && entry.servings > 0
+            ? entry.servings
+            : food.lastServings ?? 1
+        const current = candidates.get(food.id)
+        const sameMealRecent = entry.meal === targetMeal && dateValue >= fourteenDayCutoff
+        const favorite = favoriteFoodIds.has(food.id)
+
+        candidates.set(food.id, {
+          foodId: food.id,
+          foodName: food.name,
+          servings,
+          lastUsedAt:
+            !current?.lastUsedAt || date > current.lastUsedAt ? date : current.lastUsedAt,
+          sameMealRecent: (current?.sameMealRecent ?? false) || sameMealRecent,
+          usageCount: Math.max(current?.usageCount ?? 0, food.usageCount),
+          hasLastServings:
+            (current?.hasLastServings ?? false) ||
+            (typeof servings === 'number' && Number.isFinite(servings) && servings > 0),
+          favorite: (current?.favorite ?? false) || favorite,
+        })
+      }
+    }
+
+    return [...candidates.values()]
+      .sort((left, right) => {
+        if (left.sameMealRecent !== right.sameMealRecent) {
+          return Number(right.sameMealRecent) - Number(left.sameMealRecent)
+        }
+
+        if ((left.lastUsedAt ?? '') !== (right.lastUsedAt ?? '')) {
+          return (right.lastUsedAt ?? '').localeCompare(left.lastUsedAt ?? '')
+        }
+
+        if (left.usageCount !== right.usageCount) {
+          return right.usageCount - left.usageCount
+        }
+
+        if (left.hasLastServings !== right.hasLastServings) {
+          return Number(right.hasLastServings) - Number(left.hasLastServings)
+        }
+
+        if (left.favorite !== right.favorite) {
+          return Number(right.favorite) - Number(left.favorite)
+        }
+
+        return left.foodName.localeCompare(right.foodName)
+      })
+      .slice(0, 6)
+  }, [allLogsByDate, foodEntryController.foodSheetContext, foods, selectedDate, visibleFavorites])
 
   const bulkApplyController = useBulkApplyController({
     selectedDate,
@@ -706,7 +1296,10 @@ function AppContent() {
     reportError(null)
   }
 
-  function handleManualSettingsUpdate(nextSettings: typeof settings): ActionResult<void> {
+  function handleManualSettingsUpdate(
+    nextSettings: typeof settings,
+    options?: { reasonCode?: CoachingReasonCode | LegacyCoachingCode; effectiveDate?: string },
+  ): ActionResult<void> {
     const targetsChanged =
       settings.calorieTarget !== nextSettings.calorieTarget ||
       settings.proteinTarget !== nextSettings.proteinTarget ||
@@ -723,7 +1316,8 @@ function AppContent() {
       const decisionRecord = buildManualOverrideDecisionRecord(
         settings,
         nextSettings,
-        buildSelectedDateTimestamp(),
+        options?.effectiveDate ?? buildSelectedDateTimestamp(),
+        options?.reasonCode,
       )
       const decisionResult = appendCoachingDecision(decisionRecord)
       if (!decisionResult.ok) {
@@ -749,6 +1343,127 @@ function AppContent() {
     return result
   }
 
+  function handleStartPsmfPhase(startDate: string, plannedEndDate: string, notes?: string): ActionResult<DietPhase> {
+    const result = startPsmfPhase(startDate, plannedEndDate, notes)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleUpdatePlannedDietPhase(
+    phaseId: string,
+    patch: Pick<DietPhase, 'startDate' | 'plannedEndDate' | 'calorieTargetOverride' | 'notes'>,
+  ): ActionResult<DietPhase> {
+    const result = updatePlannedPhase(phaseId, patch)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleExtendDietPhase(phaseId: string, plannedEndDate: string): ActionResult<DietPhase> {
+    const result = extendPhase(phaseId, plannedEndDate)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleCompleteDietPhase(phaseId: string, actualEndDate: string): ActionResult<DietPhase> {
+    const result = completePhase(phaseId, actualEndDate)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleStartDietBreak(
+    startDate: string,
+    plannedEndDate: string,
+    calorieTargetOverride: number,
+    notes?: string,
+  ): ActionResult<DietPhase> {
+    const result = startDietBreak(startDate, plannedEndDate, calorieTargetOverride, notes)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleScheduleRefeed(
+    phaseId: string,
+    date: string,
+    calorieTargetOverride: number,
+    notes?: string,
+  ): ActionResult<DietPhaseEvent> {
+    const result = scheduleRefeed(phaseId, date, calorieTargetOverride, notes)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleUpdateRefeed(
+    eventId: string,
+    date: string,
+    calorieTargetOverride: number,
+    notes?: string,
+  ): ActionResult<DietPhaseEvent> {
+    const result = updateRefeed(eventId, date, calorieTargetOverride, notes)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleDeleteRefeed(eventId: string): ActionResult<void> {
+    const result = deleteRefeed(eventId)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleCancelDietPhase(phaseId: string): ActionResult<DietPhase> {
+    const result = cancelPhase(phaseId)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleUpdateDietPhaseNotes(
+    phaseId: string,
+    notes: string | undefined,
+  ): ActionResult<DietPhase> {
+    const result = updatePhaseNotes(phaseId, notes)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleExitPsmf(): ActionResult<void> {
+    return handleManualSettingsUpdate({
+      ...settings,
+      fatLossMode: 'standard_cut',
+    })
+  }
+
+  function handleSaveRecoveryCheckIn(
+    date: string,
+    nextCheckIn: Pick<
+      RecoveryCheckIn,
+      'energyScore' | 'hungerScore' | 'sorenessScore' | 'sleepQualityScore' | 'notes'
+    >,
+  ): ActionResult<RecoveryCheckIn> {
+    const result = saveRecoveryCheckInEntry(date, nextCheckIn)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleDeleteRecoveryCheckIn(date: string): ActionResult<void> {
+    const result = deleteRecoveryCheckInEntry(date)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  async function handleGarminConnect(): Promise<void> {
+    const result = await garmin.connect()
+    reportError(result.ok ? null : result.error)
+  }
+
+  async function handleGarminSync(): Promise<void> {
+    const result = await garmin.syncNow()
+    reportError(result.ok ? null : result.error)
+  }
+
+  async function handleGarminDisconnect(): Promise<void> {
+    const result = await garmin.disconnect()
+    reportError(result.ok ? null : result.error)
+  }
+
   function handleDismissCoaching(): void {
     const result = updateSettings({
       ...settings,
@@ -766,7 +1481,7 @@ function AppContent() {
     selectedDate,
     selectedDayStatus,
     selectedDateTotals,
-    settings,
+    settings: coachingSettings,
     uiPrefs,
     weights,
     interventions,
@@ -1008,6 +1723,7 @@ function AppContent() {
                 canApplyCheckInTargets={visibleCanApplyCheckInTargets}
                 checkInHistory={visibleCheckInHistory}
                 coachingDecisionHistory={visibleCoachingDecisionHistory}
+                previewPsmfGarminUiState={previewPsmfGarminUiState}
                 onSaveWeight={(date, weight, unit) => {
                   const result = saveWeight(date, weight, unit)
                   if (!result.ok) {
@@ -1021,6 +1737,9 @@ function AppContent() {
                 onDeleteWeight={handleDeleteWeight}
                 onApplyCheckInSuggestion={handleApplyCheckInSuggestion}
                 onKeepCurrentCheckIn={handleKeepCurrentCheckIn}
+                onManualOverrideTargets={(nextSettings, reasonCode) =>
+                  handleManualSettingsUpdate(nextSettings, { reasonCode, effectiveDate: buildSelectedDateTimestamp() })
+                }
                 onOpenCoach={() => setActiveTab('coach')}
               />
             </Suspense>
@@ -1086,9 +1805,39 @@ function AppContent() {
                 foods={foods}
                 recipes={FEATURE_FLAGS.recipes ? allRecipes : []}
                 recoveryIssues={recoveryIssues}
+                previewPsmfGarminUiState={previewPsmfGarminUiState}
+                activePsmfPhase={activePsmfPhase}
+                activeDietBreakPhase={activeDietBreakPhase}
+                expiredPsmfPhase={expiredPsmfPhase}
+                plannedPhases={plannedPhases}
+                historicalPhases={historicalPhases}
+                selectablePsmfPhases={selectablePsmfPhases}
+                selectedPsmfPhaseId={selectedPsmfPhaseId}
+                selectedPsmfPhase={selectedPsmfPhase}
+                selectedPsmfPhaseRefeeds={selectedPsmfPhaseRefeeds}
+                recoveryCheckInToday={todayRecoveryCheckIn}
+                garminBusy={garmin.busy}
                 initializationError={initializationError}
                 getFoodReferenceCount={getFoodReferenceCount}
                 onUpdateSettings={handleManualSettingsUpdate}
+                onStartPsmfPhase={handleStartPsmfPhase}
+                onUpdatePlannedPhase={handleUpdatePlannedDietPhase}
+                onExtendDietPhase={handleExtendDietPhase}
+                onCompleteDietPhase={handleCompleteDietPhase}
+                onStartDietBreak={handleStartDietBreak}
+                onScheduleRefeed={handleScheduleRefeed}
+                onUpdateRefeed={handleUpdateRefeed}
+                onDeleteRefeed={handleDeleteRefeed}
+                onCancelPhase={handleCancelDietPhase}
+                onUpdatePhaseNotes={handleUpdateDietPhaseNotes}
+                onSelectPsmfPhase={setSelectedPsmfPhaseId}
+                hasLoggedEntriesOnDate={(date) => (allFoodLogs[date]?.length ?? 0) > 0}
+                onExitPsmf={handleExitPsmf}
+                onSaveRecoveryCheckIn={handleSaveRecoveryCheckIn}
+                onDeleteRecoveryCheckIn={handleDeleteRecoveryCheckIn}
+                onConnectGarmin={() => void handleGarminConnect()}
+                onSyncGarmin={() => void handleGarminSync()}
+                onDisconnectGarmin={() => void handleGarminDisconnect()}
                 onCreateFood={(draft) => {
                   const result = createFood(draft)
                   if (!result.ok) {
@@ -1214,14 +1963,18 @@ function AppContent() {
             onDirtyChange={foodEntryController.setFoodSheetDirty}
             onConfirmFood={foodEntryController.handleConfirmFood}
             onCreateFood={createFood}
+            onImportFood={importFood}
             onToggleFavoriteFood={
               FEATURE_FLAGS.favoriteFoods ? (foodId) => toggleFavorite(foodId) : undefined
             }
             onConfirmRecipe={FEATURE_FLAGS.recipes ? handleConfirmRecipe : undefined}
             onApplySavedMeal={FEATURE_FLAGS.savedMeals ? handleApplySavedMealFromSheet : undefined}
             onFindDuplicateFood={findDuplicateFood}
+            onResolveFoodMatch={resolveFoodMatch}
+            onRestoreFood={handleRestoreFood}
             searchFoods={searchFoods}
             getQuickFoods={getQuickFoods}
+            repeatCandidates={repeatCandidates}
           />
         </Suspense>
       ) : null}

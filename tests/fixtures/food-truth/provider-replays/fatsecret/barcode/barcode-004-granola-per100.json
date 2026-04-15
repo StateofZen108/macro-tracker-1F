@@ -1,0 +1,33 @@
+{
+  "fixtureId": "barcode-004-granola-per100",
+  "requestKey": "GET https://platform.fatsecret.com/rest/food/barcode/find-by-id/v2?barcode=700000000004&flag_default_serving=true&format=json&language=en&region=US",
+  "responses": [
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "food": {
+          "food_id": "fs-004",
+          "food_name": "Granola 004",
+          "brand_name": "Bench Pantry",
+          "servings": {
+            "serving": [
+              {
+                "serving_description": "100 g",
+                "metric_serving_amount": "100",
+                "metric_serving_unit": "g",
+                "calories": "420",
+                "protein": "11",
+                "carbohydrate": "64",
+                "fat": "13",
+                "fiber": "7"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

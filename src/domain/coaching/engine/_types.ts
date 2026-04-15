@@ -7,6 +7,7 @@ import type {
   CoachingDecisionType,
   CoachingExplanationV1,
   CoachingInputV1,
+  CoachingReasonCode,
   CoachingRecommendationV1,
   CoachingTargetSet,
   ConfounderSet,
@@ -15,9 +16,11 @@ import type {
   DayMeta,
   FoodLogEntry,
   InterventionEntry,
+  LegacyCoachingCode,
   UserSettings,
   WeightEntry,
 } from '../../../types'
+import type { CoachRuntimeAssessment, CoachRuntimeState } from '../runtime'
 
 export interface CoachingEngineBuildParams {
   windowEnd: string
@@ -34,6 +37,7 @@ export interface CoachingEngineInputContext {
   windowStart: string
   windowEnd: string
   settings: UserSettings
+  runtime?: CoachRuntimeState
   input: CoachingInputV1
   series: DailyCoachingSeriesV1[]
   weightsInWindow: WeightEntry[]
@@ -86,7 +90,7 @@ export interface QualityAssessment {
   confidenceScore: number | null
   confidenceBand: CoachingConfidence
   blockedReasons: CoachingBlockedReason[]
-  reasonCodes: string[]
+  reasonCodes: Array<CoachingReasonCode | LegacyCoachingCode>
   dataQuality: DataQualityScore
   adherence: AdherenceScore
   confounders: ConfounderSet
@@ -94,6 +98,7 @@ export interface QualityAssessment {
   status: 'actionable' | 'trendOnly' | 'notEnoughData'
   isActionable: boolean
   adherenceTone: 'neutral' | 'under' | 'over' | 'onTrack'
+  runtime?: CoachRuntimeAssessment
 }
 
 export interface PolicyDecision {
@@ -107,7 +112,7 @@ export interface PolicyDecision {
   eatingDayTargetFromTdee: number | null
   estimatedTdee: number | null
   reason: string
-  reasonCodes: string[]
+  reasonCodes: Array<CoachingReasonCode | LegacyCoachingCode>
   effectiveDate: string
 }
 

@@ -1,0 +1,33 @@
+{
+  "fixtureId": "barcode-019-protein-item-019",
+  "requestKey": "GET https://platform.fatsecret.com/rest/food/barcode/find-by-id/v2?barcode=000000000019&flag_default_serving=true&format=json&language=en&region=US",
+  "responses": [
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "food": {
+          "food_id": "fs-019",
+          "food_name": "Protein Item 019",
+          "brand_name": "Bench Brand 019",
+          "servings": {
+            "serving": [
+              {
+                "serving_description": "170 g",
+                "metric_serving_amount": "170",
+                "metric_serving_unit": "g",
+                "calories": "109",
+                "protein": "11",
+                "carbohydrate": "9",
+                "fat": "3",
+                "fiber": "3"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

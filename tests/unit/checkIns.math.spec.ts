@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { evaluateCheckInWeek, getLatestCompletedWeekEnd } from '../../src/domain/checkIns/math'
-import type { ActivityEntry, DayMeta, FoodLogEntry, UserSettings, WeightEntry } from '../../src/types'
+import { evaluateCheckInWeek, getLatestCompletedWeekEnd, upsertCheckInRecord } from '../../src/domain/checkIns/math'
+import type { ActivityEntry, CheckInRecord, DayMeta, FoodLogEntry, UserSettings, WeightEntry } from '../../src/types'
 import { addDays, enumerateDateKeys } from '../../src/utils/dates'
 
 const settings: UserSettings = {
@@ -219,5 +219,83 @@ describe('check-in math', () => {
       'explicit_day_confounder',
     )
     expect(result.canApplyTargets).toBe(false)
+  })
+
+  it('does not churn updatedAt when the computed record is logically unchanged', () => {
+    const existingRecord: CheckInRecord = {
+      id: 'checkin:2026-04-06',
+      weekEndDate: '2026-04-06',
+      weekStartDate: '2026-03-31',
+      priorWeekStartDate: '2026-03-24',
+      priorWeekEndDate: '2026-03-30',
+      goalMode: 'lose',
+      targetWeeklyRatePercent: -0.5,
+      actualWeeklyRatePercent: -0.35,
+      avgCalories: 2000,
+      avgProtein: 180,
+      avgSteps: 9000,
+      weeklyCardioMinutes: 120,
+      stepAdherencePercent: 90,
+      cardioAdherencePercent: 100,
+      avgWeight: 198.4,
+      priorAvgWeight: 199.1,
+      recommendedCalorieDelta: -100,
+      recommendedCalorieTarget: 1900,
+      recommendedMacroTargets: { protein: 180, carbs: 180, fat: 60 },
+      recommendationReason: 'Loss was slower than target.',
+      recommendationExplanation: 'Keep adherence strong and tighten calories slightly.',
+      confidenceBand: 'high',
+      confidenceScore: 86,
+      decisionType: 'decrease_calories',
+      reasonCodes: ['slower_than_target'],
+      blockedReasons: [],
+      dataQuality: {
+        score: 92,
+        band: 'high',
+        eligibleDays: 21,
+        weighInDays: 14,
+        explicitEligibleDays: 21,
+        completeDays: 21,
+        partialDays: 0,
+        fastingDays: 0,
+        unmarkedLoggedDays: 0,
+        markedConfounderDays: 0,
+        recentlyImported: false,
+        recoveryIssueCount: 0,
+      },
+      adherence: {
+        isAdequate: true,
+        calorieDeviationPercent: 2,
+        proteinHitRate: 90,
+        stepAdherencePercent: 90,
+        cardioAdherencePercent: 100,
+        reasons: [],
+      },
+      confounders: {
+        reasons: [],
+        explicitMarkers: [],
+        hasRecentImport: false,
+        hasInterventionChange: false,
+        hasRecoveryIssues: false,
+        hasPartialLogging: false,
+        hasMissingWeighIns: false,
+        hasTravel: false,
+        hasIllness: false,
+        hasHighCalorieEvent: false,
+        highCalorieEventDays: 0,
+      },
+      decisionRecordId: 'engine_v1:2026-03-17:2026-04-06',
+      status: 'ready',
+      createdAt: '2026-04-06T09:00:00.000Z',
+      updatedAt: '2026-04-06T09:00:00.000Z',
+    }
+
+    const nextRecord: CheckInRecord = {
+      ...existingRecord,
+      createdAt: '2026-04-13T09:00:00.000Z',
+      updatedAt: '2026-04-13T09:00:00.000Z',
+    }
+
+    expect(upsertCheckInRecord([existingRecord], nextRecord)).toEqual([existingRecord])
   })
 })

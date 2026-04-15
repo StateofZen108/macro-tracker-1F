@@ -24,16 +24,28 @@ describe('diagnostics store', () => {
 
   it('records events and exposes a summary', async () => {
     await recordDiagnosticsEvent({
-      eventType: 'sync_push_failed',
-      severity: 'error',
+      eventType: 'barcode_lookup_completed',
+      severity: 'info',
       scope: 'diagnostics',
-      message: 'Push failed.',
+      message: 'Barcode lookup succeeded.',
+      payload: {
+        barcode: '0123456789012',
+        provider: 'open_food_facts',
+        trustLevel: 'exact_autolog',
+        servingBasis: 'serving',
+        servingBasisSource: 'provider_serving',
+        blockingIssues: [],
+        hadCompleteMacros: true,
+        resolvedLocally: false,
+      },
     })
 
     const summary = loadDiagnosticsSummary()
     expect(summary.totalCount).toBe(1)
-    expect(summary.counts.sync_push_failed).toBe(1)
-    expect(summary.lastError?.message).toBe('Push failed.')
+    expect(summary.counts.barcode_lookup_completed).toBe(1)
+    expect(summary.foodTruth?.metrics.barcodeLookupCount).toBe(1)
+    expect(summary.foodTruth?.metrics.exactAutologEligibilityRate).toBe(100)
+    expect(summary.lastError).toBeUndefined()
     expect(loadDiagnosticsEventsSnapshot()).toHaveLength(1)
   })
 
@@ -48,5 +60,6 @@ describe('diagnostics store', () => {
     const exported = exportDiagnosticsJson()
     expect(exported).toContain('ocr_extract_failed')
     expect(exported).toContain('OCR unavailable.')
+    expect(exported).toContain('"summary"')
   })
 })

@@ -8,6 +8,7 @@ on:
       - fix/**
       - chore/**
   pull_request:
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -58,8 +59,105 @@ jobs:
       - run: npm ci
       - run: npm run test:unit
 
-  e2e:
-    name: e2e
+  food-truth-unit:
+    name: food-truth-unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:food-truth:unit
+
+  food-truth-integration:
+    name: food-truth-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:food-truth:integration
+
+  food-truth-preview:
+    name: food-truth-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:food-truth:preview
+
+  food-truth-benchmark:
+    name: food-truth-benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Bootstrap benchmark summary
+        if: ${{ !hashFiles('tests/fixtures/food-truth/manifest.json') }}
+        run: |
+          echo "BOOTSTRAP_PENDING_BENCHMARK_CORPUS" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Not a benchmark pass; corpus not landed yet" | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: npm run test:food-truth:benchmark
+
+  food-truth-benchmark-guard:
+    name: food-truth-benchmark-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Bootstrap benchmark guard summary
+        if: ${{ !hashFiles('tests/fixtures/food-truth/manifest.json') }}
+        run: |
+          echo "BOOTSTRAP_PENDING_BENCHMARK_CORPUS" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "Not a benchmark pass; corpus not landed yet" | tee -a "$GITHUB_STEP_SUMMARY"
+      - run: npm run test:food-truth:benchmark-guard
+
+  food-truth-engineering-ready:
+    name: food-truth-engineering-ready
+    runs-on: ubuntu-latest
+    env:
+      MODE: production
+      VITE_FF_IMPORT_TRUST_V1: 'true'
+      VITE_FF_BARCODE_TRUTH_UI_V1: 'true'
+      VITE_FF_LABEL_OCR_TRUST_V1: 'true'
+      VITE_FF_BARCODE_PROVIDER_FATSECRET_V1: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test:food-truth:unit
+      - run: npm run test:food-truth:integration
+      - run: npm run test:food-truth:preview
+      - run: npm run test:food-truth:benchmark
+      - run: npm run test:food-truth:benchmark-guard
+      - run: npm run test:food-truth:wave1-acceptance:auto
+      - run: npm run test:food-truth:engineering-ready
+
+  e2e-generic:
+    name: e2e-generic
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,3 +168,313 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  e2e-lane-guard:
+    name: e2e-lane-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:e2e:lane-guard
+
+  e2e-coach-preview:
+    name: e2e-coach-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:coach-preview
+
+  e2e-personal-library-preview:
+    name: e2e-personal-library-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:personal-library-preview
+
+  psmf-phase-domain:
+    name: psmf-phase-domain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-phase:unit
+
+  psmf-phase-storage-integration:
+    name: psmf-phase-storage-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-phase:storage
+
+  psmf-phase-replay:
+    name: psmf-phase-replay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-phase:replay
+
+  psmf-phase-preview:
+    name: psmf-phase-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:psmf-phase:preview
+
+  phase-planner-unit:
+    name: phase-planner-unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:phase-planner:unit
+
+  phase-planner-preview:
+    name: phase-planner-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:phase-planner:preview
+
+  psmf-phase-baseline-guard:
+    name: psmf-phase-baseline-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-phase:baseline-guard
+
+  recovery-layer-domain:
+    name: recovery-layer-domain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:recovery-layer:unit
+
+  recovery-layer-replay:
+    name: recovery-layer-replay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:recovery-layer:replay
+
+  recovery-layer-preview:
+    name: recovery-layer-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:recovery-layer:preview
+
+  recovery-layer-baseline-guard:
+    name: recovery-layer-baseline-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:recovery-layer:baseline-guard
+
+  garmin-connect-domain:
+    name: garmin-connect-domain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:garmin-connect:unit
+
+  garmin-preview:
+    name: garmin-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:garmin-connect:preview
+
+  psmf-garmin-domain:
+    name: psmf-garmin-domain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-garmin:unit
+
+  psmf-garmin-replay:
+    name: psmf-garmin-replay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-garmin:replay
+
+  psmf-garmin-preview:
+    name: psmf-garmin-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:psmf-garmin:preview
+
+  psmf-garmin-baseline-guard:
+    name: psmf-garmin-baseline-guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-garmin:baseline-guard
+
+  release-confidence:
+    name: release-confidence
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - build
+      - bundle
+      - unit
+      - food-truth-unit
+      - food-truth-integration
+      - food-truth-preview
+      - food-truth-benchmark
+      - food-truth-benchmark-guard
+      - e2e-generic
+      - e2e-lane-guard
+      - e2e-coach-preview
+      - e2e-personal-library-preview
+      - psmf-phase-domain
+      - psmf-phase-storage-integration
+      - psmf-phase-replay
+      - psmf-phase-preview
+      - phase-planner-unit
+      - phase-planner-preview
+      - psmf-phase-baseline-guard
+      - recovery-layer-domain
+      - recovery-layer-replay
+      - recovery-layer-preview
+      - recovery-layer-baseline-guard
+      - garmin-connect-domain
+      - garmin-preview
+      - psmf-garmin-domain
+      - psmf-garmin-replay
+      - psmf-garmin-preview
+      - psmf-garmin-baseline-guard
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:release
+
+  psmf-garmin-release-confidence:
+    name: psmf-garmin-release-confidence
+    runs-on: ubuntu-latest
+    needs:
+      - release-confidence
+      - psmf-garmin-domain
+      - psmf-garmin-replay
+      - psmf-garmin-baseline-guard
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:psmf-garmin:release-confidence

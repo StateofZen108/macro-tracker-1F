@@ -8,18 +8,24 @@ import type {
   UserSettings,
   WeightEntry,
 } from '../../types'
+import { FEATURE_FLAGS } from '../../config/featureFlags'
 import {
   buildCoachingDecisionId,
   buildCoachingDecisionRecord,
+  compareCoachingShadowMode,
   evaluateCoachEngineV1,
+  evaluateCoachEngineV2,
 } from '../coaching'
+import { readCoachRuntimeState } from '../coaching/runtime'
 import { addDays, enumerateDateKeys, getTodayDateKey, parseDateKey } from '../../utils/dates'
 import { convertWeight } from '../../utils/macros'
+import type { CoachingShadowComparison } from '../coaching/validation'
 
 export interface CheckInComputation {
   record: CheckInRecord
   canApplyTargets: boolean
   decisionRecord: CoachingDecisionRecord
+  shadowComparison?: CoachingShadowComparison
 }
 
 function roundTo(value: number, digits = 2): number {
@@ -51,6 +57,25 @@ function buildActivityMap(activityLog: ActivityEntry[]): Map<string, ActivityEnt
   return new Map(activityLog.map((entry) => [entry.date, entry]))
 }
 
+function buildWellnessFallbackMap(settings: UserSettings): Map<
+  string,
+  {
+    steps?: number
+    cardioMinutes?: number
+  }
+> {
+  const runtime = readCoachRuntimeState(settings)
+  return new Map(
+    (runtime?.recovery?.wellness ?? []).map((entry) => [
+      entry.date,
+      {
+        steps: entry.steps,
+        cardioMinutes: entry.derivedCardioMinutes,
+      },
+    ]),
+  )
+}
+
 export function evaluateCheckInWeek(
   settings: UserSettings,
   weights: WeightEntry[],
@@ -68,9 +93,10 @@ export function evaluateCheckInWeek(
   const currentWeekDates = enumerateDateKeys(weekStartDate, weekEndDate)
   const priorWeekDates = enumerateDateKeys(priorWeekStartDate, priorWeekEndDate)
   const activityByDate = buildActivityMap(activityLog)
+  const wellnessFallbackByDate = buildWellnessFallbackMap(settings)
   const weightUnit = settings.weightUnit
 
-  const engine = evaluateCoachEngineV1({
+  const v1Evaluation = evaluateCoachEngineV1({
     windowEnd: weekEndDate,
     settings,
     logsByDate,
@@ -80,6 +106,25 @@ export function evaluateCheckInWeek(
     interventions,
     recoveryIssueCount,
   })
+  const shouldComputeV2 = FEATURE_FLAGS.coachMethodV2
+  const v2Evaluation = shouldComputeV2
+    ? evaluateCoachEngineV2({
+        windowEnd: weekEndDate,
+        settings,
+        logsByDate,
+        dayMeta,
+        weights,
+        activityLog,
+        interventions,
+        recoveryIssueCount,
+      })
+    : null
+  const useV2AsAuthority = shouldComputeV2 && import.meta.env.PROD
+  const engine = useV2AsAuthority && v2Evaluation ? v2Evaluation : v1Evaluation
+  const shadowComparison =
+    shouldComputeV2 && v2Evaluation
+      ? compareCoachingShadowMode(v1Evaluation.recommendation, v2Evaluation.recommendation)
+      : undefined
   const currentWeekSeries = engine.context.series.filter(
     (day) => day.date >= weekStartDate && day.date <= weekEndDate,
   )
@@ -105,11 +150,12 @@ export function evaluateCheckInWeek(
       : 0
 
   const totalSteps = currentWeekDates.reduce(
-    (sum, date) => sum + (activityByDate.get(date)?.steps ?? 0),
+    (sum, date) => sum + (activityByDate.get(date)?.steps ?? wellnessFallbackByDate.get(date)?.steps ?? 0),
     0,
   )
   const weeklyCardioMinutes = currentWeekDates.reduce(
-    (sum, date) => sum + (activityByDate.get(date)?.cardioMinutes ?? 0),
+    (sum, date) =>
+      sum + (activityByDate.get(date)?.cardioMinutes ?? wellnessFallbackByDate.get(date)?.cardioMinutes ?? 0),
     0,
   )
   const avgSteps = roundTo(totalSteps / currentWeekDates.length, 0)
@@ -165,12 +211,18 @@ export function evaluateCheckInWeek(
     dataQuality: engine.recommendation.dataQuality,
     adherence: engine.recommendation.adherence,
     confounders: engine.recommendation.confounders,
-    decisionRecordId: buildCoachingDecisionId(engine.context.windowStart, engine.context.windowEnd),
+    decisionRecordId: buildCoachingDecisionId(
+      engine.context.windowStart,
+      engine.context.windowEnd,
+      useV2AsAuthority ? 'engine_v2' : 'engine_v1',
+    ),
     status,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   }
   const decisionRecord = buildCoachingDecisionRecord({
     id: record.decisionRecordId,
+    source: useV2AsAuthority ? 'engine_v2' : 'engine_v1',
     windowStart: engine.context.windowStart,
     windowEnd: engine.context.windowEnd,
     recommendation: engine.recommendation,
@@ -183,6 +235,7 @@ export function evaluateCheckInWeek(
     record,
     canApplyTargets,
     decisionRecord,
+    shadowComparison,
   }
 }
 
@@ -199,12 +252,22 @@ export function upsertCheckInRecord(
     return records
   }
 
+  const nextRecord: CheckInRecord = {
+    ...record,
+    createdAt: existingRecord.createdAt,
+    appliedAt: existingRecord.appliedAt,
+    updatedAt: existingRecord.updatedAt,
+  }
+
+  if (JSON.stringify(nextRecord) === JSON.stringify(existingRecord)) {
+    return records
+  }
+
   return records.map((entry) =>
     entry.id === record.id
       ? {
-          ...record,
-          createdAt: entry.createdAt,
-          appliedAt: entry.appliedAt,
+          ...nextRecord,
+          updatedAt: new Date().toISOString(),
         }
       : entry,
   )

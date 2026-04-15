@@ -1,0 +1,47 @@
+{
+  "fixtureId": "ocr-020-troublesome-manual-hard-case",
+  "provider": "gemini",
+  "payload": {
+    "candidate": {
+      "name": "Troublesome Manual Hard Case",
+      "brand": "Label Hard Case",
+      "servingSize": 1,
+      "servingUnit": "bar",
+      "calories": 190,
+      "protein": 7,
+      "carbs": 23,
+      "fat": 8,
+      "fiber": 4
+    },
+    "fields": {
+      "servingSizeText": {
+        "value": "1 bar"
+      },
+      "calories": {
+        "value": 190,
+        "sourceText": "190 kcal"
+      },
+      "protein": {
+        "value": 7,
+        "sourceText": "7 g"
+      },
+      "carbs": {
+        "value": 23,
+        "sourceText": "23 g"
+      },
+      "fat": {
+        "value": 8,
+        "sourceText": "8 g"
+      },
+      "fiber": {
+        "value": 4,
+        "sourceText": "4 g"
+      }
+    },
+    "warnings": [
+      {
+        "message": "Choose the correct serving basis before saving."
+      }
+    ]
+  }
+}

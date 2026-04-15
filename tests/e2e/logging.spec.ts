@@ -5,6 +5,7 @@ import {
   entryRow,
   expectCenterHittable,
   expectFullyInViewport,
+  getAddFoodSearchInput,
   openMealSheet,
   resetApp,
 } from './helpers/app'
@@ -26,7 +27,7 @@ test('breakfast add button is hittable and search clears stale selection', async
   await breakfastButton.scrollIntoViewIfNeeded()
 
   await openMealSheet(page)
-  const searchInput = page.getByPlaceholder('Search your saved foods')
+  const searchInput = getAddFoodSearchInput(page)
 
   await searchInput.fill('Chicken')
   await page.getByRole('button', { name: /Chicken Breast/i }).first().click()
@@ -74,9 +75,9 @@ test('quick add logs a snapshot-only entry and updates totals', async ({ page })
 test('fast add keeps the sheet open and reuses the last amount shortcut', async ({ page }) => {
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  const searchInput = page.getByPlaceholder('Search your saved foods')
+  const searchInput = getAddFoodSearchInput(page)
   await searchInput.fill('Banana')
-  await expect(page.getByText('Search results')).toBeVisible()
+  await expect(addFoodSheet.getByRole('button', { name: /banana/i }).first()).toBeVisible()
   await addFoodSheet.getByRole('button', { name: /^Add 1x$/i }).first().click()
   await expect(addFoodSheet).toBeVisible()
   await expect(searchInput).toHaveValue('Banana')
@@ -86,16 +87,16 @@ test('fast add keeps the sheet open and reuses the last amount shortcut', async 
 
   await openMealSheet(page)
   await searchInput.fill('Banana')
-  await expect(page.getByText('Search results')).toBeVisible()
+  await expect(addFoodSheet.getByRole('button', { name: /banana/i }).first()).toBeVisible()
   await addFoodSheet.getByRole('button', { name: /banana/i }).first().click()
   await addFoodSheet.getByRole('button', { name: /^1.5x$/i }).click()
   await addFoodSheet.getByRole('button', { name: /add to meal/i }).click()
 
   await openMealSheet(page)
   await searchInput.fill('Banana')
-  await expect(page.getByText('Search results')).toBeVisible()
-  await expect(addFoodSheet.getByRole('button', { name: /^Add 1.5x$/i }).first()).toBeVisible()
-  await addFoodSheet.getByRole('button', { name: /^Add 1.5x$/i }).first().click()
+  await expect(addFoodSheet.getByRole('button', { name: /banana/i }).first()).toBeVisible()
+  await expect(addFoodSheet.getByRole('button', { name: /use last amount/i }).first()).toBeVisible()
+  await addFoodSheet.getByRole('button', { name: /use last amount/i }).first().click()
   await expect(addFoodSheet).toBeVisible()
 })
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {
+  CatalogFood,
   FavoriteFood,
   Food,
   MealType,
@@ -41,10 +42,36 @@ function mapRemoteHitToSearchResult(
     return null
   }
 
+  const now = new Date().toISOString()
+  const cacheKey = `${hit.provider}:${hit.remoteKey}`
+  const record: CatalogFood = {
+    id: `catalog-${cacheKey}`,
+    remoteKey: hit.remoteKey,
+    provider: hit.provider,
+    name: hit.name,
+    brand: hit.brand,
+    servingSize: hit.servingSize,
+    servingUnit: hit.servingUnit,
+    calories: hit.calories,
+    protein: hit.protein,
+    carbs: hit.carbs,
+    fat: hit.fat,
+    fiber: hit.fiber,
+    barcode: hit.barcode,
+    imageUrl: hit.imageUrl,
+    importConfidence: hit.importConfidence,
+    sourceQuality: hit.sourceQuality,
+    sourceQualityNote: hit.sourceQualityNote,
+    importTrust: hit.importTrust,
+    cachedAt: now,
+    staleAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    updatedAt: now,
+  }
+
   return {
     source: 'off_remote',
     matchKind,
-    id: `remote-${hit.remoteKey}`,
+    id: `remote-${cacheKey}`,
     name: hit.name,
     brand: hit.brand,
     servingSize: hit.servingSize,
@@ -54,34 +81,22 @@ function mapRemoteHitToSearchResult(
     carbs: hit.carbs,
     fat: hit.fat,
     score: 0,
-      record: {
-        id: `catalog-${hit.remoteKey}`,
-        remoteKey: hit.remoteKey,
-        provider: hit.provider,
-        name: hit.name,
-        brand: hit.brand,
-      servingSize: hit.servingSize,
-      servingUnit: hit.servingUnit,
-      calories: hit.calories,
-      protein: hit.protein,
-      carbs: hit.carbs,
-      fat: hit.fat,
-      fiber: hit.fiber,
-        barcode: hit.barcode,
-        imageUrl: hit.imageUrl,
-        importConfidence: hit.importConfidence,
-        sourceQuality: hit.sourceQuality,
-        sourceQualityNote: hit.sourceQualityNote,
-        cachedAt: new Date().toISOString(),
-        staleAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      provider: hit.provider,
-      importConfidence: hit.importConfidence,
-      sourceQuality: hit.sourceQuality,
-      sourceQualityNote: hit.sourceQualityNote,
-    }
+    record,
+    provider: hit.provider,
+    importConfidence: hit.importConfidence,
+    sourceQuality: hit.sourceQuality,
+    sourceQualityNote: hit.sourceQualityNote,
+    importTrust: hit.importTrust,
   }
+}
+
+function resolveSearchLocale(): 'en-GB' | 'en-US' {
+  const locale =
+    typeof navigator === 'undefined' || typeof navigator.language !== 'string'
+      ? 'en-GB'
+      : navigator.language
+  return locale.toLowerCase().startsWith('en-us') ? 'en-US' : 'en-GB'
+}
 
 function mergeRemoteResults(
   currentResults: UnifiedFoodSearchResult[],
@@ -104,6 +119,7 @@ export function useFoodCatalogSearch({
   targetMeal,
   isOnline,
 }: UseFoodCatalogSearchOptions) {
+  const locale = useMemo(() => resolveSearchLocale(), [])
   const failureSignatureRef = useRef<string | null>(null)
   const [remoteState, setRemoteState] = useState<{
     results: UnifiedFoodSearchResult[]
@@ -162,12 +178,19 @@ export function useFoodCatalogSearch({
 
   const fetchRemotePage = useCallback(
     async (cursor?: string, append = false): Promise<void> => {
-      const result = await searchRemoteFoodCatalog({ query: normalizedQuery, cursor })
+      const result = await searchRemoteFoodCatalog({
+        query: normalizedQuery,
+        cursor,
+        locale,
+      })
       if (!result.ok || result.data.remoteStatus === 'unavailable') {
-        recordSearchFailure(`${normalizedQuery}:${cursor ?? 'initial'}:${result.ok ? 'unavailable' : result.error.code}`, {
-          cursor: cursor ?? null,
-          result: result.ok ? 'unavailable' : result.error.code,
-        })
+        recordSearchFailure(
+          `${normalizedQuery}:${cursor ?? 'initial'}:${result.ok ? 'unavailable' : result.error.code}`,
+          {
+            cursor: cursor ?? null,
+            result: result.ok ? 'unavailable' : result.error.code,
+          },
+        )
         setRemoteState((current) => ({
           results: append ? current.results : [],
           status: 'unavailable',
@@ -190,7 +213,7 @@ export function useFoodCatalogSearch({
         loadingMore: false,
       }))
     },
-    [normalizedQuery, recordSearchFailure],
+    [locale, normalizedQuery, recordSearchFailure],
   )
 
   useEffect(() => {
@@ -241,7 +264,6 @@ export function useFoodCatalogSearch({
     fetchRemotePage,
     hasBarcodeMatch,
     isOnline,
-    localResults,
     normalizedQuery,
     strongLocalHitCount,
   ])

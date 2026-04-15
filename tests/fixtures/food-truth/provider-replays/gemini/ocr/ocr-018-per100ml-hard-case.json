@@ -1,0 +1,43 @@
+{
+  "fixtureId": "ocr-018-per100ml-hard-case",
+  "provider": "gemini",
+  "payload": {
+    "candidate": {
+      "name": "Per100ML Hard Case",
+      "brand": "Label Hard Case",
+      "servingSize": 100,
+      "servingUnit": "ml",
+      "calories": 52,
+      "protein": 5,
+      "carbs": 6,
+      "fat": 1.5,
+      "fiber": 0
+    },
+    "fields": {
+      "servingSizeText": {
+        "value": "100 ml"
+      },
+      "calories": {
+        "value": 52,
+        "sourceText": "52 kcal"
+      },
+      "protein": {
+        "value": 5,
+        "sourceText": "5 g"
+      },
+      "carbs": {
+        "value": 6,
+        "sourceText": "6 g"
+      },
+      "fat": {
+        "value": 1.5,
+        "sourceText": "1.5 g"
+      },
+      "fiber": {
+        "value": 0,
+        "sourceText": "0 g"
+      }
+    },
+    "warnings": []
+  }
+}

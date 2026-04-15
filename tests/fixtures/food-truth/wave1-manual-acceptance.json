@@ -1,0 +1,30 @@
+{
+  "status": "pending",
+  "executedAt": null,
+  "executedBy": [],
+  "buildMode": "production_like",
+  "appVersion": null,
+  "notes": "Fill this after the prod-like Wave 1 manual acceptance pass.",
+  "scenarios": {
+    "barcodeExactAutolog": {
+      "status": "pending",
+      "notes": ""
+    },
+    "barcodeWeakBasisReview": {
+      "status": "pending",
+      "notes": ""
+    },
+    "ocrExplicitServingReview": {
+      "status": "pending",
+      "notes": ""
+    },
+    "ocrAmbiguousServingBlocked": {
+      "status": "pending",
+      "notes": ""
+    },
+    "diagnosticsReview": {
+      "status": "pending",
+      "notes": ""
+    }
+  }
+}

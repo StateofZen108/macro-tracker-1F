@@ -1,0 +1,28 @@
+{
+  "fixtureId": "barcode-003-fallback-shake",
+  "requestKey": "GET https://world.openfoodfacts.org/api/v2/product/700000000003.json",
+  "responses": [
+    {
+      "status": 200,
+      "headers": {
+        "content-type": "application/json"
+      },
+      "body": {
+        "status": 1,
+        "product": {
+          "code": "700000000003",
+          "product_name": "Fallback Shake 003",
+          "brands": "Fallback Brand",
+          "serving_size": "100 ml",
+          "nutriments": {
+            "energy-kcal_100ml": 45,
+            "proteins_100ml": 9,
+            "carbohydrates_100ml": 3,
+            "fat_100ml": 0.5,
+            "fiber_100ml": 0
+          }
+        }
+      }
+    }
+  ]
+}

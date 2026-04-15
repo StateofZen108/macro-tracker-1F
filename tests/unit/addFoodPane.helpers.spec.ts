@@ -84,6 +84,6 @@ describe('add-food pane helpers', () => {
   it('maps remote status labels for browse pane headers', () => {
     expect(getRemoteCatalogStatusLabel('loading', false)).toBe('Searching...')
     expect(getRemoteCatalogStatusLabel('ok', true)).toBe('Loading more...')
-    expect(getRemoteCatalogStatusLabel('ok', false)).toBe('Open Food Facts')
+    expect(getRemoteCatalogStatusLabel('ok', false)).toBe('Open Food Facts + USDA')
   })
 })

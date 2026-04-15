@@ -1,16 +1,11 @@
-import { assessCatalogImportQuality } from '../domain/foodCatalog/importQuality'
-import type { ActionResult, BarcodeLookupResult, ImportedFoodCandidate, NutritionBasis } from '../types'
+import { assessCatalogImportQuality } from '../domain/foodCatalog/importQuality.ts'
+import { resolveProviderServingBasis } from '../domain/foodCatalog/servingBasis.ts'
+import type { ActionResult, BarcodeLookupResult, ImportedFoodCandidate } from '../types.ts'
 
 const MAIN_MACROS = ['calories', 'protein', 'carbs', 'fat'] as const
 
 type MacroKey = (typeof MAIN_MACROS)[number]
 type Nutriments = Record<string, unknown>
-
-interface ServingMetadata {
-  servingSize: number
-  servingUnit: string
-  isExplicit: boolean
-}
 
 function ok<T>(data: T): ActionResult<T> {
   return { ok: true, data }
@@ -50,55 +45,6 @@ function pickFirstNumber(...values: unknown[]): number | undefined {
   }
 
   return undefined
-}
-
-function normalizeUnit(unit: string | undefined): string {
-  const normalized = unit?.trim().toLowerCase()
-
-  if (!normalized) {
-    return 'serving'
-  }
-
-  if (['gram', 'grams'].includes(normalized)) {
-    return 'g'
-  }
-
-  if (['milliliter', 'milliliters'].includes(normalized)) {
-    return 'ml'
-  }
-
-  return normalized
-}
-
-function parseServingMetadata(servingSize: string | undefined, servingQuantity: unknown): ServingMetadata {
-  const text = servingSize?.trim()
-
-  if (text) {
-    const match = text.match(/([\d.,]+)\s*([a-zA-Z]+)/)
-    if (match) {
-      const size = parseNumber(match[1]) ?? 1
-      return {
-        servingSize: size,
-        servingUnit: normalizeUnit(match[2]),
-        isExplicit: true,
-      }
-    }
-  }
-
-  const quantity = parseNumber(servingQuantity)
-  if (quantity !== undefined) {
-    return {
-      servingSize: quantity,
-      servingUnit: 'g',
-      isExplicit: false,
-    }
-  }
-
-  return {
-    servingSize: 1,
-    servingUnit: 'serving',
-    isExplicit: false,
-  }
 }
 
 function buildMacroDraft(nutriments: Nutriments): Partial<Record<MacroKey | 'fiber', number>> {
@@ -157,50 +103,50 @@ function buildCandidate(product: Record<string, unknown>, barcode: string): Impo
       ? product.brands.split(',')[0]?.trim()
       : undefined
 
-  const servingMeta = parseServingMetadata(
-    typeof product.serving_size === 'string' ? product.serving_size : undefined,
-    product.serving_quantity,
-  )
-
   const nutriments = (product.nutriments ?? {}) as Nutriments
-  const macroDraft = buildMacroDraft(nutriments)
+  const servingMacros = buildMacroDraft(nutriments)
   const perHundredGramMacros = getPerHundredMacros(nutriments, 'g')
   const perHundredMilliliterMacros = getPerHundredMacros(nutriments, 'ml')
-
-  let note: string | undefined
-  let nutritionBasis: NutritionBasis = servingMeta.isExplicit ? 'serving' : 'unknown'
-  let verification: ImportedFoodCandidate['verification'] = servingMeta.isExplicit ? 'verified' : 'needsConfirmation'
-
-  if (!macrosAreComplete(macroDraft as Partial<Record<MacroKey, number>>)) {
-    if (macrosAreComplete(perHundredGramMacros as Partial<Record<MacroKey, number>>)) {
-      servingMeta.servingSize = 100
-      servingMeta.servingUnit = 'g'
-      Object.assign(macroDraft, perHundredGramMacros)
-      note = 'Using per 100g nutrition because serving data was incomplete.'
-      nutritionBasis = '100g'
-      verification = 'needsConfirmation'
-    } else if (macrosAreComplete(perHundredMilliliterMacros as Partial<Record<MacroKey, number>>)) {
-      servingMeta.servingSize = 100
-      servingMeta.servingUnit = 'ml'
-      Object.assign(macroDraft, perHundredMilliliterMacros)
-      note = 'Using per 100ml nutrition because serving data was incomplete.'
-      nutritionBasis = '100ml'
-      verification = 'needsConfirmation'
-    } else {
-      note = 'Nutrition data is incomplete. Review and complete the imported values before saving.'
-      verification = 'needsConfirmation'
-      nutritionBasis = servingMeta.isExplicit ? 'serving' : 'unknown'
-    }
-  } else if (!servingMeta.isExplicit) {
-    note = 'Serving size was estimated from product metadata. Confirm it before saving.'
-    verification = 'needsConfirmation'
-    nutritionBasis = 'unknown'
-  }
+  const hasCompleteServingMacros = macrosAreComplete(servingMacros as Partial<Record<MacroKey, number>>)
+  const hasPerHundredGramFallback = macrosAreComplete(
+    perHundredGramMacros as Partial<Record<MacroKey, number>>,
+  )
+  const hasPerHundredMilliliterFallback = macrosAreComplete(
+    perHundredMilliliterMacros as Partial<Record<MacroKey, number>>,
+  )
+  const servingBasis =
+    hasCompleteServingMacros
+      ? resolveProviderServingBasis({
+          servingSizeText: typeof product.serving_size === 'string' ? product.serving_size : undefined,
+          servingQuantity: product.serving_quantity,
+        })
+      : resolveProviderServingBasis({
+          hasPer100gFallback: hasPerHundredGramFallback,
+          hasPer100mlFallback: hasPerHundredMilliliterFallback,
+          servingSizeText:
+            !hasPerHundredGramFallback && !hasPerHundredMilliliterFallback
+              ? typeof product.serving_size === 'string'
+                ? product.serving_size
+                : undefined
+              : undefined,
+          servingQuantity:
+            !hasPerHundredGramFallback && !hasPerHundredMilliliterFallback
+              ? product.serving_quantity
+              : undefined,
+        })
+  const macroDraft =
+    servingBasis.nutritionBasis === '100g'
+      ? { ...perHundredGramMacros }
+      : servingBasis.nutritionBasis === '100ml'
+        ? { ...perHundredMilliliterMacros }
+        : { ...servingMacros }
 
   const quality = assessCatalogImportQuality({
     provider: 'open_food_facts',
-    hasExplicitServing: servingMeta.isExplicit,
-    nutritionBasis,
+    hasExplicitServing: servingBasis.nutritionBasis === 'serving',
+    nutritionBasis: servingBasis.nutritionBasis,
+    servingBasisSource: servingBasis.servingBasisSource,
+    blockingIssues: servingBasis.blockingIssues,
     calories: macroDraft.calories,
     protein: macroDraft.protein,
     carbs: macroDraft.carbs,
@@ -208,18 +154,17 @@ function buildCandidate(product: Record<string, unknown>, barcode: string): Impo
     brand,
     barcode,
   })
-
-  if (quality.importConfidence !== 'direct_match') {
-    verification = 'needsConfirmation'
-  }
+  const verification: ImportedFoodCandidate['verification'] =
+    quality.importTrust.level === 'exact_autolog' ? 'verified' : 'needsConfirmation'
 
   return {
     provider: 'open_food_facts',
+    remoteKey: barcode,
     barcode,
     name,
     brand,
-    servingSize: servingMeta.servingSize,
-    servingUnit: servingMeta.servingUnit,
+    servingSize: servingBasis.servingSize,
+    servingUnit: servingBasis.servingUnit,
     calories: macroDraft.calories,
     protein: macroDraft.protein,
     carbs: macroDraft.carbs,
@@ -227,10 +172,14 @@ function buildCandidate(product: Record<string, unknown>, barcode: string): Impo
     fiber: macroDraft.fiber,
     source: 'api',
     verification,
-    nutritionBasis,
+    nutritionBasis: servingBasis.nutritionBasis,
+    importTrust: {
+      ...quality.importTrust,
+      verifiedAt: new Date().toISOString(),
+    },
     importConfidence: quality.importConfidence,
     sourceQuality: quality.sourceQuality,
-    note: note ?? quality.sourceQualityNote,
+    note: quality.sourceQualityNote ?? servingBasis.explanation,
   }
 }
 

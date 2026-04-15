@@ -23,6 +23,14 @@ export function WeightChart({ points, weightUnit }: WeightChartProps) {
     )
   }
 
+  if (points.length < 2) {
+    return (
+      <div className="rounded-[24px] border border-dashed border-teal-300 bg-teal-50/70 px-4 py-8 text-center text-sm text-slate-600 dark:border-teal-500/40 dark:bg-teal-500/10 dark:text-slate-300">
+        Add one more weigh-in to unlock the chart view. Your latest entry is already saved.
+      </div>
+    )
+  }
+
   return (
     <div className="h-72 w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -72,6 +80,7 @@ export function WeightChart({ points, weightUnit }: WeightChartProps) {
             strokeWidth={3}
             dot={{ r: 3 }}
             activeDot={{ r: 5 }}
+            isAnimationActive={false}
           />
           <Line
             type="monotone"
@@ -81,6 +90,7 @@ export function WeightChart({ points, weightUnit }: WeightChartProps) {
             strokeWidth={3}
             dot={false}
             connectNulls={false}
+            isAnimationActive={false}
           />
         </LineChart>
       </ResponsiveContainer>

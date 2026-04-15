@@ -1,0 +1,444 @@
+[
+  {
+    "id": "ocr-001-label-item-001",
+    "imageFile": "ocr-001-label-item-001.png",
+    "productSlug": "label-item-001",
+    "expectedName": "Label Item 001",
+    "expectedBrand": "Label Bench 001",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 101,
+      "protein": 13,
+      "carbs": 8,
+      "fat": 1.5,
+      "fiber": 1
+    },
+    "ocrReplayFile": "ocr-001-label-item-001.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-002-label-item-002",
+    "imageFile": "ocr-002-label-item-002.png",
+    "productSlug": "label-item-002",
+    "expectedName": "Label Item 002",
+    "expectedBrand": "Label Bench 002",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 102,
+      "protein": 14,
+      "carbs": 9,
+      "fat": 2,
+      "fiber": 2
+    },
+    "ocrReplayFile": "ocr-002-label-item-002.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-003-label-item-003",
+    "imageFile": "ocr-003-label-item-003.png",
+    "productSlug": "label-item-003",
+    "expectedName": "Label Item 003",
+    "expectedBrand": "Label Bench 003",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 103,
+      "protein": 15,
+      "carbs": 10,
+      "fat": 1,
+      "fiber": 3
+    },
+    "ocrReplayFile": "ocr-003-label-item-003.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-004-label-item-004",
+    "imageFile": "ocr-004-label-item-004.png",
+    "productSlug": "label-item-004",
+    "expectedName": "Label Item 004",
+    "expectedBrand": "Label Bench 004",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 104,
+      "protein": 16,
+      "carbs": 7,
+      "fat": 1.5,
+      "fiber": 0
+    },
+    "ocrReplayFile": "ocr-004-label-item-004.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-005-label-item-005",
+    "imageFile": "ocr-005-label-item-005.png",
+    "productSlug": "label-item-005",
+    "expectedName": "Label Item 005",
+    "expectedBrand": "Label Bench 005",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 105,
+      "protein": 17,
+      "carbs": 8,
+      "fat": 2,
+      "fiber": 1
+    },
+    "ocrReplayFile": "ocr-005-label-item-005.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-006-label-item-006",
+    "imageFile": "ocr-006-label-item-006.png",
+    "productSlug": "label-item-006",
+    "expectedName": "Label Item 006",
+    "expectedBrand": "Label Bench 006",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 106,
+      "protein": 12,
+      "carbs": 9,
+      "fat": 1,
+      "fiber": 2
+    },
+    "ocrReplayFile": "ocr-006-label-item-006.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-007-label-item-007",
+    "imageFile": "ocr-007-label-item-007.png",
+    "productSlug": "label-item-007",
+    "expectedName": "Label Item 007",
+    "expectedBrand": "Label Bench 007",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 107,
+      "protein": 13,
+      "carbs": 10,
+      "fat": 1.5,
+      "fiber": 3
+    },
+    "ocrReplayFile": "ocr-007-label-item-007.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-008-label-item-008",
+    "imageFile": "ocr-008-label-item-008.png",
+    "productSlug": "label-item-008",
+    "expectedName": "Label Item 008",
+    "expectedBrand": "Label Bench 008",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 108,
+      "protein": 14,
+      "carbs": 7,
+      "fat": 2,
+      "fiber": 0
+    },
+    "ocrReplayFile": "ocr-008-label-item-008.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-009-label-item-009",
+    "imageFile": "ocr-009-label-item-009.png",
+    "productSlug": "label-item-009",
+    "expectedName": "Label Item 009",
+    "expectedBrand": "Label Bench 009",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 109,
+      "protein": 15,
+      "carbs": 8,
+      "fat": 1,
+      "fiber": 1
+    },
+    "ocrReplayFile": "ocr-009-label-item-009.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-010-label-item-010",
+    "imageFile": "ocr-010-label-item-010.png",
+    "productSlug": "label-item-010",
+    "expectedName": "Label Item 010",
+    "expectedBrand": "Label Bench 010",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 110,
+      "protein": 16,
+      "carbs": 9,
+      "fat": 1.5,
+      "fiber": 2
+    },
+    "ocrReplayFile": "ocr-010-label-item-010.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-011-per100g-item-011",
+    "imageFile": "ocr-011-per100g-item-011.png",
+    "productSlug": "per100g-item-011",
+    "expectedName": "Per100G Item 011",
+    "expectedBrand": "Label Bench 011",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100g",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 250,
+      "protein": 15,
+      "carbs": 22,
+      "fat": 9,
+      "fiber": 6
+    },
+    "ocrReplayFile": "ocr-011-per100g-item-011.json",
+    "reviewSelection": {
+      "interpretationId": "per100_metric",
+      "kind": "per100_metric"
+    }
+  },
+  {
+    "id": "ocr-012-per100g-item-012",
+    "imageFile": "ocr-012-per100g-item-012.png",
+    "productSlug": "per100g-item-012",
+    "expectedName": "Per100G Item 012",
+    "expectedBrand": "Label Bench 012",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100g",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 250,
+      "protein": 15,
+      "carbs": 22,
+      "fat": 9,
+      "fiber": 6
+    },
+    "ocrReplayFile": "ocr-012-per100g-item-012.json",
+    "reviewSelection": {
+      "interpretationId": "per100_metric",
+      "kind": "per100_metric"
+    }
+  },
+  {
+    "id": "ocr-013-per100g-item-013",
+    "imageFile": "ocr-013-per100g-item-013.png",
+    "productSlug": "per100g-item-013",
+    "expectedName": "Per100G Item 013",
+    "expectedBrand": "Label Bench 013",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100g",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 250,
+      "protein": 15,
+      "carbs": 22,
+      "fat": 9,
+      "fiber": 6
+    },
+    "ocrReplayFile": "ocr-013-per100g-item-013.json",
+    "reviewSelection": {
+      "interpretationId": "per100_metric",
+      "kind": "per100_metric"
+    }
+  },
+  {
+    "id": "ocr-014-per100ml-item-014",
+    "imageFile": "ocr-014-per100ml-item-014.png",
+    "productSlug": "per100ml-item-014",
+    "expectedName": "Per100ML Item 014",
+    "expectedBrand": "Label Bench 014",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100ml",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 45,
+      "protein": 9,
+      "carbs": 4,
+      "fat": 1,
+      "fiber": 0
+    },
+    "ocrReplayFile": "ocr-014-per100ml-item-014.json",
+    "reviewSelection": {
+      "interpretationId": "per100_metric",
+      "kind": "per100_metric"
+    }
+  },
+  {
+    "id": "ocr-015-per100ml-item-015",
+    "imageFile": "ocr-015-per100ml-item-015.png",
+    "productSlug": "per100ml-item-015",
+    "expectedName": "Per100ML Item 015",
+    "expectedBrand": "Label Bench 015",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100ml",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 45,
+      "protein": 9,
+      "carbs": 4,
+      "fat": 1,
+      "fiber": 0
+    },
+    "ocrReplayFile": "ocr-015-per100ml-item-015.json",
+    "reviewSelection": {
+      "interpretationId": "per100_metric",
+      "kind": "per100_metric"
+    }
+  },
+  {
+    "id": "ocr-016-dual-column-hard-case",
+    "imageFile": "ocr-016-dual-column-hard-case.png",
+    "productSlug": "dual-column-hard-case",
+    "expectedName": "Dual Column Hard Case",
+    "expectedBrand": "Label Hard Case",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 210,
+      "protein": 8,
+      "carbs": 24,
+      "fat": 10,
+      "fiber": 3
+    },
+    "ocrReplayFile": "ocr-016-dual-column-hard-case.json",
+    "reviewSelection": {
+      "interpretationId": "explicit_metric",
+      "kind": "explicit_metric"
+    }
+  },
+  {
+    "id": "ocr-017-per100g-hard-case",
+    "imageFile": "ocr-017-per100g-hard-case.png",
+    "productSlug": "per100g-hard-case",
+    "expectedName": "Per100G Hard Case",
+    "expectedBrand": "Label Hard Case",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100g",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 380,
+      "protein": 12,
+      "carbs": 41,
+      "fat": 18,
+      "fiber": 8
+    },
+    "ocrReplayFile": "ocr-017-per100g-hard-case.json",
+    "reviewSelection": {
+      "interpretationId": "per100_metric",
+      "kind": "per100_metric"
+    }
+  },
+  {
+    "id": "ocr-018-per100ml-hard-case",
+    "imageFile": "ocr-018-per100ml-hard-case.png",
+    "productSlug": "per100ml-hard-case",
+    "expectedName": "Per100ML Hard Case",
+    "expectedBrand": "Label Hard Case",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "100ml",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 52,
+      "protein": 5,
+      "carbs": 6,
+      "fat": 1.5,
+      "fiber": 0
+    },
+    "ocrReplayFile": "ocr-018-per100ml-hard-case.json",
+    "reviewSelection": {
+      "interpretationId": "per100_metric",
+      "kind": "per100_metric"
+    }
+  },
+  {
+    "id": "ocr-019-container-hard-case",
+    "imageFile": "ocr-019-container-hard-case.png",
+    "productSlug": "container-hard-case",
+    "expectedName": "Container Hard Case",
+    "expectedBrand": "Label Hard Case",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 600,
+      "protein": 27,
+      "carbs": 54,
+      "fat": 33,
+      "fiber": 6
+    },
+    "ocrReplayFile": "ocr-019-container-hard-case.json",
+    "reviewSelection": {
+      "interpretationId": "container_metric",
+      "kind": "container_metric"
+    }
+  },
+  {
+    "id": "ocr-020-troublesome-manual-hard-case",
+    "imageFile": "ocr-020-troublesome-manual-hard-case.png",
+    "productSlug": "troublesome-manual-hard-case",
+    "expectedName": "Troublesome Manual Hard Case",
+    "expectedBrand": "Label Hard Case",
+    "expectedTrustLevel": "exact_review",
+    "expectedServingBasis": "serving",
+    "expectedServingBasisSource": "manual_review",
+    "expectedNutrition": {
+      "calories": 190,
+      "protein": 7,
+      "carbs": 23,
+      "fat": 8,
+      "fiber": 4
+    },
+    "ocrReplayFile": "ocr-020-troublesome-manual-hard-case.json",
+    "reviewSelection": {
+      "interpretationId": "manual",
+      "kind": "manual",
+      "manualServingSize": 45,
+      "manualServingUnit": "g"
+    }
+  }
+]

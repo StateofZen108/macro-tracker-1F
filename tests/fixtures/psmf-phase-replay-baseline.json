@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "wave": "psmf-phase",
+  "kind": "placeholder-replay-baseline",
+  "note": "Canonical placeholder until a deterministic phase replay artifact is wired into the build."
+}

@@ -12,6 +12,7 @@ export async function searchRemoteFoodCatalog(input: {
   query: string
   limit?: number
   cursor?: string
+  locale?: 'en-GB' | 'en-US'
 }): Promise<ActionResult<RemoteCatalogResponse>> {
   const query = input.query.trim()
   if (!query) {
@@ -22,6 +23,9 @@ export async function searchRemoteFoodCatalog(input: {
   url.searchParams.set('q', query)
   if (typeof input.limit === 'number') {
     url.searchParams.set('limit', `${input.limit}`)
+  }
+  if (input.locale) {
+    url.searchParams.set('locale', input.locale)
   }
   if (input.cursor) {
     url.searchParams.set('cursor', input.cursor)

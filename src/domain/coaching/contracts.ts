@@ -3,6 +3,7 @@ import type {
   CoachingRecommendationV1,
   UserSettings,
 } from '../../types'
+import { normalizeReasonCode } from './codes'
 import type { WindowEvaluation } from './math'
 import type { CoachingRecommendationStatusV1 } from './types'
 
@@ -39,7 +40,7 @@ export function buildCoachingRecommendationV1(
         : window.recommendedCalories < settings.calorieTarget
           ? 'decrease_calories'
           : 'keep_targets'
-  const reasonCodes = [window.reason.toLowerCase().replace(/\s+/g, '_')]
+  const reasonCodes = [normalizeReasonCode(window.reason.toLowerCase().replace(/\s+/g, '_'))]
 
   return {
     decisionType,
@@ -138,7 +139,7 @@ export function buildCoachingExplanationV1(window: WindowEvaluation): CoachingEx
     reason: window.reason,
     explanation: `${status}: ${window.explanation}`,
     reasons,
-    reasonCodes: [window.reason.toLowerCase().replace(/\s+/g, '_')],
+    reasonCodes: [normalizeReasonCode(window.reason.toLowerCase().replace(/\s+/g, '_'))],
     confounders: [...window.confounders],
   }
 }

@@ -1,0 +1,9 @@
+{
+  "branch": "main",
+  "requiredChecksMustInclude": [
+    "food-truth-benchmark",
+    "food-truth-benchmark-guard",
+    "food-truth-engineering-ready"
+  ],
+  "mode": "union"
+}
