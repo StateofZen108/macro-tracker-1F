@@ -20,7 +20,12 @@ import type { FoodLibraryMatch } from '../domain/foods/personalLibrary'
 import { useFoodCatalogSearch } from '../hooks/useFoodCatalogSearch'
 import { lookupBarcodeAcrossCatalogs } from '../utils/barcodeLookup'
 import { recordDiagnosticsEvent } from '../utils/diagnostics'
-import { extractNutritionLabel } from '../utils/labelOcr'
+import {
+  extractNutritionLabel,
+  normalizeLabelImage,
+  revokeNormalizedLabelImage,
+  type NormalizedLabelImage,
+} from '../utils/labelOcr'
 import {
   applyOcrServingInterpretation,
   buildLabelReviewValues,
@@ -205,8 +210,7 @@ export function AddFoodSheet({
   const [lookupResult, setLookupResult] = useState<BarcodeLookupResult | null>(null)
   const [lastLookupResult, setLastLookupResult] = useState<BarcodeLookupResult | null>(null)
   const [isLookingUp, setIsLookingUp] = useState(false)
-  const [ocrFile, setOcrFile] = useState<File | null>(null)
-  const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null)
+  const [ocrImage, setOcrImage] = useState<NormalizedLabelImage | null>(null)
   const [ocrSession, setOcrSession] = useState<LabelOcrReviewSession | null>(null)
   const [ocrReviewValues, setOcrReviewValues] = useState<LabelReviewValues>(
     EMPTY_LABEL_REVIEW_VALUES,
@@ -216,6 +220,7 @@ export function AddFoodSheet({
   const [ocrReviewNotice, setOcrReviewNotice] = useState<string | null>(null)
   const [ocrError, setOcrError] = useState<string | null>(null)
   const [ocrValidationMessage, setOcrValidationMessage] = useState<string | null>(null)
+  const [isPreparingOcrImage, setIsPreparingOcrImage] = useState(false)
   const [isExtractingOcr, setIsExtractingOcr] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [describeDraft, setDescribeDraft] = useState<DescribeFoodDraftV1 | null>(null)
@@ -334,7 +339,9 @@ export function AddFoodSheet({
   const scannerDirty = Boolean(
     barcodeInput.trim() || lookupResult || lookupError || lookupMessage || isLookingUp,
   )
-  const ocrCaptureDirty = Boolean(ocrFile || ocrError || ocrValidationMessage || isExtractingOcr)
+  const ocrCaptureDirty = Boolean(
+    ocrImage || ocrError || ocrValidationMessage || isPreparingOcrImage || isExtractingOcr,
+  )
   const ocrReviewDirty = Boolean(ocrSession)
   const activeDirty =
     sheetMode === 'form'
@@ -396,7 +403,7 @@ export function AddFoodSheet({
   }
 
   function resetOcrState(): void {
-    setOcrFile(null)
+    setOcrImage(null)
     setOcrSession(null)
     setOcrReviewValues(EMPTY_LABEL_REVIEW_VALUES)
     setOcrSelectedInterpretationId(null)
@@ -404,6 +411,7 @@ export function AddFoodSheet({
     setOcrReviewNotice(null)
     setOcrError(null)
     setOcrValidationMessage(null)
+    setIsPreparingOcrImage(false)
     setIsExtractingOcr(false)
   }
 
@@ -465,18 +473,10 @@ export function AddFoodSheet({
   }, [])
 
   useEffect(() => {
-    if (!ocrFile) {
-      setOcrPreviewUrl(null)
-      return
-    }
-
-    const nextPreviewUrl = URL.createObjectURL(ocrFile)
-    setOcrPreviewUrl(nextPreviewUrl)
-
     return () => {
-      URL.revokeObjectURL(nextPreviewUrl)
+      revokeNormalizedLabelImage(ocrImage)
     }
-  }, [ocrFile])
+  }, [ocrImage])
 
   useEffect(() => {
     onDirtyChange?.(open ? sheetDirty : false)
@@ -733,7 +733,7 @@ export function AddFoodSheet({
   }
 
   async function submitOcrCapture(): Promise<void> {
-    if (!ocrFile) {
+    if (!ocrImage) {
       setOcrValidationMessage('Select a nutrition-label photo before continuing.')
       return
     }
@@ -741,7 +741,7 @@ export function AddFoodSheet({
     setOcrValidationMessage(null)
     setOcrError(null)
     setIsExtractingOcr(true)
-    const result = await extractNutritionLabel(ocrFile)
+    const result = await extractNutritionLabel(ocrImage.file)
     setIsExtractingOcr(false)
 
     if (!result.ok) {
@@ -787,6 +787,28 @@ export function AddFoodSheet({
         resolvedLocally: false,
       },
     })
+  }
+
+  async function handleOcrFileSelection(file: File | null): Promise<void> {
+    if (!file) {
+      return
+    }
+
+    setIsPreparingOcrImage(true)
+    setOcrValidationMessage(null)
+    setOcrError(null)
+
+    const result = await normalizeLabelImage(file)
+    setIsPreparingOcrImage(false)
+    if (!result.ok) {
+      setOcrImage(null)
+      setOcrError(result.error.message)
+      return
+    }
+
+    setOcrImage(result.data)
+    setOcrError(null)
+    setOcrValidationMessage(null)
   }
 
   function requestDiscard(nextAction: () => void, message: string): void {
@@ -1653,8 +1675,14 @@ export function AddFoodSheet({
       ) : sheetMode === 'ocrCapture' ? (
         <Suspense fallback={<div className="px-4 py-6 text-sm text-slate-600 dark:text-slate-300">Loading label capture...</div>}>
           <LabelCaptureSheet
-            previewUrl={ocrPreviewUrl}
-            fileName={ocrFile?.name ?? null}
+            previewUrl={ocrImage?.previewUrl ?? null}
+            fileName={ocrImage?.file.name ?? null}
+            fileSummary={
+              ocrImage
+                ? `Normalized to JPEG • ${(ocrImage.byteLength / (1024 * 1024)).toFixed(2).replace(/\.?0+$/, '')} MB • ${ocrImage.width}×${ocrImage.height}`
+                : null
+            }
+            isPreparing={isPreparingOcrImage}
             isUploading={isExtractingOcr}
             errorMessage={ocrError}
             warningMessage={
@@ -1664,10 +1692,11 @@ export function AddFoodSheet({
             }
             validationMessage={ocrValidationMessage}
             primaryLabel="Review nutrition label"
-            onFileSelect={(file) => {
-              setOcrFile(file)
-              setOcrError(null)
-              setOcrValidationMessage(null)
+            onTakePhotoSelect={(file) => {
+              void handleOcrFileSelection(file)
+            }}
+            onChoosePhotoSelect={(file) => {
+              void handleOcrFileSelection(file)
             }}
             onSubmit={() => {
               void submitOcrCapture()
@@ -1682,7 +1711,7 @@ export function AddFoodSheet({
               )
             }
             onClear={() => {
-              setOcrFile(null)
+              setOcrImage(null)
               setOcrValidationMessage(null)
               setOcrError(null)
             }}
@@ -1692,8 +1721,8 @@ export function AddFoodSheet({
         <Suspense fallback={<div className="px-4 py-6 text-sm text-slate-600 dark:text-slate-300">Loading OCR review...</div>}>
           <LabelReviewSheet
             values={ocrReviewValues}
-            previewUrl={ocrPreviewUrl}
-            fileName={ocrFile?.name ?? null}
+            previewUrl={ocrImage?.previewUrl ?? null}
+            fileName={ocrImage?.file.name ?? null}
             errorMessage={ocrError}
             noticeMessage={ocrReviewNotice}
             warnings={ocrReviewState?.warnings ?? []}
@@ -1717,7 +1746,7 @@ export function AddFoodSheet({
                   setOcrReviewNotice(null)
                   setOcrError(null)
                   setOcrValidationMessage(null)
-                  setOcrFile(null)
+                  setOcrImage(null)
                   setSheetMode('ocrCapture')
                 },
                 'Discard the current OCR review and retake the nutrition-label photo?',

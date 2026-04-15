@@ -205,6 +205,7 @@ export interface ImportTrust {
 export interface LabelNutritionPanel {
   fields: LabelNutritionField[]
   servingSizeText?: string
+  servingsPerContainer?: number
   locale: LabelOcrLocale
   source: 'label_ocr'
   reviewedAt: string

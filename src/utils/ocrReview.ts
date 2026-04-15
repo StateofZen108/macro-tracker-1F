@@ -687,6 +687,7 @@ export function buildOcrDraftFromReview(
         unit: field.unit,
       })),
       servingSizeText: originalServingText ?? `${values.servingSize.trim()} ${values.servingUnit.trim()}`.trim(),
+      servingsPerContainer: hydratedSession.servingsPerContainer,
       locale: hydratedSession.foodDraft.labelNutrition?.locale ?? 'unknown',
       source: 'label_ocr',
       reviewedAt: new Date().toISOString(),

@@ -11,10 +11,12 @@ import {
   describeFood,
   describeFoodWithServings,
   formatSelectedFoodServingPreview,
+  formatServingsLabel,
   formatServingMeta,
   getCatalogImportButtonLabel,
   getCatalogProviderLabel,
   getImportConfidenceLabel,
+  getSelectedFoodMetricBasis,
   getRemoteCatalogStatusLabel,
   getSourceQualityLabel,
 } from './helpers'
@@ -258,6 +260,13 @@ export function BrowsePane({
         servings,
       })
     : null
+  const selectedFoodMetricBasis = selectedFood
+    ? getSelectedFoodMetricBasis({
+        servingSize: selectedFood.servingSize,
+        servingUnit: selectedFood.servingUnit,
+        labelNutrition: selectedFood.labelNutrition,
+      })
+    : null
 
   return (
     <div ref={contentRef} className="space-y-4" data-add-food-pane="browse">
@@ -337,7 +346,11 @@ export function BrowsePane({
 
       {selectedFood ? (
         <div
-          className="space-y-4 rounded-[28px] border border-teal-300 bg-teal-50/80 p-4 dark:border-teal-500/30 dark:bg-teal-500/10"
+          className={`space-y-4 rounded-[28px] border border-teal-300 bg-teal-50/95 p-4 shadow-sm dark:border-teal-500/30 dark:bg-slate-950/95 ${
+            mode === 'add'
+              ? 'sticky z-20 bottom-[calc(env(safe-area-inset-bottom)+5.75rem)]'
+              : ''
+          }`}
           data-testid="selected-food-card"
         >
           <div className="flex items-start justify-between gap-3">
@@ -392,7 +405,33 @@ export function BrowsePane({
             </div>
           </div>
 
-          {mode === 'add' ? <ServingsInput value={servings} onChange={onServingsChange} /> : null}
+          {mode === 'add' ? (
+            <ServingsInput
+              value={servings}
+              onChange={onServingsChange}
+              wholePackageServings={selectedFood.labelNutrition?.servingsPerContainer ?? null}
+            />
+          ) : null}
+
+          {mode === 'add' && selectedFoodMetricBasis ? (
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Total {selectedFoodMetricBasis.unit}
+              <input
+                key={`metric-${selectedFood.id}-${formatServingsLabel(servings)}`}
+                type="text"
+                inputMode="decimal"
+                className="field mt-2"
+                defaultValue={formatServingsLabel(selectedFoodMetricBasis.amount * servings)}
+                onChange={(event) => {
+                  const nextValue = event.target.value.replace(',', '.')
+                  const parsedValue = Number.parseFloat(nextValue)
+                  if (Number.isFinite(parsedValue) && parsedValue > 0) {
+                    onServingsChange(parsedValue / selectedFoodMetricBasis.amount)
+                  }
+                }}
+              />
+            </label>
+          ) : null}
 
           <button
             type="button"

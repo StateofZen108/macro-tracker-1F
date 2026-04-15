@@ -3,15 +3,16 @@ import { useEffect, useState } from 'react'
 interface ServingsInputProps {
   value: number
   onChange: (value: number) => void
+  wholePackageServings?: number | null
 }
 
-const QUICK_VALUES = [0.5, 1, 1.5, 2]
+const QUICK_VALUES = [0.5, 1, 2]
 
 function formatServings(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(2).replace(/\.?0+$/, '')
 }
 
-export function ServingsInput({ value, onChange }: ServingsInputProps) {
+export function ServingsInput({ value, onChange, wholePackageServings = null }: ServingsInputProps) {
   const [draftValue, setDraftValue] = useState(formatServings(value))
 
   useEffect(() => {
@@ -47,6 +48,19 @@ export function ServingsInput({ value, onChange }: ServingsInputProps) {
             {formatServings(quickValue)}x
           </button>
         ))}
+        {typeof wholePackageServings === 'number' && Number.isFinite(wholePackageServings) && wholePackageServings > 1 ? (
+          <button
+            type="button"
+            className={`rounded-2xl px-4 py-2 text-sm font-semibold transition ${
+              value === wholePackageServings
+                ? 'bg-teal-700 text-white shadow-glow'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+            }`}
+            onClick={() => onChange(wholePackageServings)}
+          >
+            Whole package
+          </button>
+        ) : null}
       </div>
       <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
         Servings

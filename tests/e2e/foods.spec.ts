@@ -161,6 +161,11 @@ const OCR_SESSION_NO_METRIC_RESPONSE = {
   },
 }
 
+const VALID_LABEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1cAAAAASUVORK5CYII=',
+  'base64',
+)
+
 test.beforeEach(async ({ page }) => {
   await resetApp(page)
 })
@@ -267,8 +272,8 @@ test('nutrition-label OCR review saves a new food and logs it', async ({ page })
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
   await addFoodSheet.getByRole('button', { name: /scan nutrition label/i }).click()
   await addFoodSheet
-    .locator('input[type="file"]')
-    .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: Buffer.from('ocr-label') })
+    .getByTestId('ocr-gallery-input')
+    .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: VALID_LABEL_PNG })
   await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
 
   await expect(addFoodSheet.getByText(/review extracted label/i)).toBeVisible()
@@ -327,8 +332,8 @@ test('nutrition-label OCR review warns when the label has no gram or ml equivale
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
   await addFoodSheet.getByRole('button', { name: /scan nutrition label/i }).click()
   await addFoodSheet
-    .locator('input[type="file"]')
-    .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: Buffer.from('ocr-label') })
+    .getByTestId('ocr-gallery-input')
+    .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: VALID_LABEL_PNG })
   await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
 
   await expect(addFoodSheet.getByRole('button', { name: /enter manually/i })).toBeVisible()
@@ -353,8 +358,8 @@ test('nutrition-label review blocks save when a required field is cleared', asyn
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
   await addFoodSheet.getByRole('button', { name: /scan nutrition label/i }).click()
   await addFoodSheet
-    .locator('input[type="file"]')
-    .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: Buffer.from('ocr-label') })
+    .getByTestId('ocr-gallery-input')
+    .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: VALID_LABEL_PNG })
   await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
 
   await addFoodSheet.getByLabel('Calories').fill('')

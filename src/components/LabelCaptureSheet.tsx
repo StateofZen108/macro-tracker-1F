@@ -4,12 +4,15 @@ import { useRef } from 'react'
 interface LabelCaptureSheetProps {
   previewUrl?: string | null
   fileName?: string | null
+  fileSummary?: string | null
+  isPreparing?: boolean
   isUploading?: boolean
   errorMessage?: string | null
   warningMessage?: string | null
   validationMessage?: string | null
   primaryLabel?: string
-  onFileSelect: (file: File | null) => void
+  onTakePhotoSelect: (file: File | null) => void
+  onChoosePhotoSelect: (file: File | null) => void
   onSubmit: () => void
   onBack: () => void
   onClear?: (() => void) | null
@@ -18,20 +21,28 @@ interface LabelCaptureSheetProps {
 export function LabelCaptureSheet({
   previewUrl,
   fileName,
+  fileSummary,
+  isPreparing = false,
   isUploading = false,
   errorMessage,
   warningMessage,
   validationMessage,
   primaryLabel = 'Review nutrition label',
-  onFileSelect,
+  onTakePhotoSelect,
+  onChoosePhotoSelect,
   onSubmit,
   onBack,
   onClear,
 }: LabelCaptureSheetProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const galleryInputRef = useRef<HTMLInputElement | null>(null)
 
-  function openPicker(): void {
-    inputRef.current?.click()
+  function openCameraPicker(): void {
+    cameraInputRef.current?.click()
+  }
+
+  function openGalleryPicker(): void {
+    galleryInputRef.current?.click()
   }
 
   return (
@@ -44,12 +55,21 @@ export function LabelCaptureSheet({
       </div>
 
       <input
-        ref={inputRef}
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={(event) => onFileSelect(event.target.files?.[0] ?? null)}
+        data-testid="ocr-camera-input"
+        onChange={(event) => onTakePhotoSelect(event.target.files?.[0] ?? null)}
+      />
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        data-testid="ocr-gallery-input"
+        onChange={(event) => onChoosePhotoSelect(event.target.files?.[0] ?? null)}
       />
 
       <div className="space-y-3 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
@@ -76,7 +96,8 @@ export function LabelCaptureSheet({
             {fileName ?? 'No image selected'}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-300">
-            JPEG, PNG, or WebP. The image stays in the review flow only and is not stored locally.
+            {fileSummary ??
+              'JPEG, PNG, WebP, or HEIC/HEIF. The image is normalized for OCR and stays in this review flow only.'}
           </p>
         </div>
 
@@ -98,18 +119,22 @@ export function LabelCaptureSheet({
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button type="button" className="action-button-secondary gap-2" onClick={openPicker}>
-            {previewUrl ? <RotateCcw className="h-4 w-4" /> : <ImagePlus className="h-4 w-4" />}
-            {previewUrl ? 'Replace photo' : 'Choose photo'}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <button type="button" className="action-button-secondary gap-2" onClick={openCameraPicker}>
+            {previewUrl ? <RotateCcw className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+            {previewUrl ? 'Retake photo' : 'Take photo'}
+          </button>
+          <button type="button" className="action-button-secondary gap-2" onClick={openGalleryPicker}>
+            <ImagePlus className="h-4 w-4" />
+            {previewUrl ? 'Choose another photo' : 'Choose photo'}
           </button>
           <button
             type="button"
             className="action-button"
             onClick={onSubmit}
-            disabled={isUploading || !previewUrl}
+            disabled={isUploading || isPreparing || !previewUrl}
           >
-            {isUploading ? 'Extracting...' : primaryLabel}
+            {isPreparing ? 'Preparing photo...' : isUploading ? 'Extracting...' : primaryLabel}
           </button>
         </div>
 

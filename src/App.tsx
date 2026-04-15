@@ -1,5 +1,14 @@
 import { FileText, LoaderCircle, MessageSquare, Scale, Settings2, TriangleAlert, Wifi, WifiOff, X } from 'lucide-react'
-import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from 'react'
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+} from 'react'
 import { useAppShell } from './app/useAppShell'
 import {
   getDefaultPsmfPhaseSelection,
@@ -36,8 +45,10 @@ import { useFoods } from './hooks/useFoods'
 import { useGarmin } from './hooks/useGarmin'
 import { useInterventions } from './hooks/useInterventions'
 import { useMealTemplates } from './hooks/useMealTemplates'
+import { usePwaShell } from './hooks/usePwaShell'
 import { useRecoveryCheckIns } from './hooks/useRecoveryCheckIns'
 import { useRecipes } from './hooks/useRecipes'
+import { useSafetySnapshots } from './hooks/useSafetySnapshots'
 import { useSettings } from './hooks/useSettings'
 import { useSync } from './hooks/useSync'
 import { useUiPrefs } from './hooks/useUiPrefs'
@@ -249,6 +260,7 @@ function renderLazyFallback(message: string) {
 
 function AppContent() {
   const appChromeStyles = { '--app-bottom-clearance': 'calc(env(safe-area-inset-bottom) + 8.5rem)' } as CSSProperties
+  const autoSnapshotPrimedRef = useRef(false)
 
   const {
     activeTab,
@@ -268,6 +280,8 @@ function AppContent() {
 
   const recoveryIssues = getRecoveryIssues()
   const initializationError = getInitializationError()
+  const pwaShell = usePwaShell(true)
+  const { captureDailySnapshot } = useSafetySnapshots()
 
   const {
     foods,
@@ -694,6 +708,16 @@ function AppContent() {
   )
   const recommendationDismissed = settings.coachingDismissedAt?.slice(0, 10) === selectedDate
   const hasGlobalRecoveryBanner = Boolean(initializationError || recoveryIssues.length)
+
+  useEffect(() => {
+    if (!autoSnapshotPrimedRef.current) {
+      autoSnapshotPrimedRef.current = true
+      return
+    }
+
+    void captureDailySnapshot()
+  }, [allFoodLogs, captureDailySnapshot, foods, settings])
+
   const recentCombinations = useMemo(() => {
     const byMeal: Record<MealType, Array<{ sourceDate: string; entryCount: number }>> = {
       breakfast: [],
@@ -1662,6 +1686,67 @@ function AppContent() {
           </button>
         ) : null}
 
+        {pwaShell.showInstallPrompt ? (
+          <div className="mb-3 rounded-[24px] border border-teal-200 bg-teal-50/90 px-4 py-4 text-sm text-teal-900 shadow-sm dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-100">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">Install MacroTracker</p>
+                <p className="mt-1 text-sm text-teal-800 dark:text-teal-100">
+                  Add MacroTracker to your Samsung home screen so logging opens like a full-screen phone app.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="icon-button shrink-0"
+                onClick={pwaShell.dismissInstallPrompt}
+                aria-label="Dismiss install prompt"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+              <button
+                type="button"
+                className="action-button flex-1"
+                onClick={() => {
+                  void pwaShell.install()
+                }}
+              >
+                Install app
+              </button>
+              <button
+                type="button"
+                className="action-button-secondary flex-1"
+                onClick={pwaShell.dismissInstallPrompt}
+              >
+                Maybe later
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {pwaShell.updateReady ? (
+          <div className="mb-3 rounded-[24px] border border-slate-200 bg-white/90 px-4 py-4 text-sm text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-900/80 dark:text-white">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold">Update ready</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  A fresher build is ready. Reload into the updated version now.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="action-button shrink-0"
+                onClick={() => {
+                  void pwaShell.applyUpdate()
+                }}
+              >
+                Update now
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {globalError ? (
           <div className="mb-3 flex items-start justify-between gap-3 rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-sm dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
             <p>{globalError.message}</p>
@@ -2102,6 +2187,8 @@ function AppContent() {
 function App() {
   const [storageReady, setStorageReady] = useState(isStorageInitialized())
   const [storageError, setStorageError] = useState<string | null>(null)
+  const [recoveryError, setRecoveryError] = useState<string | null>(null)
+  const { restoreLatestSnapshot, summary } = useSafetySnapshots()
 
   useEffect(() => {
     let cancelled = false
@@ -2136,6 +2223,36 @@ function App() {
             <p className="text-sm font-semibold">Storage bootstrap failed</p>
           </div>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{storageError}</p>
+          <div className="mt-4 space-y-3 rounded-[24px] border border-black/5 bg-slate-50/90 p-4 dark:border-white/10 dark:bg-slate-950/60">
+            <p className="text-sm font-medium text-slate-900 dark:text-white">
+              {summary.lastSnapshotAt
+                ? `Latest safety snapshot: ${new Intl.DateTimeFormat(undefined, {
+                    dateStyle: 'medium',
+                    timeStyle: 'short',
+                  }).format(new Date(summary.lastSnapshotAt))}`
+                : 'No safety snapshot is available yet.'}
+            </p>
+            <button
+              type="button"
+              className="action-button w-full"
+              disabled={!summary.lastSnapshotAt}
+              onClick={() => {
+                void restoreLatestSnapshot().then((result) => {
+                  if (!result.ok) {
+                    setRecoveryError(result.error.message)
+                    return
+                  }
+
+                  window.location.reload()
+                })
+              }}
+            >
+              Restore latest safety snapshot
+            </button>
+            {recoveryError ? (
+              <p className="text-sm text-rose-700 dark:text-rose-200">{recoveryError}</p>
+            ) : null}
+          </div>
         </div>
       </div>
     )

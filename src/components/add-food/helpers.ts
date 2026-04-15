@@ -57,6 +57,22 @@ export function formatServingsLabel(value: number): string {
   return `${Math.round(value * 100) / 100}`
 }
 
+export function getSelectedFoodMetricBasis({
+  servingSize,
+  servingUnit,
+  labelNutrition,
+}: Pick<SelectedFoodServingPreviewInput, 'servingSize' | 'servingUnit' | 'labelNutrition'>): MetricAmount | null {
+  return (
+    parseMetricAmount(labelNutrition?.servingSizeText) ??
+    (['g', 'ml'].includes(servingUnit.trim().toLowerCase()) && isFiniteNumber(servingSize)
+      ? {
+          amount: servingSize,
+          unit: servingUnit.trim().toLowerCase() as 'g' | 'ml',
+        }
+      : null)
+  )
+}
+
 function compactMetric(amount: number, unit: 'g' | 'ml'): string {
   return `${formatServingsLabel(amount)}${unit}`
 }
@@ -238,14 +254,11 @@ export function formatSelectedFoodServingPreview({
 }: SelectedFoodServingPreviewInput): SelectedFoodServingPreview {
   const brandPrefix = brand?.trim() ? `${brand.trim()} - ` : ''
   const labelServingText = labelNutrition?.servingSizeText
-  const metricBasis =
-    parseMetricAmount(labelServingText) ??
-    (['g', 'ml'].includes(servingUnit.trim().toLowerCase()) && isFiniteNumber(servingSize)
-      ? {
-          amount: servingSize,
-          unit: servingUnit.trim().toLowerCase() as 'g' | 'ml',
-        }
-      : null)
+  const metricBasis = getSelectedFoodMetricBasis({
+    servingSize,
+    servingUnit,
+    labelNutrition,
+  })
   const ocrCountPhrase = parseOcrCountPhrase(labelServingText)
 
   if (ocrCountPhrase && metricBasis) {

@@ -6,9 +6,11 @@ import { NotesEditorSheet } from '../components/NotesEditorSheet'
 import { TemplateSummaryCard } from '../components/TemplateSummaryCard'
 import { isFoodEditable } from '../hooks/useFoods'
 import { useImportExport } from '../hooks/useImportExport'
+import { useSafetySnapshots } from '../hooks/useSafetySnapshots'
 import type {
   ActionResult,
   AppActionError,
+  BackupFile,
   BackupPreview,
   BootstrapResolution,
   BootstrapStatusSummary,
@@ -318,6 +320,56 @@ function buildBackupFilename(): string {
   return `macrotracker-backup-${timestamp}.json`
 }
 
+const LAST_MANUAL_EXPORT_AT_KEY = 'mt_last_manual_export_at'
+
+function readPersistedTimestamp(key: string): string | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const rawValue = window.localStorage.getItem(key)
+  return rawValue?.trim() ? rawValue : null
+}
+
+function persistTimestamp(key: string, value: string): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(key, value)
+}
+
+function triggerDownload(fileName: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+async function shareOrDownloadJsonFile(fileName: string, content: string): Promise<'shared' | 'downloaded'> {
+  const shareableFile = new File([content], fileName, { type: 'application/json' })
+  const canShareFiles =
+    typeof navigator !== 'undefined' &&
+    typeof navigator.share === 'function' &&
+    typeof navigator.canShare === 'function' &&
+    navigator.canShare({ files: [shareableFile] })
+
+  if (canShareFiles) {
+    await navigator.share({
+      files: [shareableFile],
+      title: 'MacroTracker backup',
+      text: 'MacroTracker backup',
+    })
+    return 'shared'
+  }
+
+  triggerDownload(fileName, content, 'application/json')
+  return 'downloaded'
+}
+
 function buildDiagnosticsFilename(): string {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   return `macrotracker-diagnostics-${timestamp}.json`
@@ -391,6 +443,7 @@ function SettingsScreen({
   onFoodEditorStateChange,
 }: SettingsScreenProps) {
   const { applyImport, exportBackup, validateBackup } = useImportExport()
+  const { summary: safetySummary, captureSnapshot } = useSafetySnapshots()
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [settingsForm, setSettingsForm] = useState<SettingsFormState>(buildSettingsFormState(settings))
   const [settingsError, setSettingsError] = useState<string | null>(null)
@@ -408,7 +461,10 @@ function SettingsScreen({
   const [importPreview, setImportPreview] = useState<BackupPreview | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
-  const [lastExportedAt, setLastExportedAt] = useState<string | null>(null)
+  const [lastExportedAt, setLastExportedAt] = useState<string | null>(() =>
+    readPersistedTimestamp(LAST_MANUAL_EXPORT_AT_KEY),
+  )
+  const [lastImportRollbackBackup, setLastImportRollbackBackup] = useState<BackupFile | null>(null)
   const [syncEmail, setSyncEmail] = useState('')
   const [phaseEditorMode, setPhaseEditorMode] = useState<PhaseEditorMode>(null)
   const [phaseEditorTargetId, setPhaseEditorTargetId] = useState<string | null>(null)
@@ -544,19 +600,23 @@ function SettingsScreen({
       return
     }
 
-    const blob = new Blob([JSON.stringify(exportResult.data, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = buildBackupFilename()
-    link.click()
-    URL.revokeObjectURL(url)
+    try {
+      const exportPayload = JSON.stringify(exportResult.data, null, 2)
+      const exportMode = await shareOrDownloadJsonFile(buildBackupFilename(), exportPayload)
 
-    const exportedAt = new Date().toISOString()
-    setLastExportedAt(exportedAt)
-    setImportError(null)
-    setImportSuccess(`Backup exported at ${formatLocalDateTime(exportedAt)}.`)
-    onReportGlobalError(null)
+      const exportedAt = new Date().toISOString()
+      persistTimestamp(LAST_MANUAL_EXPORT_AT_KEY, exportedAt)
+      setLastExportedAt(exportedAt)
+      setImportError(null)
+      setImportSuccess(
+        `${exportMode === 'shared' ? 'Backup shared' : 'Backup exported'} at ${formatLocalDateTime(exportedAt)}.`,
+      )
+      onReportGlobalError(null)
+    } catch (error) {
+      onReportGlobalError(
+        error instanceof Error ? error.message : 'Unable to export the backup right now.',
+      )
+    }
   }
 
   function handleExportDiagnostics(): void {
@@ -597,8 +657,18 @@ function SettingsScreen({
     onReportGlobalError(null)
   }
 
-  function handleApplyImport(): void {
+  async function handleApplyImport(): Promise<void> {
     if (!importPreview) {
+      return
+    }
+
+    const snapshotReason =
+      importMode === 'replace' ? 'pre-import-replace' : 'pre-import-merge'
+    const snapshotResult = await captureSnapshot(snapshotReason)
+    if (!snapshotResult.ok) {
+      setImportError(snapshotResult.error.message)
+      setImportSuccess(null)
+      onReportGlobalError(snapshotResult.error)
       return
     }
 
@@ -613,11 +683,39 @@ function SettingsScreen({
     setImportSuccess(
       `${importMode === 'replace' ? 'Replaced' : 'Merged'} ${importResult.data.foods} foods, ${importResult.data.weights} weights, and ${importResult.data.logEntries} log entries.`,
     )
+    setLastImportRollbackBackup(snapshotResult.data.backup)
     setImportError(null)
     setImportPreview(null)
     if (importInputRef.current) {
       importInputRef.current.value = ''
     }
+    onReportGlobalError(null)
+  }
+
+  async function handleUndoLastImport(): Promise<void> {
+    if (!lastImportRollbackBackup) {
+      return
+    }
+
+    const snapshotResult = await captureSnapshot('pre-recovery-restore')
+    if (!snapshotResult.ok) {
+      setImportError(snapshotResult.error.message)
+      setImportSuccess(null)
+      onReportGlobalError(snapshotResult.error)
+      return
+    }
+
+    const restoreResult = applyImport(lastImportRollbackBackup, 'replace')
+    if (!restoreResult.ok) {
+      setImportError(restoreResult.error.message)
+      setImportSuccess(null)
+      onReportGlobalError(restoreResult.error)
+      return
+    }
+
+    setImportError(null)
+    setImportSuccess('Restored the device to the state captured before the last import.')
+    setLastImportRollbackBackup(null)
     onReportGlobalError(null)
   }
 
@@ -2218,6 +2316,17 @@ function SettingsScreen({
           </p>
         </div>
 
+        <div className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 text-sm text-slate-700 dark:border-white/10 dark:bg-slate-900/70 dark:text-slate-200">
+          <p>
+            Last safety snapshot:{' '}
+            {safetySummary.lastSnapshotAt ? formatLocalDateTime(safetySummary.lastSnapshotAt) : 'Not captured yet'}
+          </p>
+          <p className="mt-1">
+            Last manual export:{' '}
+            {lastExportedAt ? formatLocalDateTime(lastExportedAt) : 'Not exported yet'}
+          </p>
+        </div>
+
         <div className="grid gap-3 sm:grid-cols-2">
           <button type="button" className="action-button gap-2" onClick={() => void handleExport()}>
             <Download className="h-4 w-4" />
@@ -2292,6 +2401,12 @@ function SettingsScreen({
               Apply import
             </button>
           </div>
+        ) : null}
+
+        {lastImportRollbackBackup ? (
+          <button type="button" className="action-button-secondary w-full" onClick={() => void handleUndoLastImport()}>
+            Undo last import
+          </button>
         ) : null}
 
         {importError ? (
