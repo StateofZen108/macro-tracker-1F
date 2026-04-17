@@ -6,6 +6,9 @@ import type {
   BackupPreview,
   CatalogProvider,
   CheckInRecord,
+  CoachingEvidenceCard,
+  EnergyModelSnapshot,
+  GarminModifierWindow,
   CoachingCalibrationRecord,
   CoachFeedback,
   CoachProviderConfig,
@@ -19,20 +22,29 @@ import type {
   LabelNutritionField,
   LabelNutritionFieldKey,
   LabelNutritionPanel,
+  LoggingShortcutId,
   FoodSnapshot,
   ImportMode,
   InterventionEntry,
   MealTemplate,
   MealType,
+  PhaseMealTemplate,
   RecoverableDataIssue,
   RecoveryCheckIn,
   UiPrefs,
   UserSettings,
   WellnessEntry,
+  WeeklyCheckInPacket,
   WeightEntry,
   WeightUnit,
 } from '../../types'
 import { normalizeBlockedReasonCode, normalizeReasonCode } from '../../domain/coaching/codes'
+import { normalizeWeeklyCheckInPacket } from '../../domain/coaching'
+import {
+  canonicalizeNutrientKeyV1,
+  emptyNutrientProfileV1,
+  setNutrientAmountV1,
+} from '../../domain/nutrition'
 import {
   buildSystemSearchAliases,
   mergeFoodRemoteReferences,
@@ -102,6 +114,284 @@ function getDefaultTargetWeeklyRatePercent(goalMode: UserSettings['goalMode']): 
   return 0
 }
 
+const DEFAULT_GYM_PROFILE_ID = 'default-gym-profile'
+const DEFAULT_GYM_EQUIPMENT = [
+  'barbell',
+  'dumbbell',
+  'machine',
+  'cable',
+  'bodyweight',
+  'band',
+  'cardio',
+  'other',
+]
+
+function buildDefaultPinnedNutrients(): NonNullable<UserSettings['pinnedNutrients']> {
+  return [
+    { key: 'fiber', order: 0 },
+    { key: 'sodium', order: 1 },
+    { key: 'potassium', order: 2 },
+    { key: 'calcium', order: 3 },
+  ]
+}
+
+function buildDefaultCoachModuleSettings(): NonNullable<UserSettings['coachModuleSettings']> {
+  return {
+    partial_logging: { enabled: true },
+    fasting: { enabled: true },
+    logging_break: { enabled: true },
+    program_update: { enabled: true },
+  }
+}
+
+function buildDefaultFastCheckInPreference(): NonNullable<UserSettings['fastCheckInPreference']> {
+  return {
+    enabled: true,
+    skipModuleDetails: true,
+    surfaceEntryPoint: 'dashboard',
+    postResultModuleSummary: true,
+  }
+}
+
+function buildDefaultLoggingShortcutPreference(): NonNullable<UserSettings['loggingShortcutPreference']> {
+  return {
+    barcodeFirst: true,
+    autologExactBarcodeHits: true,
+    prioritizeRecents: true,
+    prioritizeFavorites: true,
+    prioritizeSavedMeals: true,
+    enabledShortcutIds: ['scanner', 'ocr', 'custom'],
+    shortcutOrder: ['scanner', 'ocr', 'custom'],
+    mealAwareLane: true,
+    toolbarStyle: 'search_barcode',
+    topShortcutId: 'scanner',
+  }
+}
+
+function buildDefaultLoggingShortcuts(): NonNullable<UserSettings['loggingShortcuts']> {
+  return [
+    { id: 'scanner', order: 0, colorToken: 'teal', visible: true },
+    { id: 'ocr', order: 1, colorToken: 'slate', visible: true },
+    { id: 'custom', order: 2, colorToken: 'amber', visible: true },
+  ]
+}
+
+function buildDefaultGymProfiles(): NonNullable<UserSettings['gymProfiles']> {
+  return [
+    {
+      id: DEFAULT_GYM_PROFILE_ID,
+      name: 'Any equipment',
+      availableEquipment: [...DEFAULT_GYM_EQUIPMENT],
+      isDefault: true,
+      createdAt: SEED_CREATED_AT,
+      updatedAt: SEED_CREATED_AT,
+    },
+  ]
+}
+
+function buildDefaultDashboardInsights(): NonNullable<UserSettings['dashboardInsights']> {
+  const defaults: Array<Pick<NonNullable<UserSettings['dashboardInsights']>[number], 'id' | 'sectionId' | 'label' | 'required'>> = [
+    { id: 'coach_summary', sectionId: 'coach', label: 'Coach summary', required: true },
+    { id: 'coach_intervention', sectionId: 'coach', label: 'Weekly intervention', required: true },
+    { id: 'nutrition_pins', sectionId: 'nutrition', label: 'Pinned nutrients', required: true },
+    { id: 'nutrition_windows', sectionId: 'nutrition', label: 'Nutrition windows' },
+    { id: 'garmin_readiness', sectionId: 'garmin', label: 'Readiness', required: true },
+    { id: 'garmin_history', sectionId: 'garmin', label: 'History windows' },
+    { id: 'garmin_conflicts', sectionId: 'garmin', label: 'Weight conflicts' },
+    { id: 'workouts_summary', sectionId: 'workouts', label: 'Workout summary', required: true },
+    { id: 'workouts_strength', sectionId: 'workouts', label: 'Strength retention', required: true },
+    { id: 'workouts_analytics', sectionId: 'workouts', label: 'Workout analytics' },
+    { id: 'body_progress_latest', sectionId: 'body_progress', label: 'Latest snapshot', required: true },
+    { id: 'body_progress_compare', sectionId: 'body_progress', label: 'Compare view' },
+    { id: 'food_review_queue', sectionId: 'food_review', label: 'Review queue', required: true },
+    { id: 'benchmark_latest', sectionId: 'benchmark', label: 'Benchmark gate', required: true },
+  ]
+
+  return defaults.map((entry, index) => ({
+    ...entry,
+    visible: true,
+    order: index,
+    updatedAt: SEED_CREATED_AT,
+  }))
+}
+
+function buildDefaultDashboardLayout(): NonNullable<UserSettings['dashboardLayout']> {
+  const order = Array.from(
+    new Set(buildDefaultDashboardInsights().map((entry) => entry.sectionId)),
+  )
+
+  return {
+    order,
+    hiddenSectionIds: [],
+    updatedAt: SEED_CREATED_AT,
+  }
+}
+
+function buildDefaultProgressPhotoVisibility(): NonNullable<UserSettings['progressPhotoVisibility']> {
+  return {
+    front: true,
+    side: true,
+    back: true,
+  }
+}
+
+function parseWeeklyPacketEnergyModel(rawValue: unknown): EnergyModelSnapshot | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  return {
+    estimatedTdee:
+      typeof rawValue.estimatedTdee === 'number' && Number.isFinite(rawValue.estimatedTdee)
+        ? rawValue.estimatedTdee
+        : null,
+    averageLoggedCalories: Number(rawValue.averageLoggedCalories ?? 0),
+    currentCalorieTarget: Number(rawValue.currentCalorieTarget ?? 0),
+    proposedCalorieTarget:
+      typeof rawValue.proposedCalorieTarget === 'number' && Number.isFinite(rawValue.proposedCalorieTarget)
+        ? rawValue.proposedCalorieTarget
+        : undefined,
+    calorieDelta:
+      typeof rawValue.calorieDelta === 'number' && Number.isFinite(rawValue.calorieDelta)
+        ? rawValue.calorieDelta
+        : undefined,
+    targetWeeklyRatePercent: Number(rawValue.targetWeeklyRatePercent ?? 0),
+    observedWeeklyRatePercent: Number(rawValue.observedWeeklyRatePercent ?? 0),
+    averageSteps: Number(rawValue.averageSteps ?? 0),
+    weeklyCardioMinutes: Number(rawValue.weeklyCardioMinutes ?? 0),
+  }
+}
+
+function parseGarminModifierWindow(rawValue: unknown): GarminModifierWindow | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const windowStart = isValidDateKey(rawValue.windowStart) ? rawValue.windowStart : null
+  const windowEnd = isValidDateKey(rawValue.windowEnd) ? rawValue.windowEnd : null
+  if (!windowStart || !windowEnd) {
+    return undefined
+  }
+
+  return {
+    windowStart,
+    windowEnd,
+    importedDays: Number(rawValue.importedDays ?? 0),
+    averageSleepMinutes:
+      typeof rawValue.averageSleepMinutes === 'number' && Number.isFinite(rawValue.averageSleepMinutes)
+        ? rawValue.averageSleepMinutes
+        : null,
+    averageRestingHeartRate:
+      typeof rawValue.averageRestingHeartRate === 'number' &&
+      Number.isFinite(rawValue.averageRestingHeartRate)
+        ? rawValue.averageRestingHeartRate
+        : null,
+    averageSteps:
+      typeof rawValue.averageSteps === 'number' && Number.isFinite(rawValue.averageSteps)
+        ? rawValue.averageSteps
+        : null,
+    totalDerivedCardioMinutes: Number(rawValue.totalDerivedCardioMinutes ?? 0),
+    nextWindowOnly: true,
+  }
+}
+
+function parseWeeklyPacketEvidenceCard(rawValue: unknown): CoachingEvidenceCard | null {
+  if (!isRecord(rawValue)) {
+    return null
+  }
+
+  const id = readString(rawValue.id)
+  const title = readString(rawValue.title)
+  const summary = readString(rawValue.summary)
+  const tone = readString(rawValue.tone)
+  if (!id || !title || !summary || !tone) {
+    return null
+  }
+
+  return {
+    id,
+    title,
+    summary,
+    tone: tone as CoachingEvidenceCard['tone'],
+    details: Array.isArray(rawValue.details)
+      ? rawValue.details.filter((value): value is string => typeof value === 'string').map((value) => value.trim())
+      : [],
+  }
+}
+
+function parseWeeklyCheckInPacketRecord(rawValue: unknown): WeeklyCheckInPacket | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const id = readString(rawValue.id)
+  const source = readString(rawValue.source)
+  const generatedAt = readString(rawValue.generatedAt)
+  const recommendationReason = readString(rawValue.recommendationReason)
+  const confidenceBand = readString(rawValue.confidenceBand)
+  const decisionType = readString(rawValue.decisionType)
+  const nextCheckInDate = isValidDateKey(rawValue.nextCheckInDate) ? rawValue.nextCheckInDate : null
+  const previousTargets = isRecord(rawValue.previousTargets)
+    ? {
+        calorieTarget: Number(rawValue.previousTargets.calorieTarget ?? 0),
+        proteinTarget: Number(rawValue.previousTargets.proteinTarget ?? 0),
+        carbTarget: Number(rawValue.previousTargets.carbTarget ?? 0),
+        fatTarget: Number(rawValue.previousTargets.fatTarget ?? 0),
+      }
+    : null
+  const energyModel = parseWeeklyPacketEnergyModel(rawValue.energyModel)
+  if (
+    !id ||
+    !source ||
+    !generatedAt ||
+    !recommendationReason ||
+    !confidenceBand ||
+    !decisionType ||
+    !nextCheckInDate ||
+    !previousTargets ||
+    !energyModel
+  ) {
+    return undefined
+  }
+
+  const proposedTargets = isRecord(rawValue.proposedTargets)
+    ? {
+        calorieTarget: Number(rawValue.proposedTargets.calorieTarget ?? 0),
+        proteinTarget: Number(rawValue.proposedTargets.proteinTarget ?? 0),
+        carbTarget: Number(rawValue.proposedTargets.carbTarget ?? 0),
+        fatTarget: Number(rawValue.proposedTargets.fatTarget ?? 0),
+      }
+    : undefined
+
+  return normalizeWeeklyCheckInPacket({
+    id,
+    source: source as WeeklyCheckInPacket['source'],
+    generatedAt,
+    recommendationReason,
+    recommendationExplanation: readOptionalString(rawValue.recommendationExplanation),
+    confidenceBand: confidenceBand as WeeklyCheckInPacket['confidenceBand'],
+    confidenceScore:
+      typeof rawValue.confidenceScore === 'number' && Number.isFinite(rawValue.confidenceScore)
+        ? rawValue.confidenceScore
+        : null,
+    decisionType: decisionType as WeeklyCheckInPacket['decisionType'],
+    nextCheckInDate,
+    targetDelta:
+      typeof rawValue.targetDelta === 'number' && Number.isFinite(rawValue.targetDelta)
+        ? rawValue.targetDelta
+        : undefined,
+    previousTargets,
+    proposedTargets,
+    energyModel,
+    garminModifierWindow: parseGarminModifierWindow(rawValue.garminModifierWindow),
+    evidenceCards: Array.isArray(rawValue.evidenceCards)
+      ? rawValue.evidenceCards
+          .map((entry) => parseWeeklyPacketEvidenceCard(entry))
+          .filter((entry): entry is CoachingEvidenceCard => entry !== null)
+      : [],
+  })
+}
+
 export const DEFAULT_SETTINGS: UserSettings = {
   calorieTarget: 2000,
   proteinTarget: 150,
@@ -116,6 +406,32 @@ export const DEFAULT_SETTINGS: UserSettings = {
   askCoachEnabled: true,
   shareInterventionsWithCoach: true,
   coachCitationsExpanded: true,
+  nutrientGoals: {},
+  pinnedNutrients: buildDefaultPinnedNutrients(),
+  focusedNutrientKey: 'fiber',
+  coachModuleSettings: buildDefaultCoachModuleSettings(),
+  fastCheckInPreference: buildDefaultFastCheckInPreference(),
+  loggingShortcutPreference: buildDefaultLoggingShortcutPreference(),
+  customExercises: [],
+  gymProfiles: buildDefaultGymProfiles(),
+  activeGymProfileId: DEFAULT_GYM_PROFILE_ID,
+  dashboardLayout: buildDefaultDashboardLayout(),
+  dashboardInsights: buildDefaultDashboardInsights(),
+  dashboardDefaultsVersionApplied: 1,
+  bodyMetricVisibility: [],
+  progressPhotoVisibility: buildDefaultProgressPhotoVisibility(),
+  bodyProgressFocusState: {
+    comparePreset: 'same_day',
+    lastSelectedPose: 'front',
+    compareMode: 'side_by_side',
+    galleryMode: 'latest_vs_compare',
+  },
+  workoutActionOverrides: [],
+  garminHistoryWindow: '7d',
+  phaseMealTemplates: [],
+  loggingToolbarStyle: 'search_barcode',
+  loggingShortcuts: buildDefaultLoggingShortcuts(),
+  featureSettingsVersionApplied: 1,
 }
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
@@ -930,7 +1246,716 @@ function normalizeFoodRecord(food: Food): Food {
     archivedAt: food.archivedAt?.trim() || undefined,
     lastUsedAt: food.lastUsedAt?.trim() || undefined,
     lastServings: Number.isFinite(food.lastServings) ? food.lastServings : undefined,
+    lastMealType:
+      food.lastMealType === 'breakfast' ||
+      food.lastMealType === 'lunch' ||
+      food.lastMealType === 'dinner' ||
+      food.lastMealType === 'snack'
+        ? food.lastMealType
+        : undefined,
     updatedAt: food.updatedAt?.trim() || undefined,
+  }
+}
+
+function normalizeNutrientGoals(
+  nutrientGoals: UserSettings['nutrientGoals'] | unknown,
+): NonNullable<UserSettings['nutrientGoals']> {
+  if (!isRecord(nutrientGoals)) {
+    return {}
+  }
+
+  const nextGoals: NonNullable<UserSettings['nutrientGoals']> = {}
+  for (const [rawKey, rawValue] of Object.entries(nutrientGoals)) {
+    const key = canonicalizeNutrientKeyV1(rawKey)
+    if (!key || !isRecord(rawValue)) {
+      continue
+    }
+
+    const mode =
+      rawValue.mode === 'custom' || rawValue.mode === 'none' || rawValue.mode === 'auto'
+        ? rawValue.mode
+        : 'auto'
+    nextGoals[key] = {
+      mode,
+      floor: readNumber(rawValue.floor) ?? undefined,
+      target: readNumber(rawValue.target) ?? undefined,
+      ceiling: readNumber(rawValue.ceiling) ?? undefined,
+    }
+  }
+
+  return nextGoals
+}
+
+function normalizePinnedNutrients(
+  pinnedNutrients: UserSettings['pinnedNutrients'] | unknown,
+): NonNullable<UserSettings['pinnedNutrients']> {
+  if (!Array.isArray(pinnedNutrients)) {
+    return buildDefaultPinnedNutrients()
+  }
+
+  const parsed: NonNullable<UserSettings['pinnedNutrients']> = []
+  pinnedNutrients.forEach((entry, index) => {
+    if (!isRecord(entry)) {
+      return
+    }
+
+    const key = canonicalizeNutrientKeyV1(readString(entry.key))
+    if (!key) {
+      return
+    }
+
+    parsed.push({
+      key,
+      order:
+        typeof entry.order === 'number' && Number.isFinite(entry.order) ? entry.order : index,
+    })
+  })
+
+  return parsed.length ? [...parsed].sort((left, right) => left.order - right.order) : buildDefaultPinnedNutrients()
+}
+
+function normalizeCoachModuleSettings(
+  moduleSettings: UserSettings['coachModuleSettings'] | unknown,
+): NonNullable<UserSettings['coachModuleSettings']> {
+  const defaults = buildDefaultCoachModuleSettings()
+  if (!isRecord(moduleSettings)) {
+    return defaults
+  }
+
+  return {
+    partial_logging: {
+      enabled:
+        isRecord(moduleSettings.partial_logging) &&
+        typeof moduleSettings.partial_logging.enabled === 'boolean'
+          ? moduleSettings.partial_logging.enabled
+          : defaults.partial_logging?.enabled ?? true,
+    },
+    fasting: {
+      enabled:
+        isRecord(moduleSettings.fasting) && typeof moduleSettings.fasting.enabled === 'boolean'
+          ? moduleSettings.fasting.enabled
+          : defaults.fasting?.enabled ?? true,
+    },
+    logging_break: {
+      enabled:
+        isRecord(moduleSettings.logging_break) &&
+        typeof moduleSettings.logging_break.enabled === 'boolean'
+          ? moduleSettings.logging_break.enabled
+          : defaults.logging_break?.enabled ?? true,
+    },
+    program_update: {
+      enabled:
+        isRecord(moduleSettings.program_update) &&
+        typeof moduleSettings.program_update.enabled === 'boolean'
+          ? moduleSettings.program_update.enabled
+          : defaults.program_update?.enabled ?? true,
+    },
+  }
+}
+
+function normalizeFastCheckInPreference(
+  preference: UserSettings['fastCheckInPreference'] | unknown,
+): NonNullable<UserSettings['fastCheckInPreference']> {
+  const defaults = buildDefaultFastCheckInPreference()
+  if (!isRecord(preference)) {
+    return defaults
+  }
+
+  return {
+    enabled: typeof preference.enabled === 'boolean' ? preference.enabled : defaults.enabled,
+    skipModuleDetails:
+      typeof preference.skipModuleDetails === 'boolean'
+        ? preference.skipModuleDetails
+        : defaults.skipModuleDetails,
+    surfaceEntryPoint:
+      preference.surfaceEntryPoint === 'coach' || preference.surfaceEntryPoint === 'dashboard'
+        ? preference.surfaceEntryPoint
+        : defaults.surfaceEntryPoint,
+    postResultModuleSummary:
+      typeof preference.postResultModuleSummary === 'boolean'
+        ? preference.postResultModuleSummary
+        : defaults.postResultModuleSummary,
+  }
+}
+
+function normalizeLoggingShortcutPreference(
+  preference: UserSettings['loggingShortcutPreference'] | unknown,
+): NonNullable<UserSettings['loggingShortcutPreference']> {
+  const defaults = buildDefaultLoggingShortcutPreference()
+  if (!isRecord(preference)) {
+    return defaults
+  }
+
+  return {
+    barcodeFirst:
+      typeof preference.barcodeFirst === 'boolean'
+        ? preference.barcodeFirst
+        : defaults.barcodeFirst,
+    autologExactBarcodeHits:
+      typeof preference.autologExactBarcodeHits === 'boolean'
+        ? preference.autologExactBarcodeHits
+        : defaults.autologExactBarcodeHits,
+    prioritizeRecents:
+      typeof preference.prioritizeRecents === 'boolean'
+        ? preference.prioritizeRecents
+        : defaults.prioritizeRecents,
+    prioritizeFavorites:
+      typeof preference.prioritizeFavorites === 'boolean'
+        ? preference.prioritizeFavorites
+        : defaults.prioritizeFavorites,
+    prioritizeSavedMeals:
+      typeof preference.prioritizeSavedMeals === 'boolean'
+        ? preference.prioritizeSavedMeals
+        : defaults.prioritizeSavedMeals,
+    enabledShortcutIds: Array.isArray(preference.enabledShortcutIds)
+      ? preference.enabledShortcutIds.filter(
+          (
+            shortcutId,
+          ): shortcutId is NonNullable<UserSettings['loggingShortcutPreference']>['enabledShortcutIds'][number] =>
+            shortcutId === 'scanner' || shortcutId === 'ocr' || shortcutId === 'custom',
+        )
+      : defaults.enabledShortcutIds,
+    shortcutOrder: Array.isArray(preference.shortcutOrder)
+      ? preference.shortcutOrder.filter(
+          (
+            shortcutId,
+          ): shortcutId is NonNullable<UserSettings['loggingShortcutPreference']>['shortcutOrder'][number] =>
+            shortcutId === 'scanner' || shortcutId === 'ocr' || shortcutId === 'custom',
+        )
+      : defaults.shortcutOrder,
+    mealAwareLane:
+      typeof preference.mealAwareLane === 'boolean'
+        ? preference.mealAwareLane
+        : defaults.mealAwareLane,
+    toolbarStyle:
+      preference.toolbarStyle === 'search_barcode' ||
+      preference.toolbarStyle === 'search_barcode_custom' ||
+      preference.toolbarStyle === 'four_custom' ||
+      preference.toolbarStyle === 'none'
+        ? preference.toolbarStyle
+        : preference.toolbarStyle === 'shortcut_grid'
+          ? 'four_custom'
+        : defaults.toolbarStyle,
+    topShortcutId:
+      preference.topShortcutId === 'scanner' ||
+      preference.topShortcutId === 'ocr' ||
+      preference.topShortcutId === 'custom'
+        ? preference.topShortcutId
+        : defaults.topShortcutId,
+  }
+}
+
+function normalizeLoggingToolbarStyle(
+  toolbarStyle: UserSettings['loggingToolbarStyle'] | unknown,
+  legacyPreference: NonNullable<UserSettings['loggingShortcutPreference']>,
+): NonNullable<UserSettings['loggingToolbarStyle']> {
+  const rawToolbarStyle = readString(toolbarStyle)
+  if (
+    rawToolbarStyle === 'search_barcode' ||
+    rawToolbarStyle === 'search_barcode_custom' ||
+    rawToolbarStyle === 'four_custom' ||
+    rawToolbarStyle === 'none'
+  ) {
+    return rawToolbarStyle
+  }
+
+  if (rawToolbarStyle === 'shortcut_grid') {
+    return 'four_custom'
+  }
+
+  return legacyPreference.toolbarStyle ?? DEFAULT_SETTINGS.loggingToolbarStyle ?? 'search_barcode'
+}
+
+function normalizeLoggingShortcuts(
+  shortcuts: UserSettings['loggingShortcuts'] | unknown,
+  legacyPreference: NonNullable<UserSettings['loggingShortcutPreference']>,
+): NonNullable<UserSettings['loggingShortcuts']> {
+  const defaults = buildDefaultLoggingShortcuts()
+  const defaultById = new Map(defaults.map((entry) => [entry.id, entry] as const))
+  const normalizedOrder = legacyPreference.shortcutOrder.length
+    ? legacyPreference.shortcutOrder
+    : defaults.map((entry) => entry.id)
+  const normalizedVisible = new Set(
+    legacyPreference.enabledShortcutIds.length
+      ? legacyPreference.enabledShortcutIds
+      : defaults.map((entry) => entry.id),
+  )
+
+  const parsed: NonNullable<UserSettings['loggingShortcuts']> = Array.isArray(shortcuts)
+    ? shortcuts.flatMap((entry) => {
+        if (!isRecord(entry)) {
+          return []
+        }
+
+        const id =
+          entry.id === 'scanner' || entry.id === 'ocr' || entry.id === 'custom' ? entry.id : null
+        if (!id) {
+          return []
+        }
+
+        const fallback = defaultById.get(id) ?? defaults[0]
+        return [
+          {
+            id: id as LoggingShortcutId,
+            order:
+              typeof entry.order === 'number' && Number.isFinite(entry.order)
+                ? entry.order
+                : normalizedOrder.indexOf(id),
+            colorToken:
+              entry.colorToken === 'teal' ||
+              entry.colorToken === 'slate' ||
+              entry.colorToken === 'amber' ||
+              entry.colorToken === 'rose'
+                ? entry.colorToken
+                : fallback.colorToken,
+            visible:
+              typeof entry.visible === 'boolean' ? entry.visible : normalizedVisible.has(id),
+          },
+        ]
+      })
+    : []
+
+  const merged = new Map(
+    defaults.map((entry) => [
+      entry.id,
+      {
+        ...entry,
+        order: normalizedOrder.indexOf(entry.id),
+        visible: normalizedVisible.has(entry.id),
+      },
+    ] as const),
+  )
+
+  for (const entry of parsed) {
+    merged.set(entry.id, entry)
+  }
+
+  return [...merged.values()].sort((left, right) => {
+    if (left.order !== right.order) {
+      return left.order - right.order
+    }
+    return left.id.localeCompare(right.id)
+  })
+}
+
+function normalizeWorkoutActionOverrides(
+  overrides: UserSettings['workoutActionOverrides'] | unknown,
+): NonNullable<UserSettings['workoutActionOverrides']> {
+  if (!Array.isArray(overrides)) {
+    return []
+  }
+
+  return overrides.flatMap((entry) => {
+    if (!isRecord(entry)) {
+      return []
+    }
+
+    const date = readString(entry.date)
+    const updatedAt = readString(entry.updatedAt)
+    const action =
+      entry.action === 'push' ||
+      entry.action === 'hold' ||
+      entry.action === 'back_off' ||
+      entry.action === 'neutral'
+        ? entry.action
+        : null
+
+    if (!date || !updatedAt || !action) {
+      return []
+    }
+
+    return [
+      {
+        date,
+        action,
+        updatedAt,
+      },
+    ]
+  })
+}
+
+function normalizeCustomExercises(
+  customExercises: UserSettings['customExercises'] | unknown,
+): NonNullable<UserSettings['customExercises']> {
+  if (!Array.isArray(customExercises)) {
+    return []
+  }
+
+  const parsed: NonNullable<UserSettings['customExercises']> = []
+  customExercises.forEach((entry) => {
+    if (!isRecord(entry)) {
+      return
+    }
+
+    const name = readString(entry.name)
+    const muscleGroup =
+      entry.muscleGroup === 'chest' ||
+      entry.muscleGroup === 'back' ||
+      entry.muscleGroup === 'legs' ||
+      entry.muscleGroup === 'shoulders' ||
+      entry.muscleGroup === 'arms' ||
+      entry.muscleGroup === 'glutes' ||
+      entry.muscleGroup === 'core' ||
+      entry.muscleGroup === 'full_body' ||
+      entry.muscleGroup === 'cardio'
+        ? entry.muscleGroup
+        : null
+
+    if (!name || !muscleGroup) {
+      return
+    }
+
+    parsed.push({
+      id: readString(entry.id) ?? crypto.randomUUID(),
+      name,
+      muscleGroup,
+      equipment: Array.isArray(entry.equipment)
+        ? entry.equipment.filter(
+            (value): value is string => typeof value === 'string' && value.trim().length > 0,
+          )
+        : [],
+      notes: readOptionalString(entry.notes),
+      createdAt: readString(entry.createdAt) ?? new Date().toISOString(),
+      updatedAt: readString(entry.updatedAt) ?? new Date().toISOString(),
+    })
+  })
+
+  return parsed
+}
+
+function normalizeGymProfiles(
+  gymProfiles: UserSettings['gymProfiles'] | unknown,
+): NonNullable<UserSettings['gymProfiles']> {
+  if (!Array.isArray(gymProfiles)) {
+    return buildDefaultGymProfiles()
+  }
+
+  const parsed: NonNullable<UserSettings['gymProfiles']> = []
+  gymProfiles.forEach((entry) => {
+    if (!isRecord(entry)) {
+      return
+    }
+
+    const name = readString(entry.name)
+    if (!name) {
+      return
+    }
+
+    parsed.push({
+      id: readString(entry.id) ?? crypto.randomUUID(),
+      name,
+      availableEquipment: Array.isArray(entry.availableEquipment)
+        ? entry.availableEquipment.filter(
+            (value): value is string => typeof value === 'string' && value.trim().length > 0,
+          )
+        : [],
+      isDefault: typeof entry.isDefault === 'boolean' ? entry.isDefault : undefined,
+      createdAt: readString(entry.createdAt) ?? new Date().toISOString(),
+      updatedAt: readString(entry.updatedAt) ?? new Date().toISOString(),
+    })
+  })
+
+  return parsed.length ? parsed : buildDefaultGymProfiles()
+}
+
+function normalizeDashboardInsights(
+  dashboardInsights: UserSettings['dashboardInsights'] | unknown,
+): NonNullable<UserSettings['dashboardInsights']> {
+  const defaults = buildDefaultDashboardInsights()
+  if (!Array.isArray(dashboardInsights)) {
+    return defaults
+  }
+
+  const byId = new Map(
+    dashboardInsights
+      .map((entry) => {
+        if (!isRecord(entry)) {
+          return null
+        }
+
+        const id = readString(entry.id)
+        if (!id) {
+          return null
+        }
+
+        return [id, entry] as const
+      })
+      .filter((entry): entry is readonly [string, Record<string, unknown>] => entry !== null),
+  )
+
+  return defaults
+    .map((defaultEntry) => {
+      const existing = byId.get(defaultEntry.id)
+      if (!existing) {
+        return defaultEntry
+      }
+
+      return {
+        ...defaultEntry,
+        visible: typeof existing.visible === 'boolean' ? existing.visible : defaultEntry.visible,
+        order:
+          typeof existing.order === 'number' && Number.isFinite(existing.order)
+            ? existing.order
+            : defaultEntry.order,
+        updatedAt: readString(existing.updatedAt) ?? defaultEntry.updatedAt,
+      }
+    })
+    .sort((left, right) => left.order - right.order)
+}
+
+function normalizeDashboardLayout(
+  layout: UserSettings['dashboardLayout'] | unknown,
+  dashboardInsights: NonNullable<UserSettings['dashboardInsights']>,
+): NonNullable<UserSettings['dashboardLayout']> {
+  const defaults = buildDefaultDashboardLayout()
+  const validSectionIds = Array.from(new Set(dashboardInsights.map((entry) => entry.sectionId)))
+  if (!isRecord(layout)) {
+    return {
+      ...defaults,
+      order: validSectionIds,
+    }
+  }
+
+  const requestedOrder = Array.isArray(layout.order)
+    ? layout.order.filter(
+        (sectionId): sectionId is NonNullable<UserSettings['dashboardLayout']>['order'][number] =>
+          typeof sectionId === 'string' && validSectionIds.includes(sectionId as typeof validSectionIds[number]),
+      )
+    : []
+  const hiddenSectionIds = Array.isArray(layout.hiddenSectionIds)
+    ? layout.hiddenSectionIds.filter(
+        (sectionId): sectionId is NonNullable<UserSettings['dashboardLayout']>['hiddenSectionIds'][number] =>
+          typeof sectionId === 'string' && validSectionIds.includes(sectionId as typeof validSectionIds[number]),
+      )
+    : []
+  const order = [
+    ...requestedOrder,
+    ...validSectionIds.filter((sectionId) => !requestedOrder.includes(sectionId)),
+  ]
+
+  return {
+    order,
+    hiddenSectionIds,
+    updatedAt: readString(layout.updatedAt) ?? defaults.updatedAt,
+  }
+}
+
+function normalizeBodyMetricVisibility(
+  visibility: UserSettings['bodyMetricVisibility'] | unknown,
+): NonNullable<UserSettings['bodyMetricVisibility']> {
+  if (!Array.isArray(visibility)) {
+    return []
+  }
+
+  return visibility
+    .flatMap((entry) => {
+      if (!isRecord(entry)) {
+        return []
+      }
+
+      const key = readString(entry.key)
+      if (!key) {
+        return []
+      }
+
+      return [
+        {
+          key,
+          visible: typeof entry.visible === 'boolean' ? entry.visible : true,
+          updatedAt: readString(entry.updatedAt) ?? new Date().toISOString(),
+        },
+      ]
+    })
+}
+
+function normalizeProgressPhotoVisibility(
+  visibility: UserSettings['progressPhotoVisibility'] | unknown,
+): NonNullable<UserSettings['progressPhotoVisibility']> {
+  const defaults = buildDefaultProgressPhotoVisibility()
+  if (!isRecord(visibility)) {
+    return defaults
+  }
+
+  return {
+    front: typeof visibility.front === 'boolean' ? visibility.front : defaults.front,
+    side: typeof visibility.side === 'boolean' ? visibility.side : defaults.side,
+    back: typeof visibility.back === 'boolean' ? visibility.back : defaults.back,
+  }
+}
+
+function normalizeBodyProgressFocusState(
+  focusState: UserSettings['bodyProgressFocusState'] | unknown,
+): NonNullable<UserSettings['bodyProgressFocusState']> {
+  if (!isRecord(focusState)) {
+    return {
+      comparePreset: 'same_day',
+      lastSelectedPose: 'front',
+      compareMode: 'side_by_side',
+    }
+  }
+
+  return {
+    focusedMetricKey: readOptionalString(focusState.focusedMetricKey),
+    comparePreset:
+      focusState.comparePreset === '7d' ||
+      focusState.comparePreset === '30d' ||
+      focusState.comparePreset === 'custom'
+        ? focusState.comparePreset
+        : 'same_day',
+    lastSelectedPose:
+      focusState.lastSelectedPose === 'front' ||
+      focusState.lastSelectedPose === 'side' ||
+      focusState.lastSelectedPose === 'back'
+        ? focusState.lastSelectedPose
+        : 'front',
+    compareMode:
+      focusState.compareMode === 'overlay' || focusState.compareMode === 'side_by_side'
+        ? focusState.compareMode
+        : 'side_by_side',
+    galleryMode:
+      focusState.galleryMode === 'before_after' || focusState.galleryMode === 'latest_vs_compare'
+        ? focusState.galleryMode
+        : 'latest_vs_compare',
+  }
+}
+
+function normalizePhaseMealTemplates(
+  templates: UserSettings['phaseMealTemplates'] | unknown,
+): NonNullable<UserSettings['phaseMealTemplates']> {
+  if (!Array.isArray(templates)) {
+    return []
+  }
+
+  return templates
+    .flatMap((entry) => {
+      if (!isRecord(entry)) {
+        return []
+      }
+
+      const id = readString(entry.id)
+      const label = readString(entry.label)
+      const createdAt = readString(entry.createdAt)
+      const updatedAt = readString(entry.updatedAt)
+      const dayType =
+        entry.dayType === 'psmf_day' ||
+        entry.dayType === 'refeed_day' ||
+        entry.dayType === 'diet_break_day' ||
+        entry.dayType === 'high_carb_day' ||
+        entry.dayType === 'standard_cut_day'
+          ? entry.dayType
+          : null
+
+      if (!id || !label || !createdAt || !updatedAt || !dayType) {
+        return []
+      }
+
+      const meals: PhaseMealTemplate['meals'] = Array.isArray(entry.meals)
+        ? entry.meals.flatMap((mealEntry) => {
+            if (!isRecord(mealEntry)) {
+              return []
+            }
+
+            const meal =
+              mealEntry.meal === 'breakfast' ||
+              mealEntry.meal === 'lunch' ||
+              mealEntry.meal === 'dinner' ||
+              mealEntry.meal === 'snack'
+                ? mealEntry.meal
+                : null
+            if (!meal) {
+              return []
+            }
+
+            return [
+              {
+                meal,
+                savedMealId: readOptionalString(mealEntry.savedMealId),
+              },
+            ]
+          })
+        : []
+
+      const dedupedMeals: PhaseMealTemplate['meals'] = Array.from(
+        new Map(meals.map((meal) => [meal.meal, meal] as const)).values(),
+      )
+      return [
+        {
+          id,
+          label,
+          dayType,
+          meals: dedupedMeals,
+          source: entry.source === 'manual' ? 'manual' : 'saved_meal_map',
+          seedSource: readOptionalString(entry.seedSource),
+          seedReviewState:
+            entry.seedReviewState === 'pending_review' ||
+            entry.seedReviewState === 'accepted' ||
+            entry.seedReviewState === 'rejected'
+              ? entry.seedReviewState
+              : 'accepted',
+          lastSeededAt: readOptionalString(entry.lastSeededAt),
+          lastAppliedAt: readOptionalString(entry.lastAppliedAt),
+          createdAt,
+          updatedAt,
+          archivedAt: readOptionalString(entry.archivedAt),
+        } satisfies PhaseMealTemplate,
+      ]
+    })
+    .sort((left, right) => {
+      if (left.dayType !== right.dayType) {
+        return left.dayType.localeCompare(right.dayType)
+      }
+      return right.updatedAt.localeCompare(left.updatedAt)
+    })
+}
+
+function normalizeFastCheckInRun(
+  run: UserSettings['lastFastCheckInRun'] | unknown,
+): UserSettings['lastFastCheckInRun'] {
+  if (!isRecord(run)) {
+    return undefined
+  }
+
+  const id = readString(run.id)
+  const createdAt = readString(run.createdAt)
+  const checkInId = readString(run.checkInId)
+  const recommendationSummary = readString(run.recommendationSummary)
+  const decisionType = readString(run.decisionType)
+  const surface = run.surface === 'coach' || run.surface === 'dashboard' ? run.surface : null
+  if (!id || !createdAt || !checkInId || !recommendationSummary || !decisionType || !surface) {
+    return undefined
+  }
+
+  return {
+    id,
+    createdAt,
+    checkInId,
+    decisionType: decisionType as NonNullable<UserSettings['lastFastCheckInRun']>['decisionType'],
+    recommendationSummary,
+    surface,
+    unresolvedModules: Array.isArray(run.unresolvedModules)
+      ? run.unresolvedModules
+          .flatMap((entry) => {
+            if (!isRecord(entry)) {
+              return []
+            }
+
+            const kind = readString(entry.kind)
+            const title = readString(entry.title)
+            const summary = readString(entry.summary)
+            if (!kind || !title || !summary) {
+              return []
+            }
+
+            return [
+              {
+                kind: kind as NonNullable<UserSettings['lastFastCheckInRun']>['unresolvedModules'][number]['kind'],
+                title,
+                unresolved: true,
+                reason: summary,
+              },
+            ]
+          })
+      : [],
   }
 }
 
@@ -939,7 +1964,22 @@ function normalizeSettings(settings: Partial<UserSettings> | null): UserSettings
     settings?.goalMode === 'lose' || settings?.goalMode === 'gain' || settings?.goalMode === 'maintain'
       ? settings.goalMode
       : DEFAULT_SETTINGS.goalMode
-  const fatLossMode = settings?.fatLossMode === 'psmf' ? 'psmf' : 'standard_cut'
+  const fatLossMode =
+    settings?.fatLossMode === 'psmf' || settings?.fatLossMode === 'carb_cycle'
+      ? settings.fatLossMode
+      : 'standard_cut'
+  const gymProfiles = normalizeGymProfiles(settings?.gymProfiles)
+  const dashboardInsights = normalizeDashboardInsights(settings?.dashboardInsights)
+  const loggingShortcutPreference = normalizeLoggingShortcutPreference(settings?.loggingShortcutPreference)
+  const loggingToolbarStyle = normalizeLoggingToolbarStyle(
+    settings?.loggingToolbarStyle,
+    loggingShortcutPreference,
+  )
+  const activeGymProfileId =
+    typeof settings?.activeGymProfileId === 'string' &&
+    gymProfiles.some((profile) => profile.id === settings.activeGymProfileId)
+      ? settings.activeGymProfileId
+      : gymProfiles[0]?.id ?? DEFAULT_GYM_PROFILE_ID
   return {
     ...DEFAULT_SETTINGS,
     ...settings,
@@ -988,6 +2028,45 @@ function normalizeSettings(settings: Partial<UserSettings> | null): UserSettings
     coachCitationsExpanded:
       settings?.coachCitationsExpanded ?? DEFAULT_SETTINGS.coachCitationsExpanded,
     coachConsentAt: settings?.coachConsentAt?.trim() || undefined,
+    nutrientGoals: normalizeNutrientGoals(settings?.nutrientGoals),
+    pinnedNutrients: normalizePinnedNutrients(settings?.pinnedNutrients),
+    focusedNutrientKey:
+      (typeof settings?.focusedNutrientKey === 'string'
+        ? canonicalizeNutrientKeyV1(settings.focusedNutrientKey)
+        : null) ?? DEFAULT_SETTINGS.focusedNutrientKey,
+    coachModuleSettings: normalizeCoachModuleSettings(settings?.coachModuleSettings),
+    fastCheckInPreference: normalizeFastCheckInPreference(settings?.fastCheckInPreference),
+    lastFastCheckInRun: normalizeFastCheckInRun(settings?.lastFastCheckInRun),
+    loggingShortcutPreference: {
+      ...loggingShortcutPreference,
+      toolbarStyle: loggingToolbarStyle,
+    },
+    customExercises: normalizeCustomExercises(settings?.customExercises),
+    gymProfiles,
+    activeGymProfileId,
+    dashboardLayout: normalizeDashboardLayout(settings?.dashboardLayout, dashboardInsights),
+    dashboardInsights,
+    dashboardDefaultsVersionApplied:
+      typeof settings?.dashboardDefaultsVersionApplied === 'number' &&
+      Number.isFinite(settings.dashboardDefaultsVersionApplied)
+        ? settings.dashboardDefaultsVersionApplied
+        : DEFAULT_SETTINGS.dashboardDefaultsVersionApplied,
+    bodyMetricVisibility: normalizeBodyMetricVisibility(settings?.bodyMetricVisibility),
+    progressPhotoVisibility: normalizeProgressPhotoVisibility(settings?.progressPhotoVisibility),
+    bodyProgressFocusState: normalizeBodyProgressFocusState(settings?.bodyProgressFocusState),
+    workoutActionOverrides: normalizeWorkoutActionOverrides(settings?.workoutActionOverrides),
+    phaseMealTemplates: normalizePhaseMealTemplates(settings?.phaseMealTemplates),
+    loggingToolbarStyle,
+    loggingShortcuts: normalizeLoggingShortcuts(settings?.loggingShortcuts, loggingShortcutPreference),
+    featureSettingsVersionApplied:
+      typeof settings?.featureSettingsVersionApplied === 'number' &&
+      Number.isFinite(settings.featureSettingsVersionApplied)
+        ? settings.featureSettingsVersionApplied
+        : DEFAULT_SETTINGS.featureSettingsVersionApplied,
+    garminHistoryWindow:
+      settings?.garminHistoryWindow === '30d' || settings?.garminHistoryWindow === '90d'
+        ? settings.garminHistoryWindow
+        : '7d',
   }
 }
 
@@ -1130,6 +2209,7 @@ function normalizeFoodLogEntry(entry: FoodLogEntry): FoodLogEntry {
     updatedAt: entry.updatedAt?.trim() || undefined,
     deletedAt: entry.deletedAt?.trim() || undefined,
     needsReview: entry.needsReview ?? undefined,
+    reviewItemId: entry.reviewItemId?.trim() || undefined,
   }
 }
 
@@ -1184,13 +2264,20 @@ function normalizeCheckInRecord(record: CheckInRecord): CheckInRecord {
           message: reason.message.trim(),
         }))
       : [],
+    weeklyCheckInPacket: record.weeklyCheckInPacket
+      ? normalizeWeeklyCheckInPacket(record.weeklyCheckInPacket)
+      : undefined,
     status:
       record.status === 'applied' ||
       record.status === 'kept' ||
+      record.status === 'deferred' ||
+      record.status === 'overridden' ||
       record.status === 'insufficientData' ||
       record.status === 'ready'
         ? record.status
         : 'insufficientData',
+    nextCheckInDate: record.nextCheckInDate?.trim() || undefined,
+    supersededByDecisionRecordId: record.supersededByDecisionRecordId?.trim() || undefined,
     appliedAt: record.appliedAt?.trim() || undefined,
   }
 }
@@ -1269,7 +2356,8 @@ function sortDietPhases(records: DietPhase[]): DietPhase[] {
 }
 
 function normalizeDietPhase(record: DietPhase): DietPhase {
-  const type = record.type === 'diet_break' ? 'diet_break' : 'psmf'
+  const type =
+    record.type === 'diet_break' || record.type === 'carb_cycle' ? record.type : 'psmf'
   const status =
     record.status === 'planned' ||
     record.status === 'active' ||
@@ -1310,7 +2398,7 @@ function normalizeDietPhaseEvent(record: DietPhaseEvent): DietPhaseEvent {
     ...record,
     id: record.id.trim(),
     phaseId: record.phaseId.trim(),
-    type: 'refeed_day',
+    type: record.type === 'high_carb_day' ? 'high_carb_day' : 'refeed_day',
     date: record.date.trim(),
     calorieTargetOverride: Math.round(record.calorieTargetOverride),
     notes: record.notes?.trim() || undefined,
@@ -1580,6 +2668,8 @@ function parseFoodSnapshot(rawValue: unknown): FoodSnapshot | null {
     return null
   }
 
+  const nutrients = parseNutrientProfile(rawValue.nutrients)
+
   return normalizeSnapshot({
     name,
     brand: readOptionalString(rawValue.brand),
@@ -1590,9 +2680,46 @@ function parseFoodSnapshot(rawValue: unknown): FoodSnapshot | null {
     carbs,
     fat,
     fiber: readNumber(rawValue.fiber) ?? undefined,
+    nutrients,
     source,
     barcode: readOptionalString(rawValue.barcode),
   })
+}
+
+function parseNutrientProfile(rawValue: unknown): FoodSnapshot['nutrients'] | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const basisRaw = readString(rawValue.basis)
+  const basis = basisRaw === '100g' || basisRaw === '100ml' ? basisRaw : 'serving'
+  const rawValues = isRecord(rawValue.values) ? rawValue.values : null
+  if (!rawValues) {
+    return undefined
+  }
+
+  let profile = emptyNutrientProfileV1(basis)
+
+  for (const [fallbackKey, rawAmount] of Object.entries(rawValues)) {
+    if (!isRecord(rawAmount)) {
+      continue
+    }
+
+    const key = canonicalizeNutrientKeyV1(readString(rawAmount.key) ?? fallbackKey)
+    const value = readNumber(rawAmount.value)
+    const unit = readString(rawAmount.unit)
+    if (!key || value === null) {
+      continue
+    }
+
+    if (unit !== 'kcal' && unit !== 'g' && unit !== 'mg' && unit !== 'mcg') {
+      continue
+    }
+
+    profile = setNutrientAmountV1(profile, key, value, unit)
+  }
+
+  return Object.keys(profile.values).length > 0 ? profile : undefined
 }
 
 function parseFoodRecordStrict(rawFood: unknown, index: number): ActionResult<Food> {
@@ -1644,6 +2771,7 @@ function parseFoodRecordStrict(rawFood: unknown, index: number): ActionResult<Fo
       sugars: readNumber(rawFood.sugars) ?? undefined,
       salt: readNumber(rawFood.salt) ?? undefined,
       sodium: readNumber(rawFood.sodium) ?? undefined,
+      nutrients: parseNutrientProfile(rawFood.nutrients),
       labelNutrition: labelNutritionResult.data,
       source: rawFood.source === 'seed' || rawFood.source === 'api' ? rawFood.source : 'custom',
       provider:
@@ -1677,6 +2805,13 @@ function parseFoodRecordStrict(rawFood: unknown, index: number): ActionResult<Fo
       archivedAt: readOptionalString(rawFood.archivedAt),
       lastUsedAt: readOptionalString(rawFood.lastUsedAt),
       lastServings: readNumber(rawFood.lastServings) ?? undefined,
+      lastMealType:
+        rawFood.lastMealType === 'breakfast' ||
+        rawFood.lastMealType === 'lunch' ||
+        rawFood.lastMealType === 'dinner' ||
+        rawFood.lastMealType === 'snack'
+          ? rawFood.lastMealType
+          : undefined,
     }),
   )
 }
@@ -1947,6 +3082,8 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
     rawRecord.status === 'ready' ||
     rawRecord.status === 'applied' ||
     rawRecord.status === 'kept' ||
+    rawRecord.status === 'deferred' ||
+    rawRecord.status === 'overridden' ||
     rawRecord.status === 'insufficientData'
       ? rawRecord.status
       : null
@@ -1979,6 +3116,7 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
       id,
       weekEndDate,
       weekStartDate,
+      nextCheckInDate: isValidDateKey(rawRecord.nextCheckInDate) ? rawRecord.nextCheckInDate : undefined,
       priorWeekStartDate,
       priorWeekEndDate,
       goalMode,
@@ -2006,7 +3144,41 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
             }
           : undefined,
       recommendationReason,
+      recommendationExplanation: readOptionalString(rawRecord.recommendationExplanation),
+      confidenceBand:
+        rawRecord.confidenceBand === 'none' ||
+        rawRecord.confidenceBand === 'low' ||
+        rawRecord.confidenceBand === 'medium' ||
+        rawRecord.confidenceBand === 'high'
+          ? rawRecord.confidenceBand
+          : undefined,
+      confidenceScore:
+        typeof rawRecord.confidenceScore === 'number' && Number.isFinite(rawRecord.confidenceScore)
+          ? rawRecord.confidenceScore
+          : undefined,
+      decisionType:
+        rawRecord.decisionType === 'keep_targets' ||
+        rawRecord.decisionType === 'increase_calories' ||
+        rawRecord.decisionType === 'decrease_calories' ||
+        rawRecord.decisionType === 'hold_for_more_data' ||
+        rawRecord.decisionType === 'ignore_period_due_to_confounders'
+          ? rawRecord.decisionType
+          : undefined,
+      reasonCodes: Array.isArray(rawRecord.reasonCodes)
+        ? rawRecord.reasonCodes
+            .filter((value): value is string => typeof value === 'string')
+            .map((value) => normalizeReasonCode(value))
+        : undefined,
+      blockedReasons: Array.isArray(rawRecord.blockedReasons)
+        ? rawRecord.blockedReasons.filter(isRecord).map((reason) => ({
+            code: normalizeBlockedReasonCode(readString(reason.code) ?? undefined),
+            message: readString(reason.message) ?? 'Unknown blocked reason.',
+          }))
+        : undefined,
+      decisionRecordId: readOptionalString(rawRecord.decisionRecordId),
+      weeklyCheckInPacket: parseWeeklyCheckInPacketRecord(rawRecord.weeklyCheckInPacket),
       status,
+      supersededByDecisionRecordId: readOptionalString(rawRecord.supersededByDecisionRecordId),
       createdAt,
       appliedAt: readOptionalString(rawRecord.appliedAt),
     }),
@@ -2089,7 +3261,10 @@ function parseDietPhaseStrict(rawRecord: unknown, index: number): ActionResult<D
   }
 
   const id = readString(rawRecord.id)
-  const type = rawRecord.type === 'diet_break' || rawRecord.type === 'psmf' ? rawRecord.type : null
+  const type =
+    rawRecord.type === 'diet_break' || rawRecord.type === 'psmf' || rawRecord.type === 'carb_cycle'
+      ? rawRecord.type
+      : null
   const status =
     rawRecord.status === 'planned' ||
     rawRecord.status === 'active' ||
@@ -2129,7 +3304,10 @@ function parseDietPhaseEventStrict(rawRecord: unknown, index: number): ActionRes
 
   const id = readString(rawRecord.id)
   const phaseId = readString(rawRecord.phaseId)
-  const type = rawRecord.type === 'refeed_day' ? 'refeed_day' : null
+  const type =
+    rawRecord.type === 'refeed_day' || rawRecord.type === 'high_carb_day'
+      ? rawRecord.type
+      : null
   const date = isValidDateKey(rawRecord.date) ? rawRecord.date : null
   const calorieTargetOverride = readNumber(rawRecord.calorieTargetOverride)
   const createdAt = readString(rawRecord.createdAt)
@@ -2280,6 +3458,7 @@ function parseBackupLogEntryStrict(
 
   let snapshot = parseFoodSnapshot(rawEntry.snapshot)
   const needsReview = rawEntry.needsReview === true
+  const reviewItemId = readOptionalString(rawEntry.reviewItemId)
 
   if (!snapshot && foodId) {
     const sourceFood = foodIndex.get(foodId)
@@ -2308,6 +3487,7 @@ function parseBackupLogEntryStrict(
     updatedAt: readOptionalString(rawEntry.updatedAt),
     deletedAt: readOptionalString(rawEntry.deletedAt),
     needsReview,
+    reviewItemId,
   })
 }
 
@@ -2356,6 +3536,7 @@ function parseFoods(rawFoods: unknown): Food[] {
         carbs,
         fat,
         fiber: readNumber(rawFood.fiber) ?? undefined,
+        nutrients: parseNutrientProfile(rawFood.nutrients),
         source: rawFood.source === 'seed' || rawFood.source === 'api' ? rawFood.source : 'custom',
         provider:
           rawFood.provider === 'open_food_facts' ||
@@ -2408,6 +3589,13 @@ function parseFoods(rawFoods: unknown): Food[] {
         archivedAt: readOptionalString(rawFood.archivedAt),
         lastUsedAt: readOptionalString(rawFood.lastUsedAt),
         lastServings: readNumber(rawFood.lastServings) ?? undefined,
+        lastMealType:
+          rawFood.lastMealType === 'breakfast' ||
+          rawFood.lastMealType === 'lunch' ||
+          rawFood.lastMealType === 'dinner' ||
+          rawFood.lastMealType === 'snack'
+            ? rawFood.lastMealType
+            : undefined,
       }),
     ]
   })
@@ -2618,7 +3806,9 @@ function parseSettings(rawSettings: unknown): UserSettings {
         ? rawSettings.goalMode
         : undefined,
     fatLossMode:
-      rawSettings.fatLossMode === 'psmf' || rawSettings.fatLossMode === 'standard_cut'
+      rawSettings.fatLossMode === 'psmf' ||
+      rawSettings.fatLossMode === 'standard_cut' ||
+      rawSettings.fatLossMode === 'carb_cycle'
         ? rawSettings.fatLossMode
         : undefined,
     coachingEnabled: typeof rawSettings.coachingEnabled === 'boolean' ? rawSettings.coachingEnabled : undefined,
@@ -2654,6 +3844,64 @@ function parseSettings(rawSettings: unknown): UserSettings {
         ? rawSettings.coachCitationsExpanded
         : undefined,
     coachConsentAt: readOptionalString(rawSettings.coachConsentAt),
+    nutrientGoals: isRecord(rawSettings.nutrientGoals)
+      ? (rawSettings.nutrientGoals as UserSettings['nutrientGoals'])
+      : undefined,
+    pinnedNutrients: Array.isArray(rawSettings.pinnedNutrients)
+      ? (rawSettings.pinnedNutrients as UserSettings['pinnedNutrients'])
+      : undefined,
+    focusedNutrientKey: readOptionalString(rawSettings.focusedNutrientKey) as UserSettings['focusedNutrientKey'],
+    coachModuleSettings: isRecord(rawSettings.coachModuleSettings)
+      ? (rawSettings.coachModuleSettings as UserSettings['coachModuleSettings'])
+      : undefined,
+    fastCheckInPreference: isRecord(rawSettings.fastCheckInPreference)
+      ? (rawSettings.fastCheckInPreference as unknown as UserSettings['fastCheckInPreference'])
+      : undefined,
+    lastFastCheckInRun: isRecord(rawSettings.lastFastCheckInRun)
+      ? (rawSettings.lastFastCheckInRun as unknown as UserSettings['lastFastCheckInRun'])
+      : undefined,
+    loggingShortcutPreference: isRecord(rawSettings.loggingShortcutPreference)
+      ? (rawSettings.loggingShortcutPreference as unknown as UserSettings['loggingShortcutPreference'])
+      : undefined,
+    customExercises: Array.isArray(rawSettings.customExercises)
+      ? (rawSettings.customExercises as UserSettings['customExercises'])
+      : undefined,
+    gymProfiles: Array.isArray(rawSettings.gymProfiles)
+      ? (rawSettings.gymProfiles as UserSettings['gymProfiles'])
+      : undefined,
+    activeGymProfileId: readOptionalString(rawSettings.activeGymProfileId),
+    dashboardLayout: isRecord(rawSettings.dashboardLayout)
+      ? (rawSettings.dashboardLayout as unknown as UserSettings['dashboardLayout'])
+      : undefined,
+    dashboardInsights: Array.isArray(rawSettings.dashboardInsights)
+      ? (rawSettings.dashboardInsights as UserSettings['dashboardInsights'])
+      : undefined,
+    dashboardDefaultsVersionApplied:
+      typeof rawSettings.dashboardDefaultsVersionApplied === 'number' &&
+      Number.isFinite(rawSettings.dashboardDefaultsVersionApplied)
+        ? rawSettings.dashboardDefaultsVersionApplied
+        : undefined,
+    bodyMetricVisibility: Array.isArray(rawSettings.bodyMetricVisibility)
+      ? (rawSettings.bodyMetricVisibility as UserSettings['bodyMetricVisibility'])
+      : undefined,
+    progressPhotoVisibility: isRecord(rawSettings.progressPhotoVisibility)
+      ? (rawSettings.progressPhotoVisibility as UserSettings['progressPhotoVisibility'])
+      : undefined,
+      bodyProgressFocusState: isRecord(rawSettings.bodyProgressFocusState)
+        ? (rawSettings.bodyProgressFocusState as unknown as UserSettings['bodyProgressFocusState'])
+        : undefined,
+      workoutActionOverrides: Array.isArray(rawSettings.workoutActionOverrides)
+        ? (rawSettings.workoutActionOverrides as UserSettings['workoutActionOverrides'])
+        : undefined,
+      phaseMealTemplates: Array.isArray(rawSettings.phaseMealTemplates)
+        ? (rawSettings.phaseMealTemplates as UserSettings['phaseMealTemplates'])
+        : undefined,
+      garminHistoryWindow:
+        rawSettings.garminHistoryWindow === '7d' ||
+        rawSettings.garminHistoryWindow === '30d' ||
+      rawSettings.garminHistoryWindow === '90d'
+        ? rawSettings.garminHistoryWindow
+        : undefined,
   })
 }
 
@@ -2722,6 +3970,7 @@ function parseLogEntries(rawEntries: unknown, date: string, foodIndex: Map<strin
     const parsedSnapshot = parseFoodSnapshot(rawEntry.snapshot)
     let snapshot = parsedSnapshot
     let needsReview = rawEntry.needsReview === true
+    const reviewItemId = readOptionalString(rawEntry.reviewItemId)
 
     if (!snapshot && foodId) {
       const sourceFood = foodIndex.get(foodId)
@@ -2755,6 +4004,7 @@ function parseLogEntries(rawEntries: unknown, date: string, foodIndex: Map<strin
         updatedAt: readOptionalString(rawEntry.updatedAt),
         deletedAt: readOptionalString(rawEntry.deletedAt),
         needsReview,
+        reviewItemId,
       }),
     ]
   }))
@@ -2896,10 +4146,19 @@ function buildBackupCounts(backup: BackupFile): BackupPreview['counts'] {
     weights: backup.weights.length,
     logDays,
     logEntries,
+    foodReviewQueue: backup.foodReviewQueue?.length ?? 0,
     wellness: backup.wellness?.length ?? 0,
     recoveryCheckIns: backup.recoveryCheckIns?.length ?? 0,
     dietPhases: backup.dietPhases?.length ?? 0,
     dietPhaseEvents: backup.dietPhaseEvents?.length ?? 0,
+    garminImportedWeights: backup.garminImportedWeights?.length ?? 0,
+    garminModifierRecords: backup.garminModifierRecords?.length ?? 0,
+    garminWorkoutSummaries: backup.garminWorkoutSummaries?.length ?? 0,
+    bodyProgressSnapshots: backup.bodyProgressSnapshots?.length ?? 0,
+    workoutPrograms: backup.workoutPrograms?.length ?? 0,
+    workoutSessions: backup.workoutSessions?.length ?? 0,
+    progressionDecisions: backup.progressionDecisions?.length ?? 0,
+    benchmarkReports: backup.benchmarkReports?.length ?? 0,
   }
 }
 
@@ -3415,6 +4674,7 @@ function mergeFoods(
       lastUsedAt:
         [localFood.lastUsedAt, importedFood.lastUsedAt].filter(Boolean).sort().at(-1) ?? undefined,
       lastServings: importedFood.lastServings ?? localFood.lastServings,
+      lastMealType: importedFood.lastMealType ?? localFood.lastMealType,
       searchAliases: aliasMerge.aliases,
       remoteReferences: mergeFoodRemoteReferences(localFood.remoteReferences, importedFood.remoteReferences),
     })
@@ -4860,19 +6120,20 @@ export function saveFoodLogWithUsage(
 export function saveFoodLogWithUsages(
   date: string,
   entries: FoodLogEntry[],
-  usageUpdates: Array<{ foodId: string; servings: number }>,
+  usageUpdates: Array<{ foodId: string; servings: number; meal?: MealType }>,
 ): ActionResult<void> {
   ensureStorageInitialized()
 
   const nextEntries = sortLogEntries(entries.map(normalizeFoodLogEntry))
   const previousEntries = storageCache.logsByDate[date] ?? []
   const previousFoods = storageCache.foods
-  const usageByFoodId = new Map<string, { count: number; lastServings: number }>()
+  const usageByFoodId = new Map<string, { count: number; lastServings: number; lastMealType?: MealType }>()
   for (const update of usageUpdates) {
     const existingUsage = usageByFoodId.get(update.foodId)
     usageByFoodId.set(update.foodId, {
       count: (existingUsage?.count ?? 0) + 1,
       lastServings: update.servings,
+      lastMealType: update.meal ?? existingUsage?.lastMealType,
     })
   }
   const usageTimestamp = new Date().toISOString()
@@ -4884,6 +6145,7 @@ export function saveFoodLogWithUsages(
             usageCount: food.usageCount + (usageByFoodId.get(food.id)?.count ?? 0),
             lastUsedAt: usageTimestamp,
             lastServings: usageByFoodId.get(food.id)?.lastServings ?? food.lastServings,
+            lastMealType: usageByFoodId.get(food.id)?.lastMealType ?? food.lastMealType,
             updatedAt: usageTimestamp,
           }
         : food,

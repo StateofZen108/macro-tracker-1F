@@ -1,0 +1,10 @@
+[
+  {
+    "ruleId": "color-contrast",
+    "targetSelector": ".p-4.rounded-\\[24px\\].bg-white\\/70:nth-child(3) > .mt-3.sm\\:grid-cols-2.grid > .action-button.w-full[type=\"button\"]",
+    "scenarioId": "repeat_logging_fast_path",
+    "owner": "qa_release_runner",
+    "reason": "Baseline the existing add-food quick-add contrast issue until the button palette is updated.",
+    "expiresOn": "2026-05-31"
+  }
+]

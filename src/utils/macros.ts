@@ -62,7 +62,7 @@ export function calculateFoodNutrition(source: MacroSource, servings: number): N
 }
 
 export function resolveLogEntries(entries: FoodLogEntry[], foods: Food[]): ResolvedFoodLogEntry[] {
-  const foodIndex = new Map(foods.map((food) => [food.id, food]))
+  const foodIndex = new Map(foods.filter((food) => !food.archivedAt).map((food) => [food.id, food]))
 
   return [...entries]
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))

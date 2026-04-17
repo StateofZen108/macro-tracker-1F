@@ -1,0 +1,23 @@
+{
+  "completed": true,
+  "operator": "qa-operator",
+  "completedAt": "2026-04-17T09:30:00.000Z",
+  "findings": [
+    {
+      "id": "manual-example-1",
+      "scenarioId": "clean_install_baseline",
+      "laneId": "generic_preview",
+      "severity": "major",
+      "summary": "Example blocking polish issue recorded during the S22 sweep.",
+      "reproSteps": [
+        "Open Home on the preview build.",
+        "Observe the documented polish issue."
+      ],
+      "evidencePaths": [
+        "C:\\evidence\\home-blocker.png"
+      ],
+      "resolutionState": "open",
+      "source": "manual"
+    }
+  ]
+}

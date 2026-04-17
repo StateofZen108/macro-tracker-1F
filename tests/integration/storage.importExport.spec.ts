@@ -69,6 +69,25 @@ describe('storage import/export', () => {
       fatLossMode: 'standard_cut',
       coachingMinCalories: 950,
       targetWeeklyRatePercent: -0.8,
+      loggingShortcutPreference: {
+        ...loadSettings().loggingShortcutPreference!,
+        enabledShortcutIds: ['custom', 'scanner'],
+        shortcutOrder: ['custom', 'scanner', 'ocr'],
+        mealAwareLane: false,
+        topShortcutId: 'custom',
+      },
+      workoutActionOverrides: [
+        {
+          date: '2026-04-11',
+          action: 'hold',
+          updatedAt: '2026-04-11T08:00:00.000Z',
+        },
+      ],
+      bodyProgressFocusState: {
+        focusedMetricKey: 'waist',
+        comparePreset: '7d',
+        lastSelectedPose: 'side',
+      },
     })
     vi.setSystemTime(new Date('2026-04-12T08:00:00.000Z'))
     await saveSettings({
@@ -142,7 +161,7 @@ describe('storage import/export', () => {
     await initializeStorage()
 
     const backup = exported.ok ? exported.data : ({} as BackupFile)
-    const importResult = applyBackupImport(backup, 'replace')
+    const importResult = await applyBackupImport(backup, 'replace')
     expect(importResult.ok).toBe(true)
     await initializeStorage()
     const restoredFood = loadFoods().find((food) => food.id === 'custom-rice')
@@ -164,5 +183,17 @@ describe('storage import/export', () => {
     expect(loadSettings().goalModeChangedAt).toBe(seededSettings.goalModeChangedAt)
     expect(loadSettings().goalModeChangedFrom).toBe(seededSettings.goalModeChangedFrom)
     expect(loadSettings().fatLossModeChangedAt).toBe(seededSettings.fatLossModeChangedAt)
+    expect(loadSettings().loggingShortcutPreference).toMatchObject({
+      enabledShortcutIds: ['custom', 'scanner'],
+      shortcutOrder: ['custom', 'scanner', 'ocr'],
+      mealAwareLane: false,
+      topShortcutId: 'custom',
+    })
+    expect(loadSettings().workoutActionOverrides).toEqual(seededSettings.workoutActionOverrides)
+    expect(loadSettings().bodyProgressFocusState).toMatchObject({
+      focusedMetricKey: 'waist',
+      comparePreset: '7d',
+      lastSelectedPose: 'side',
+    })
   })
 })

@@ -12,6 +12,7 @@ import { FEATURE_FLAGS } from '../../config/featureFlags'
 import {
   buildCoachingDecisionId,
   buildCoachingDecisionRecord,
+  buildWeeklyCheckInPacket,
   compareCoachingShadowMode,
   evaluateCoachEngineV1,
   evaluateCoachEngineV2,
@@ -53,6 +54,20 @@ export function getLatestCompletedWeekEnd(
   return cursor
 }
 
+export function getNextCheckInDate(weekEndDate: string): string {
+  return addDays(weekEndDate, 7)
+}
+
+export function isCheckInWindowActiveForDate(
+  record: Pick<CheckInRecord, 'weekEndDate' | 'nextCheckInDate'>,
+  effectiveDate: string,
+): boolean {
+  const effectiveDateKey = effectiveDate.slice(0, 10)
+  const windowEnd = record.nextCheckInDate ?? getNextCheckInDate(record.weekEndDate)
+
+  return effectiveDateKey >= record.weekEndDate && effectiveDateKey <= windowEnd
+}
+
 function buildActivityMap(activityLog: ActivityEntry[]): Map<string, ActivityEntry> {
   return new Map(activityLog.map((entry) => [entry.date, entry]))
 }
@@ -87,6 +102,7 @@ export function evaluateCheckInWeek(
 ): CheckInComputation {
   const today = getTodayDateKey()
   const weekEndDate = getLatestCompletedWeekEnd(today, settings.checkInWeekday)
+  const nextCheckInDate = getNextCheckInDate(weekEndDate)
   const weekStartDate = addDays(weekEndDate, -6)
   const priorWeekEndDate = addDays(weekEndDate, -7)
   const priorWeekStartDate = addDays(priorWeekEndDate, -6)
@@ -120,6 +136,7 @@ export function evaluateCheckInWeek(
       })
     : null
   const useV2AsAuthority = shouldComputeV2 && import.meta.env.PROD
+  const decisionSource = useV2AsAuthority ? 'engine_v2' : 'engine_v1'
   const engine = useV2AsAuthority && v2Evaluation ? v2Evaluation : v1Evaluation
   const shadowComparison =
     shouldComputeV2 && v2Evaluation
@@ -185,6 +202,7 @@ export function evaluateCheckInWeek(
     id: `checkin:${weekEndDate}`,
     weekEndDate,
     weekStartDate,
+    nextCheckInDate,
     priorWeekStartDate,
     priorWeekEndDate,
     goalMode: settings.goalMode,
@@ -214,25 +232,38 @@ export function evaluateCheckInWeek(
     decisionRecordId: buildCoachingDecisionId(
       engine.context.windowStart,
       engine.context.windowEnd,
-      useV2AsAuthority ? 'engine_v2' : 'engine_v1',
+      decisionSource,
     ),
     status,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
+  const weeklyCheckInPacket = FEATURE_FLAGS.coachEngineV3
+    ? buildWeeklyCheckInPacket({
+        record,
+        evaluation: engine,
+        source: decisionSource,
+        generatedAt: record.createdAt,
+      })
+    : undefined
+  const hydratedRecord: CheckInRecord = {
+    ...record,
+    weeklyCheckInPacket,
+  }
   const decisionRecord = buildCoachingDecisionRecord({
-    id: record.decisionRecordId,
-    source: useV2AsAuthority ? 'engine_v2' : 'engine_v1',
+    id: hydratedRecord.decisionRecordId,
+    source: decisionSource,
     windowStart: engine.context.windowStart,
     windowEnd: engine.context.windowEnd,
     recommendation: engine.recommendation,
     explanation: engine.explanation,
+    weeklyCheckInPacket,
     status: status === 'deferred' ? 'deferred' : 'pending',
-    createdAt: record.createdAt,
+    createdAt: hydratedRecord.createdAt,
   })
 
   return {
-    record,
+    record: hydratedRecord,
     canApplyTargets,
     decisionRecord,
     shadowComparison,
@@ -252,10 +283,15 @@ export function upsertCheckInRecord(
     return records
   }
 
+  if (existingRecord.status === 'overridden') {
+    return records
+  }
+
   const nextRecord: CheckInRecord = {
     ...record,
     createdAt: existingRecord.createdAt,
     appliedAt: existingRecord.appliedAt,
+    supersededByDecisionRecordId: existingRecord.supersededByDecisionRecordId,
     updatedAt: existingRecord.updatedAt,
   }
 

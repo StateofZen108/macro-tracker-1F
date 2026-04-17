@@ -39,8 +39,8 @@ function buildDietPhaseId(type: DietPhase['type']): string {
   return `${type}:${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now()}`
 }
 
-function buildDietPhaseEventId(): string {
-  return `refeed:${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now()}`
+function buildDietPhaseEventId(type: DietPhaseEvent['type']): string {
+  return `${type}:${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now()}`
 }
 
 function todayDateKey(): string {
@@ -64,6 +64,16 @@ function sortEventsByDate(events: DietPhaseEvent[]): DietPhaseEvent[] {
 function trimNotes(notes: string | undefined): string | undefined {
   const trimmed = notes?.trim()
   return trimmed ? trimmed : undefined
+}
+
+function getPhaseLabel(type: DietPhase['type']): string {
+  if (type === 'diet_break') {
+    return 'Diet break'
+  }
+  if (type === 'carb_cycle') {
+    return 'Carb cycle'
+  }
+  return 'PSMF'
 }
 
 function softDeleteEvents(
@@ -119,7 +129,7 @@ export function useDietPhases() {
     return storedPhases.find((entry) => entry.id === phaseId)
   }
 
-  function hasOutOfRangeRefeeds(phaseId: string, startDate: string, plannedEndDate: string): boolean {
+  function hasOutOfRangePhaseEvents(phaseId: string, startDate: string, plannedEndDate: string): boolean {
     return listPhaseRefeeds(phaseId).some(
       (event) => event.date < startDate || event.date > plannedEndDate,
     )
@@ -177,17 +187,13 @@ export function useDietPhases() {
       return fail('Only planned phases can be edited here.')
     }
     if (!patch.startDate.trim()) {
-      return fail(phase.type === 'diet_break' ? 'Diet break start date is required.' : 'PSMF start date is required.')
+      return fail(`${getPhaseLabel(phase.type)} start date is required.`)
     }
     if (!patch.plannedEndDate.trim()) {
-      return fail(phase.type === 'diet_break' ? 'Diet break end date is required.' : 'PSMF end date is required.')
+      return fail(`${getPhaseLabel(phase.type)} end date is required.`)
     }
     if (patch.plannedEndDate < patch.startDate) {
-      return fail(
-        phase.type === 'diet_break'
-          ? 'Diet break end date must be on or after the start date.'
-          : 'PSMF end date must be on or after the start date.',
-      )
+      return fail(`${getPhaseLabel(phase.type)} end date must be on or after the start date.`)
     }
     if (
       phase.type === 'diet_break' &&
@@ -205,8 +211,11 @@ export function useDietPhases() {
     if (conflicting) {
       return fail('This change would overlap another phase.')
     }
-    if (phase.type === 'psmf' && hasOutOfRangeRefeeds(phaseId, patch.startDate, patch.plannedEndDate)) {
-      return fail('This change would move an existing refeed outside the phase range.')
+    if (
+      (phase.type === 'psmf' || phase.type === 'carb_cycle') &&
+      hasOutOfRangePhaseEvents(phaseId, patch.startDate, patch.plannedEndDate)
+    ) {
+      return fail('This change would move an existing phase event outside the phase range.')
     }
 
     const nextPhase: DietPhase = {
@@ -232,10 +241,10 @@ export function useDietPhases() {
       return fail('Phase not found.')
     }
     if (!plannedEndDate.trim()) {
-      return fail('PSMF end date is required.')
+      return fail(`${getPhaseLabel(phase.type)} end date is required.`)
     }
     if (plannedEndDate < phase.startDate) {
-      return fail('PSMF end date must be on or after the start date.')
+      return fail(`${getPhaseLabel(phase.type)} end date must be on or after the start date.`)
     }
     if (phase.status === 'expired' && plannedEndDate < todayDateKey()) {
       return fail('Expired phases must be extended to today or later.')
@@ -250,8 +259,11 @@ export function useDietPhases() {
     if (conflicting) {
       return fail('This change would overlap another phase.')
     }
-    if (phase.type === 'psmf' && hasOutOfRangeRefeeds(phaseId, phase.startDate, plannedEndDate)) {
-      return fail('This change would move an existing refeed outside the phase range.')
+    if (
+      (phase.type === 'psmf' || phase.type === 'carb_cycle') &&
+      hasOutOfRangePhaseEvents(phaseId, phase.startDate, plannedEndDate)
+    ) {
+      return fail('This change would move an existing phase event outside the phase range.')
     }
 
     const nextPhase: DietPhase = {
@@ -284,7 +296,7 @@ export function useDietPhases() {
 
     const now = new Date().toISOString()
     const nextEvents =
-      phase.type === 'psmf'
+      phase.type === 'psmf' || phase.type === 'carb_cycle'
         ? softDeleteEvents(
             storedEvents,
             (event) =>
@@ -389,6 +401,50 @@ export function useDietPhases() {
     return ok(nextPhase)
   }
 
+  function startCarbCycle(
+    startDate: string,
+    plannedEndDate: string,
+    notes?: string,
+  ): ActionResult<DietPhase> {
+    if (!startDate.trim()) {
+      return fail('Carb cycle start date is required.')
+    }
+    if (!plannedEndDate.trim()) {
+      return fail('Carb cycle end date is required.')
+    }
+    if (plannedEndDate < startDate) {
+      return fail('Carb cycle end date must be on or after the start date.')
+    }
+
+    const conflicting = storedPhases.find(
+      (phase) =>
+        phase.status !== 'cancelled' &&
+        overlaps(startDate, plannedEndDate, phase.startDate, phase.plannedEndDate),
+    )
+    if (conflicting) {
+      return fail('This change would overlap another phase.')
+    }
+
+    const now = new Date().toISOString()
+    const nextPhase: DietPhase = {
+      id: buildDietPhaseId('carb_cycle'),
+      type: 'carb_cycle',
+      status: startDate <= now.slice(0, 10) ? 'active' : 'planned',
+      startDate,
+      plannedEndDate,
+      notes: trimNotes(notes),
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    const result = replacePhases(storedPhases.concat(nextPhase))
+    if (!result.ok) {
+      return result as ActionResult<DietPhase>
+    }
+
+    return ok(nextPhase)
+  }
+
   function scheduleRefeed(
     phaseId: string,
     date: string,
@@ -425,9 +481,62 @@ export function useDietPhases() {
 
     const now = new Date().toISOString()
     const nextEvent: DietPhaseEvent = {
-      id: buildDietPhaseEventId(),
+      id: buildDietPhaseEventId('refeed_day'),
       phaseId,
       type: 'refeed_day',
+      date,
+      calorieTargetOverride: Math.round(calorieTargetOverride),
+      notes: trimNotes(notes),
+      createdAt: now,
+      updatedAt: now,
+    }
+    const result = replaceEvents(storedEvents.filter((event) => event.date !== date).concat(nextEvent))
+    if (!result.ok) {
+      return result as ActionResult<DietPhaseEvent>
+    }
+
+    return ok(nextEvent)
+  }
+
+  function scheduleHighCarbDay(
+    phaseId: string,
+    date: string,
+    calorieTargetOverride: number,
+    notes?: string,
+  ): ActionResult<DietPhaseEvent> {
+    const phase = storedPhases.find((entry) => entry.id === phaseId && entry.type === 'carb_cycle')
+    if (!phase) {
+      return fail('Carb-cycle phase not found.')
+    }
+    if (phase.status !== 'active' && phase.status !== 'planned') {
+      return fail('Carb-cycle phase not available for high-carb scheduling.')
+    }
+    if (!date.trim()) {
+      return fail('High-carb day date is required.')
+    }
+    if (!Number.isFinite(calorieTargetOverride)) {
+      return fail('High-carb day calories must be a valid number.')
+    }
+    if (date < phase.startDate || date > phase.plannedEndDate) {
+      return fail('High-carb day must fall inside the active carb-cycle phase.')
+    }
+    if (
+      storedPhases.some(
+        (entry) =>
+          entry.type === 'diet_break' &&
+          entry.status !== 'cancelled' &&
+          date >= entry.startDate &&
+          date <= entry.plannedEndDate,
+      )
+    ) {
+      return fail('This high-carb day conflicts with an active diet break.')
+    }
+
+    const now = new Date().toISOString()
+    const nextEvent: DietPhaseEvent = {
+      id: buildDietPhaseEventId('high_carb_day'),
+      phaseId,
+      type: 'high_carb_day',
       date,
       calorieTargetOverride: Math.round(calorieTargetOverride),
       notes: trimNotes(notes),
@@ -514,6 +623,77 @@ export function useDietPhases() {
     return ok(nextEvent)
   }
 
+  function updateHighCarbDay(
+    eventId: string,
+    date: string,
+    calorieTargetOverride: number,
+    notes?: string,
+  ): ActionResult<DietPhaseEvent> {
+    const existingEvent = storedEvents.find((entry) => entry.id === eventId)
+    if (!existingEvent || existingEvent.type !== 'high_carb_day') {
+      return fail('High-carb day not found.')
+    }
+
+    const phase = storedPhases.find((entry) => entry.id === existingEvent.phaseId && entry.type === 'carb_cycle')
+    if (!phase) {
+      return fail('Active carb-cycle phase not found.')
+    }
+
+    const today = todayDateKey()
+    const existingDateIsLocked =
+      existingEvent.date < today || (existingEvent.date === today && hasLoggedFoodOnDate(existingEvent.date))
+    if (
+      existingDateIsLocked &&
+      (date !== existingEvent.date || Math.round(calorieTargetOverride) !== existingEvent.calorieTargetOverride)
+    ) {
+      return fail('Past high-carb day details are locked after logging begins for that day.')
+    }
+    if (!date.trim()) {
+      return fail('High-carb day date is required.')
+    }
+    if (!Number.isFinite(calorieTargetOverride)) {
+      return fail('High-carb day calories must be a valid number.')
+    }
+    if (date < phase.startDate || date > phase.plannedEndDate) {
+      return fail('High-carb day must fall inside the active carb-cycle phase.')
+    }
+    if (
+      storedPhases.some(
+        (entry) =>
+          entry.type === 'diet_break' &&
+          entry.status !== 'cancelled' &&
+          date >= entry.startDate &&
+          date <= entry.plannedEndDate,
+      )
+    ) {
+      return fail('This high-carb day conflicts with an active diet break.')
+    }
+
+    const conflictingEvent = storedEvents.find(
+      (entry) => entry.id !== eventId && !entry.deletedAt && entry.date === date,
+    )
+    if (conflictingEvent) {
+      return fail('Only one cut-day event may be scheduled on a single day.')
+    }
+
+    const nextEvent: DietPhaseEvent = {
+      ...existingEvent,
+      date,
+      calorieTargetOverride: Math.round(calorieTargetOverride),
+      notes: trimNotes(notes),
+      updatedAt: new Date().toISOString(),
+      deletedAt: undefined,
+    }
+    const result = replaceEvents(
+      storedEvents.map((entry) => (entry.id === eventId ? nextEvent : entry)),
+    )
+    if (!result.ok) {
+      return result as ActionResult<DietPhaseEvent>
+    }
+
+    return ok(nextEvent)
+  }
+
   function deleteRefeed(eventId: string): ActionResult<void> {
     const event = storedEvents.find((entry) => entry.id === eventId)
     if (!event) {
@@ -523,6 +703,33 @@ export function useDietPhases() {
     const today = todayDateKey()
     if (event.date < today || (event.date === today && hasLoggedFoodOnDate(event.date))) {
       return fail('Past refeed details are locked after logging begins for that day.')
+    }
+
+    const now = new Date().toISOString()
+    const nextEvents = isSyncEnabled()
+      ? storedEvents.map((entry) =>
+          entry.id === eventId
+            ? {
+                ...entry,
+                deletedAt: now,
+                updatedAt: now,
+              }
+            : entry,
+        )
+      : storedEvents.filter((entry) => entry.id !== eventId)
+
+    return replaceEvents(nextEvents)
+  }
+
+  function deleteHighCarbDay(eventId: string): ActionResult<void> {
+    const event = storedEvents.find((entry) => entry.id === eventId && entry.type === 'high_carb_day')
+    if (!event) {
+      return fail('High-carb day not found.')
+    }
+
+    const today = todayDateKey()
+    if (event.date < today || (event.date === today && hasLoggedFoodOnDate(event.date))) {
+      return fail('Past high-carb day details are locked after logging begins for that day.')
     }
 
     const now = new Date().toISOString()
@@ -557,7 +764,7 @@ export function useDietPhases() {
       updatedAt: now,
     }
     const nextEvents =
-      phase.type === 'psmf'
+      phase.type === 'psmf' || phase.type === 'carb_cycle'
         ? softDeleteEvents(
             storedEvents,
             (event) => event.phaseId === phaseId && !event.deletedAt,
@@ -608,9 +815,13 @@ export function useDietPhases() {
     extendPhase,
     completePhase,
     startDietBreak,
+    startCarbCycle,
     scheduleRefeed,
+    scheduleHighCarbDay,
     updateRefeed,
+    updateHighCarbDay,
     deleteRefeed,
+    deleteHighCarbDay,
     cancelPhase,
     updatePhaseNotes,
     lastError,

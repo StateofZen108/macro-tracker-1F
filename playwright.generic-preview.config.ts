@@ -1,0 +1,17 @@
+import { defineConfig } from '@playwright/test'
+import { sharedPlaywrightConfig } from './playwright.base.config'
+
+export default defineConfig({
+  ...sharedPlaywrightConfig,
+  testMatch: '**/qa-release.spec.ts',
+  use: {
+    ...sharedPlaywrightConfig.use,
+    baseURL: 'http://127.0.0.1:4176',
+  },
+  webServer: {
+    command: 'node scripts/run-generic-preview.mjs 4176',
+    url: 'http://127.0.0.1:4176',
+    reuseExistingServer: false,
+    timeout: 240000,
+  },
+})

@@ -32,6 +32,8 @@
     "test:food-truth:engineering-ready": "node scripts/food-truth-engineering-gate.mjs",
     "test:e2e:generic": "playwright test",
     "test:e2e": "npm run test:e2e:generic",
+    "test:e2e:qa-dev-smoke": "playwright test --config=playwright.qa-dev-smoke.config.ts",
+    "test:e2e:qa-generic-preview": "playwright test --config=playwright.generic-preview.config.ts",
     "test:e2e:lane-guard": "node scripts/e2e-lane-guard.mjs",
     "test:e2e:coach-preview": "playwright test --config=playwright.coach-wave1.config.ts",
     "test:e2e:personal-library-preview": "playwright test --config=playwright.personal-library.config.ts",
@@ -68,7 +70,9 @@
     "test:all": "npm run lint && npm run build && npm run test:bundle && npm run test:unit && npm run test:e2e",
     "test:release": "npm run test:all && npm run test:e2e:lane-guard && npm run test:e2e:personal-library-preview && npm run test:e2e:coach-preview",
     "test:release:psmf-garmin": "npm run test:release && npm run test:psmf-garmin",
-    "test:psmf-garmin:release-confidence": "npm run test:release && npm run test:psmf-garmin"
+    "test:psmf-garmin:release-confidence": "npm run test:release && npm run test:psmf-garmin",
+    "test:qa:unit": "vitest run tests/unit/qaReleaseGate.spec.ts tests/integration/qaReleaseGate.spec.ts",
+    "test:qa:release-gate": "node scripts/qa-release-gate.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
@@ -82,6 +86,7 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.59.1",
     "@testing-library/jest-dom": "^6.9.1",

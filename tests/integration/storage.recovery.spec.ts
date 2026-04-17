@@ -64,7 +64,7 @@ describe('storage recovery', () => {
       },
     }
 
-    const result = applyBackupImport(backup as never, 'replace')
+    const result = await applyBackupImport(backup as never, 'replace')
     expect(result.ok).toBe(true)
     await initializeStorage()
     expect(loadDayMeta()[0]?.status).toBe('partial')

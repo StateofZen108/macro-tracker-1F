@@ -35,6 +35,13 @@ export {
   runCoachingReplayScenario,
 } from './validation'
 
+export {
+  buildWeeklyCheckInPacket,
+  normalizeCoachingEvidenceCard,
+  normalizeEnergyModelSnapshot,
+  normalizeWeeklyCheckInPacket,
+} from './v3'
+
 export type {
   CoachingRecommendationStatusV1,
   CoachingExplanationV1,

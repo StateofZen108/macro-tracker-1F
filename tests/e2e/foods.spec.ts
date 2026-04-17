@@ -202,7 +202,7 @@ test('custom food history stays frozen after edit and archive', async ({ page })
   await expect(betaChickenRow).toContainText('200 cal')
 
   await page.getByRole('button', { name: /add food to breakfast/i }).click()
-  await getAddFoodSearchInput(page).fill('Beta Chicken')
+  await (await getAddFoodSearchInput(page)).fill('Beta Chicken')
   await expect(page.getByText(/no local foods matched that search/i)).toBeVisible()
 })
 
@@ -305,7 +305,7 @@ test('selected saved-food preview updates macros and fallback serving meta as se
 }) => {
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  await getAddFoodSearchInput(page).fill('Banana')
+  await (await getAddFoodSearchInput(page)).fill('Banana')
   await addFoodSheet.getByRole('button', { name: /banana/i }).first().click()
 
   const selectedFoodCard = getSelectedFoodCard(page)

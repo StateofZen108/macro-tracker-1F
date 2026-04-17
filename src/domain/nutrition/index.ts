@@ -2,8 +2,14 @@ export {
   canonicalizeNutrientKeyV1,
   getDefaultNutrientUnitV1,
   isCanonicalNutrientKeyV1,
+  NUTRIENT_DEFINITION_LIST_V1,
   NUTRIENT_DEFINITIONS_V1,
+  SUPPORTED_NUTRIENT_KEYS_V1,
 } from './canonical'
+
+export {
+  buildNutritionOverview,
+} from './overview'
 
 export {
   buildNutrientProfileFromLabelFields,

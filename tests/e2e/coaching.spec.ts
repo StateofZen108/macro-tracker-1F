@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
-import { addFoodToMeal, ensureMealExpanded, entryRow, resetApp } from './helpers/app'
-import { seedCoachingWindow } from './helpers/seed'
+import { addFoodToMeal, ensureMealExpanded, entryRow, goToWeight, resetApp } from './helpers/app'
+import { seedCoachingWindow, seedWeeklyCheckInWindow } from './helpers/seed'
 
 test.beforeEach(async ({ page }) => {
   await resetApp(page)
@@ -32,6 +32,118 @@ test('coaching shows a recommendation only with consistent data', async ({ page 
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toBeVisible()
   await page.getByRole('button', { name: /keep current/i }).click()
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toBeHidden()
+})
+
+test('manual override supersedes the active weekly recommendation window', async ({ page }) => {
+  await seedWeeklyCheckInWindow(page)
+  await goToWeight(page)
+
+  await page.getByRole('button', { name: /manual override/i }).click()
+  await page.getByLabel(/^Calories$/i).fill('2100')
+  await page.getByLabel(/^Protein$/i).fill('190')
+  await page.getByLabel(/^Carbs$/i).fill('180')
+  await page.getByLabel(/^Fat$/i).fill('55')
+  await page.getByRole('button', { name: /save override/i }).click()
+
+  await expect
+    .poll(async () => {
+      return page.evaluate(() => {
+        const records = JSON.parse(window.localStorage.getItem('mt_checkin_history') ?? '[]')
+        return records[0]?.status ?? null
+      })
+    })
+    .toBe('overridden')
+  await expect(page.getByText(/^overridden$/i).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /apply suggestion/i })).toHaveCount(0)
+  await expect(page.getByText(/^manual override$/i).first()).toBeVisible()
+
+  const persistedStatus = await page.evaluate(() => {
+    const records = JSON.parse(window.localStorage.getItem('mt_checkin_history') ?? '[]')
+    return records[0]?.status ?? null
+  })
+  expect(persistedStatus).toBe('overridden')
+})
+
+test('weight screen renders the micronutrient overview for today and the trailing week', async ({ page }) => {
+  await seedWeeklyCheckInWindow(page)
+
+  await page.evaluate(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const yesterdayDate = new Date(`${today}T00:00:00.000Z`)
+    yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1)
+    const yesterday = yesterdayDate.toISOString().slice(0, 10)
+
+    const nutrientProfile = {
+      basis: 'serving',
+      values: {
+        fiber: { key: 'fiber', unit: 'g', value: 30 },
+        sodium: { key: 'sodium', unit: 'mg', value: 1800 },
+        potassium: { key: 'potassium', unit: 'mg', value: 4800 },
+        calcium: { key: 'calcium', unit: 'mg', value: 1300 },
+        magnesium: { key: 'magnesium', unit: 'mg', value: 430 },
+        iron: { key: 'iron', unit: 'mg', value: 12 },
+        vitaminC: { key: 'vitaminC', unit: 'mg', value: 100 },
+        vitaminD: { key: 'vitaminD', unit: 'mcg', value: 20 },
+        vitaminB12: { key: 'vitaminB12', unit: 'mcg', value: 3 },
+      },
+    }
+
+    const makeEntry = (date: string, id: string) => ({
+      id,
+      date,
+      meal: 'breakfast',
+      servings: 1,
+      createdAt: `${date}T08:00:00.000Z`,
+      updatedAt: `${date}T08:00:00.000Z`,
+      snapshot: {
+        name: 'Micronutrient meal',
+        servingSize: 1,
+        servingUnit: 'entry',
+        calories: 1200,
+        protein: 180,
+        carbs: 80,
+        fat: 25,
+        source: 'custom',
+        nutrients: nutrientProfile,
+      },
+    })
+
+    window.localStorage.setItem(`mt_log_${today}`, JSON.stringify([makeEntry(today, `micro-${today}`)]))
+    window.localStorage.setItem(
+      `mt_log_${yesterday}`,
+      JSON.stringify([makeEntry(yesterday, `micro-${yesterday}`)]),
+    )
+    window.localStorage.setItem(
+      'mt_day_meta',
+      JSON.stringify([
+        { date: today, status: 'complete', updatedAt: `${today}T09:00:00.000Z` },
+        { date: yesterday, status: 'complete', updatedAt: `${yesterday}T09:00:00.000Z` },
+      ]),
+    )
+  })
+
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
+      request.onsuccess = () => resolve()
+      request.onerror = () => resolve()
+      request.onblocked = () => resolve()
+    })
+    await new Promise<void>((resolve) => {
+      const request = window.indexedDB.deleteDatabase('macrotracker-app')
+      request.onsuccess = () => resolve()
+      request.onerror = () => resolve()
+      request.onblocked = () => resolve()
+    })
+  })
+
+  await page.reload()
+  await goToWeight(page)
+
+  await expect(page.getByText(/nutrition overview/i).first()).toBeVisible()
+  await expect(page.getByText(/7-day average/i).first()).toBeVisible()
+  await expect(page.getByText(/vitamin b12/i).first()).toBeVisible()
+  await expect(page.getByText(/adequate/i).first()).toBeVisible()
 })
 
 test('fasting day requires explicit confirmation before clearing intake', async ({ page }) => {
@@ -72,18 +184,22 @@ test('interventions can be logged and edited from the log screen', async ({ page
 })
 
 test('activity can be logged and cleared from the log screen', async ({ page }) => {
-  await page.getByLabel('Steps').fill('9000')
-  await page.getByLabel('Cardio minutes').fill('35')
+  const stepsInput = page.locator('input[name="steps"]')
+  const cardioMinutesInput = page.locator('input[name="cardioMinutes"]')
+
+  await stepsInput.click()
+  await stepsInput.pressSequentially('9000')
+  await cardioMinutesInput.fill('35')
   await page.getByLabel('Cardio type').selectOption('walk')
   await page.getByLabel('Note').fill('Post-workout walk')
   await page.getByRole('button', { name: /save activity/i }).click()
 
   await expect(page.getByText(/logged for this day/i)).toBeVisible()
-  await expect(page.getByLabel('Steps')).toHaveValue('9000')
-  await expect(page.getByLabel('Cardio minutes')).toHaveValue('35')
+  await expect(stepsInput).toHaveValue('9000')
+  await expect(cardioMinutesInput).toHaveValue('35')
 
   await page.getByRole('button', { name: /clear activity/i }).click()
   await expect(page.getByText(/not logged yet/i)).toBeVisible()
   await page.getByRole('button', { name: /^undo$/i }).click()
-  await expect(page.getByLabel('Steps')).toHaveValue('9000')
+  await expect(stepsInput).toHaveValue('9000')
 })

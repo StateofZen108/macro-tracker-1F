@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { evaluateCheckInWeek, getLatestCompletedWeekEnd, upsertCheckInRecord } from '../../src/domain/checkIns/math'
+import {
+  evaluateCheckInWeek,
+  getLatestCompletedWeekEnd,
+  isCheckInWindowActiveForDate,
+  upsertCheckInRecord,
+} from '../../src/domain/checkIns/math'
 import type { ActivityEntry, CheckInRecord, DayMeta, FoodLogEntry, UserSettings, WeightEntry } from '../../src/types'
 import { addDays, enumerateDateKeys } from '../../src/utils/dates'
 
@@ -102,6 +107,64 @@ describe('check-in math', () => {
     expect(result.record.decisionType).toBe('decrease_calories')
     expect(result.canApplyTargets).toBe(true)
     expect(result.record.recommendationReason).toMatch(/slower than target/i)
+  })
+
+  it('builds a structured weekly packet with an energy snapshot and evidence cards', () => {
+    const logsByDate: Record<string, FoodLogEntry[]> = {}
+    const dayMeta: DayMeta[] = []
+    const activity: ActivityEntry[] = []
+    const weights: WeightEntry[] = []
+
+    const weekEnd = getLatestCompletedWeekEnd('2026-04-11', settings.checkInWeekday)
+    const currentWeek = enumerateDateKeys(addDays(weekEnd, -6), weekEnd)
+    const priorWeek = enumerateDateKeys(addDays(weekEnd, -13), addDays(weekEnd, -7))
+    const extraDays = enumerateDateKeys(addDays(weekEnd, -20), addDays(weekEnd, -18))
+
+    for (const date of [...currentWeek, ...priorWeek, ...extraDays]) {
+      logsByDate[date] = [makeLog(date)]
+      dayMeta.push({ date, status: 'complete', updatedAt: `${date}T09:00:00.000Z` })
+    }
+
+    currentWeek.slice(0, 4).forEach((date, index) => {
+      weights.push({
+        id: `cw-v3-${index}`,
+        date,
+        weight: 199,
+        unit: 'lb',
+        createdAt: `${date}T07:00:00.000Z`,
+      })
+    })
+    priorWeek.slice(0, 4).forEach((date, index) => {
+      weights.push({
+        id: `pw-v3-${index}`,
+        date,
+        weight: 200,
+        unit: 'lb',
+        createdAt: `${date}T07:00:00.000Z`,
+      })
+    })
+    extraDays.slice(0, 2).forEach((date, index) => {
+      weights.push({
+        id: `ew-v3-${index}`,
+        date,
+        weight: 200.2,
+        unit: 'lb',
+        createdAt: `${date}T07:00:00.000Z`,
+      })
+    })
+    currentWeek.forEach((date) => {
+      activity.push({ date, steps: 9000, cardioMinutes: 20, updatedAt: `${date}T10:00:00.000Z` })
+    })
+
+    const result = evaluateCheckInWeek(settings, weights, logsByDate, dayMeta, activity, [], 0)
+    expect(result.record.weeklyCheckInPacket).toBeDefined()
+    expect(result.record.weeklyCheckInPacket?.energyModel.averageLoggedCalories).toBe(
+      result.record.avgCalories,
+    )
+    expect(result.record.weeklyCheckInPacket?.previousTargets.calorieTarget).toBe(
+      settings.calorieTarget,
+    )
+    expect(result.record.weeklyCheckInPacket?.evidenceCards.length).toBeGreaterThanOrEqual(4)
   })
 
   it('blocks calorie changes when activity adherence is below target', () => {
@@ -297,5 +360,69 @@ describe('check-in math', () => {
     }
 
     expect(upsertCheckInRecord([existingRecord], nextRecord)).toEqual([existingRecord])
+  })
+
+  it('uses Garmin wellness fallback for steps and cardio when no local activity log exists', () => {
+    const weekEnd = getLatestCompletedWeekEnd('2026-04-11', settings.checkInWeekday)
+    const currentWeek = enumerateDateKeys(addDays(weekEnd, -6), weekEnd)
+    const priorWeek = enumerateDateKeys(addDays(weekEnd, -13), addDays(weekEnd, -7))
+    const extraDays = enumerateDateKeys(addDays(weekEnd, -20), addDays(weekEnd, -18))
+    const logsByDate: Record<string, FoodLogEntry[]> = {}
+    const dayMeta: DayMeta[] = []
+    const weights: WeightEntry[] = []
+
+    for (const date of [...currentWeek, ...priorWeek, ...extraDays]) {
+      logsByDate[date] = [makeLog(date)]
+      dayMeta.push({ date, status: 'complete', updatedAt: `${date}T09:00:00.000Z` })
+    }
+
+    currentWeek.slice(0, 4).forEach((date, index) => {
+      weights.push({
+        id: `cw-fallback-${index}`,
+        date,
+        weight: 199.4,
+        unit: 'lb',
+        createdAt: `${date}T07:00:00.000Z`,
+      })
+    })
+    priorWeek.slice(0, 4).forEach((date, index) => {
+      weights.push({
+        id: `pw-fallback-${index}`,
+        date,
+        weight: 200,
+        unit: 'lb',
+        createdAt: `${date}T07:00:00.000Z`,
+      })
+    })
+
+    const coachingSettings = {
+      ...settings,
+      coachRuntime: {
+        recovery: {
+          wellness: currentWeek.map((date) => ({
+            date,
+            steps: 9100,
+            derivedCardioMinutes: 18,
+          })),
+        },
+      },
+    } as UserSettings
+
+    const result = evaluateCheckInWeek(
+      coachingSettings,
+      weights,
+      logsByDate,
+      dayMeta,
+      [],
+      [],
+      0,
+    )
+
+    expect(result.record.avgSteps).toBe(9100)
+    expect(result.record.weeklyCardioMinutes).toBe(126)
+    expect(result.record.nextCheckInDate).toBe(addDays(weekEnd, 7))
+    expect(isCheckInWindowActiveForDate(result.record, addDays(weekEnd, 5))).toBe(true)
+    expect(result.record.weeklyCheckInPacket?.garminModifierWindow?.importedDays).toBe(7)
+    expect(result.record.weeklyCheckInPacket?.evidenceCards.some((card) => card.id === 'garmin_modifier_window')).toBe(true)
   })
 })

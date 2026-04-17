@@ -1,8 +1,10 @@
-import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import type {
   ActionResult,
   BarcodeLookupResult,
   CatalogFood,
+  CaptureConvenienceDraft,
+  CaptureConvenienceSource,
   DescribeFoodDraftV1,
   FavoriteFood,
   Food,
@@ -12,6 +14,7 @@ import type {
   Recipe,
   SavedMeal,
   UnifiedFoodSearchResult,
+  UserSettings,
 } from '../types'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import { resolveBarcodeLookup } from '../domain/foodCatalog/barcodeResolution'
@@ -37,6 +40,7 @@ import {
 } from '../utils/ocrReview'
 import { BottomSheet } from './BottomSheet'
 import { BrowsePane } from './add-food/BrowsePane'
+import { describeFood } from './add-food/helpers'
 import type { RepeatMealCandidate } from './add-food/types'
 import type { LabelReviewValues } from './LabelReviewSheet'
 
@@ -63,13 +67,19 @@ interface AddFoodSheetProps {
   open: boolean
   mode: 'add' | 'replace'
   mealLabel?: MealType
+  entryContext?: 'meal_slot' | 'global_add'
+  initialCaptureSource?: CaptureConvenienceSource | null
   foods: Food[]
   foodCatalogSearchEnabled?: boolean
   savedMeals: SavedMeal[]
   recipes: Recipe[]
   favorites: FavoriteFood[]
   favoriteFoodIds: string[]
+  loggingShortcutPreference?: UserSettings['loggingShortcutPreference']
+  loggingToolbarStyle?: UserSettings['loggingToolbarStyle']
+  loggingShortcuts?: UserSettings['loggingShortcuts']
   isOnline: boolean
+  captureConvenienceEnabled?: boolean
   keepOpenAfterAdd: boolean
   onChangeKeepOpenAfterAdd: (nextValue: boolean) => void
   onClose: () => void
@@ -77,6 +87,35 @@ interface AddFoodSheetProps {
   onConfirmFood: (food: Food, servings: number) => ActionResult<unknown>
   onConfirmRecipe?: (recipeId: string, servings: number) => ActionResult<unknown>
   onApplySavedMeal?: (savedMealId: string) => ActionResult<unknown>
+  phaseTemplateLane?: {
+    state: 'active' | 'pending_review' | 'empty'
+    templateId?: string
+    templateLabel: string
+    dayTypeLabel: string
+    mealCount: number
+    currentMeal?: {
+      meal: MealType
+      savedMealId: string
+      savedMealName: string
+    }
+    meals: Array<{
+      meal: MealType
+      savedMealId: string
+      savedMealName: string
+    }>
+    seedSource?: string
+    seedSuggestion?: {
+      meal: MealType
+      savedMealId: string
+      savedMealName: string
+    }
+    secondaryHint?: string
+  } | null
+  onApplyPhaseTemplateMeal?: (templateId: string) => ActionResult<unknown>
+  onApplyPhaseTemplateDay?: (templateId: string) => ActionResult<unknown>
+  onAcceptPhaseTemplateSeed?: () => ActionResult<unknown>
+  onRejectPhaseTemplateSeed?: () => ActionResult<unknown>
+  onOpenPhaseTemplateSettings?: () => void
   onCreateFood: (draft: FoodDraft) => ActionResult<Food>
   onImportFood: (draft: FoodDraft, options?: { acceptedQuery?: string }) => ActionResult<Food>
   onToggleFavoriteFood?: (foodId: string) => ActionResult<unknown>
@@ -136,6 +175,95 @@ function buildLookupMessage(result: BarcodeLookupResult): string {
   return result.candidate.note ?? 'Product found. Save it locally or add it to this meal.'
 }
 
+export type MealAwareQuickLogItem =
+  | {
+      kind: 'saved_meal'
+      key: string
+      result: UnifiedFoodSearchResult
+    }
+  | {
+      kind: 'repeat'
+      key: string
+      food: Food
+      servings: number
+    }
+  | {
+      kind: 'food'
+      key: string
+      food: Food
+    }
+
+export function buildMealAwareQuickLogItems({
+  mealAwareLaneEnabled,
+  savedMealSearchResults,
+  repeatFoodResults,
+  quickFoods,
+}: {
+  mealAwareLaneEnabled: boolean
+  savedMealSearchResults: UnifiedFoodSearchResult[]
+  repeatFoodResults: { food: Food; servings: number }[]
+  quickFoods: Food[]
+}): MealAwareQuickLogItem[] {
+  if (!mealAwareLaneEnabled) {
+    return []
+  }
+
+  const items: MealAwareQuickLogItem[] = []
+  const seenFoodIds = new Set<string>()
+
+  for (const result of savedMealSearchResults) {
+    items.push({
+      kind: 'saved_meal',
+      key: `saved-meal-${result.id}`,
+      result,
+    })
+  }
+
+  for (const candidate of repeatFoodResults) {
+    if (seenFoodIds.has(candidate.food.id)) {
+      continue
+    }
+    seenFoodIds.add(candidate.food.id)
+    items.push({
+      kind: 'repeat',
+      key: `repeat-${candidate.food.id}`,
+      food: candidate.food,
+      servings: candidate.servings,
+    })
+  }
+
+  for (const food of quickFoods) {
+    if (seenFoodIds.has(food.id)) {
+      continue
+    }
+    seenFoodIds.add(food.id)
+    items.push({
+      kind: 'food',
+      key: `food-${food.id}`,
+      food,
+    })
+  }
+
+  return items.slice(0, 8)
+}
+
+function SectionHeader({
+  title,
+  detail,
+}: {
+  title: string
+  detail?: string
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
+        {title}
+      </h3>
+      {detail ? <p className="text-xs text-slate-500 dark:text-slate-300">{detail}</p> : null}
+    </div>
+  )
+}
+
 function getLookupTrustLevel(result: BarcodeLookupResult | null): 'exact_autolog' | 'exact_review' | 'blocked' | null {
   return result?.candidate.importTrust?.level ?? null
 }
@@ -168,13 +296,19 @@ export function AddFoodSheet({
   open,
   mode,
   mealLabel,
+  entryContext = 'meal_slot',
+  initialCaptureSource = null,
   foods,
   foodCatalogSearchEnabled = true,
   savedMeals,
   recipes,
   favorites,
   favoriteFoodIds,
+  loggingShortcutPreference,
+  loggingToolbarStyle,
+  loggingShortcuts,
   isOnline,
+  captureConvenienceEnabled = false,
   keepOpenAfterAdd,
   onChangeKeepOpenAfterAdd,
   onClose,
@@ -182,6 +316,12 @@ export function AddFoodSheet({
   onConfirmFood,
   onConfirmRecipe,
   onApplySavedMeal,
+  phaseTemplateLane = null,
+  onApplyPhaseTemplateMeal,
+  onApplyPhaseTemplateDay,
+  onAcceptPhaseTemplateSeed,
+  onRejectPhaseTemplateSeed,
+  onOpenPhaseTemplateSettings,
   onCreateFood,
   onImportFood,
   onToggleFavoriteFood,
@@ -196,7 +336,9 @@ export function AddFoodSheet({
   const scannerControlsRef = useRef<ScannerControls | null>(null)
   const browseContentRef = useRef<HTMLDivElement | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
+  const mealPhotoInputRef = useRef<HTMLInputElement | null>(null)
   const pendingBrowseRestoreRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
+  const handledInitialCaptureRef = useRef<string | null>(null)
 
   const [sheetMode, setSheetMode] = useState<SheetMode>('browse')
   const [query, setQuery] = useState('')
@@ -210,6 +352,7 @@ export function AddFoodSheet({
   const [lookupResult, setLookupResult] = useState<BarcodeLookupResult | null>(null)
   const [lastLookupResult, setLastLookupResult] = useState<BarcodeLookupResult | null>(null)
   const [isLookingUp, setIsLookingUp] = useState(false)
+  const [captureDraft, setCaptureDraft] = useState<CaptureConvenienceDraft | null>(null)
   const [ocrImage, setOcrImage] = useState<NormalizedLabelImage | null>(null)
   const [ocrSession, setOcrSession] = useState<LabelOcrReviewSession | null>(null)
   const [ocrReviewValues, setOcrReviewValues] = useState<LabelReviewValues>(
@@ -237,7 +380,45 @@ export function AddFoodSheet({
   const searchResults = searchFoods(debouncedQuery)
   const describeFoodEnabled = FEATURE_FLAGS.describeFood && foodCatalogSearchEnabled
   const favoriteIdSet = new Set(favoriteFoodIds)
-  const quickFoods = personalLibraryEnabled || debouncedQuery ? [] : getQuickFoods(6)
+  const shortQuery = debouncedQuery.trim().length < 3
+  const quickFoods = useMemo(() => {
+    if (debouncedQuery) {
+      return []
+    }
+
+    const ranked = new Map<string, Food>()
+    const addFoods = (items: Food[]) => {
+      for (const food of items) {
+        if (!food.archivedAt && !ranked.has(food.id)) {
+          ranked.set(food.id, food)
+        }
+      }
+    }
+
+    const sortedFavorites = foods
+      .filter((food) => favoriteIdSet.has(food.id) && !food.archivedAt)
+      .sort((left, right) => {
+        const leftLastUsed = left.lastUsedAt ?? ''
+        const rightLastUsed = right.lastUsedAt ?? ''
+        if (leftLastUsed !== rightLastUsed) {
+          return rightLastUsed.localeCompare(leftLastUsed)
+        }
+
+        return left.name.localeCompare(right.name)
+      })
+
+    if (loggingShortcutPreference?.prioritizeFavorites ?? true) {
+      addFoods(sortedFavorites)
+    }
+
+    addFoods(getQuickFoods(12))
+
+    if (!(loggingShortcutPreference?.prioritizeFavorites ?? true)) {
+      addFoods(sortedFavorites)
+    }
+
+    return [...ranked.values()].slice(0, 6)
+  }, [debouncedQuery, favoriteIdSet, foods, getQuickFoods, loggingShortcutPreference?.prioritizeFavorites])
   const quickFoodIds = new Set(quickFoods.map((food) => food.id))
   const visibleSearchResults = debouncedQuery
     ? searchResults
@@ -262,16 +443,22 @@ export function AddFoodSheet({
     targetMeal: mealLabel,
   })
   const savedMealSearchResults = useMemo(
-    () =>
-      debouncedQuery
-        ? catalogLocalResults.filter((result) => result.source === 'saved_meal')
-        : [],
-    [catalogLocalResults, debouncedQuery],
+    () => {
+      const results = catalogLocalResults.filter((result) => result.source === 'saved_meal')
+      if (shortQuery) {
+        return (loggingShortcutPreference?.prioritizeSavedMeals ?? true) ? results.slice(0, 4) : []
+      }
+
+      return debouncedQuery ? results : []
+    },
+    [catalogLocalResults, debouncedQuery, loggingShortcutPreference?.prioritizeSavedMeals, shortQuery],
   )
   const recipeSearchResults = useMemo(
-    () =>
-      debouncedQuery ? catalogLocalResults.filter((result) => result.source === 'recipe') : [],
-    [catalogLocalResults, debouncedQuery],
+    () => {
+      const results = catalogLocalResults.filter((result) => result.source === 'recipe')
+      return shortQuery ? results.slice(0, 4) : debouncedQuery ? results : []
+    },
+    [catalogLocalResults, debouncedQuery, shortQuery],
   )
   const repeatFoodResults = useMemo(
     () =>
@@ -291,6 +478,25 @@ export function AddFoodSheet({
         .filter((candidate): candidate is { food: Food; servings: number } => candidate !== null),
     [foods, repeatCandidates],
   )
+  const mealAwareQuickLogItems = useMemo(
+    () =>
+      buildMealAwareQuickLogItems({
+        mealAwareLaneEnabled: loggingShortcutPreference?.mealAwareLane ?? false,
+        savedMealSearchResults,
+        repeatFoodResults,
+        quickFoods,
+      }),
+    [loggingShortcutPreference?.mealAwareLane, quickFoods, repeatFoodResults, savedMealSearchResults],
+  )
+  const mealAwareLaneVisible =
+    FEATURE_FLAGS.repeatLoggingV2 &&
+    debouncedQuery.length === 0 &&
+    mealAwareQuickLogItems.length > 0
+  const phaseTemplateLaneVisible =
+    FEATURE_FLAGS.phaseTemplatesV1 &&
+    mode === 'add' &&
+    debouncedQuery.length === 0 &&
+    phaseTemplateLane !== null
   const catalogLibraryMatches = useMemo(() => {
     if (!personalLibraryEnabled) {
       return new Set<string>()
@@ -355,7 +561,11 @@ export function AddFoodSheet({
             : browseDirty
   const sheetDirty = activeDirty || discardAction !== null
   const lookupTrustLevel = getLookupTrustLevel(lookupResult)
-  const canDirectLogLookup = lookupResult ? !lookupNeedsReview(lookupResult) : false
+  const canDirectLogLookup =
+    lookupResult
+      ? !lookupNeedsReview(lookupResult) &&
+        (loggingShortcutPreference?.autologExactBarcodeHits ?? true)
+      : false
   const ocrReviewState = useMemo(
     () =>
       ocrSession
@@ -828,6 +1038,7 @@ export function AddFoodSheet({
     setQuery(nextQuery)
     setVisibleSearchResultCount(SEARCH_RESULTS_BATCH_SIZE)
     setDescribeDraft(null)
+    setNextCaptureDraft(null)
 
     if (!selectedFoodId) {
       return
@@ -851,6 +1062,7 @@ export function AddFoodSheet({
   function handleBrowseSelectFood(foodId: string): void {
     setSelectedFoodId(foodId)
     setDescribeDraft(null)
+    setCaptureDraft(null)
     setActionError(null)
   }
 
@@ -862,31 +1074,51 @@ export function AddFoodSheet({
     setSelectedFoodId(null)
     setServings(1)
     setDescribeDraft(null)
+    setCaptureDraft(null)
     setActionError(null)
   }
 
-  function handleStartDescribeFood(): void {
+  function setNextCaptureDraft(nextDraft: CaptureConvenienceDraft | null): void {
+    setCaptureDraft((currentDraft) => {
+      if (
+        currentDraft?.photoPreviewUrl &&
+        currentDraft.photoPreviewUrl.startsWith('blob:') &&
+        currentDraft.photoPreviewUrl !== nextDraft?.photoPreviewUrl
+      ) {
+        URL.revokeObjectURL(currentDraft.photoPreviewUrl)
+      }
+
+      return nextDraft
+    })
+  }
+
+  function buildLocale(): 'en-GB' | 'en-US' {
+    return typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('en-us')
+      ? 'en-US'
+      : 'en-GB'
+  }
+
+  function createDescribeDraftFromText(rawText: string, sourceLabel: string): void {
     const locale =
-      typeof navigator !== 'undefined' && navigator.language.toLowerCase().startsWith('en-us')
-        ? 'en-US'
-        : 'en-GB'
+      buildLocale()
     const nextDraft = buildDescribeFoodDraftV1({
-      rawText: query,
+      rawText,
       locale,
       foods,
       searchFoods,
     })
     if (!nextDraft) {
-      setActionError('Enter one food description before using Describe Food.')
+      setActionError(`Enter one food description before using ${sourceLabel}.`)
       void recordDiagnosticsEvent({
         eventType: 'describe_food_draft_failed',
         severity: 'warning',
         scope: 'diagnostics',
-        message: 'Describe Food needs a non-empty one-item food description.',
+        message: `${sourceLabel} needs a non-empty one-item food description.`,
       })
       return
     }
 
+    setNextCaptureDraft(null)
     setDescribeDraft(nextDraft)
     setVisibleSearchResultCount(SEARCH_RESULTS_BATCH_SIZE)
     setQuery(nextDraft.item.name)
@@ -901,6 +1133,88 @@ export function AddFoodSheet({
         : 1,
     )
     setActionError(null)
+  }
+
+  function handleStartDescribeFood(): void {
+    createDescribeDraftFromText(query, 'Describe Food')
+  }
+
+  function handleStartVoiceCapture(): void {
+    const capturedPhrase = window.prompt('Speak or type one food phrase to review.', query.trim())?.trim() ?? ''
+    if (!capturedPhrase) {
+      return
+    }
+
+    createDescribeDraftFromText(capturedPhrase, 'Voice capture')
+  }
+
+  function buildMealPhotoSuggestedName(fileName: string): string {
+    const baseName = fileName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim()
+    return baseName || 'Meal from photo'
+  }
+
+  function handleOpenMealPhotoCapture(): void {
+    mealPhotoInputRef.current?.click()
+  }
+
+  function handleMealPhotoSelection(event: ChangeEvent<HTMLInputElement>): void {
+    const selectedFile = event.target.files?.[0]
+    event.target.value = ''
+    if (!selectedFile) {
+      return
+    }
+
+    setDescribeDraft(null)
+    setSelectedFoodId(null)
+    setServings(1)
+    setActionError(null)
+    setNextCaptureDraft({
+      id:
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `capture-${Date.now()}`,
+      source: 'meal_photo',
+      confidence: 'low',
+      rawLabel: selectedFile.name,
+      suggestedName: buildMealPhotoSuggestedName(selectedFile.name),
+      suggestedAmount: 1,
+      suggestedUnit: 'plate',
+      photoPreviewUrl: URL.createObjectURL(selectedFile),
+      createdAt: new Date().toISOString(),
+    })
+  }
+
+  function handleApplyCaptureDraft(): void {
+    if (!captureDraft) {
+      return
+    }
+
+    openFoodForm({
+      title: captureDraft.source === 'meal_photo' ? 'Review meal photo draft' : 'Review capture draft',
+      submitLabel: 'Review and save',
+      source: 'custom',
+      submitMode: 'create',
+      initialValues: {
+        name: captureDraft.suggestedName,
+        servingSize: captureDraft.suggestedAmount ?? 1,
+        servingUnit: captureDraft.suggestedUnit ?? 'serving',
+        calories: 0,
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+        source: 'custom',
+      },
+      noticeMessage:
+        captureDraft.source === 'meal_photo'
+          ? 'Meal-photo capture is a draft only. Review the food before saving or logging it.'
+          : 'Capture draft is low confidence. Review the food before saving or logging it.',
+      acceptedQuery: captureDraft.suggestedName,
+      returnMode: 'browse',
+    })
+  }
+
+  function dismissCaptureDraft(): void {
+    setNextCaptureDraft(null)
   }
 
   function dismissDescribeDraft(): void {
@@ -978,7 +1292,7 @@ export function AddFoodSheet({
     resetOcrState()
     resetLookupState(false)
     if (options.addAfterImport) {
-      submitFood(food, 1, true)
+      submitFood(food, food.lastServings ?? 1, true)
       setSheetMode('browse')
       return
     }
@@ -1238,10 +1552,39 @@ export function AddFoodSheet({
     }
   }, [isLookingUp, lookupResult, open, sheetMode])
 
+  useEffect(() => {
+    if (!open) {
+      handledInitialCaptureRef.current = null
+      return
+    }
+
+    if (!captureConvenienceEnabled || mode !== 'add' || !initialCaptureSource) {
+      return
+    }
+
+    const captureKey = `${initialCaptureSource}:${entryContext}:${mealLabel ?? 'none'}`
+    if (handledInitialCaptureRef.current === captureKey) {
+      return
+    }
+
+    handledInitialCaptureRef.current = captureKey
+    if (initialCaptureSource === 'voice') {
+      window.setTimeout(() => {
+        handleStartVoiceCapture()
+      }, 0)
+      return
+    }
+
+    window.setTimeout(() => {
+      handleOpenMealPhotoCapture()
+    }, 0)
+  }, [captureConvenienceEnabled, entryContext, initialCaptureSource, mealLabel, mode, open])
+
   function closeSheet(): void {
     stopScanner()
     resetOcrState()
     setDescribeDraft(null)
+    setNextCaptureDraft(null)
     setFormConfig(null)
     setArchivedImportCandidate(null)
     setDiscardAction(null)
@@ -1371,6 +1714,41 @@ export function AddFoodSheet({
 
     setActionError(null)
     closeSheet()
+  }
+
+  function handleApplyPhaseTemplate(batchAction: 'fill_meal' | 'fill_day'): void {
+    if (!phaseTemplateLane?.templateId) {
+      return
+    }
+
+    const action =
+      batchAction === 'fill_day' ? onApplyPhaseTemplateDay : onApplyPhaseTemplateMeal
+    if (!action) {
+      return
+    }
+
+    const result = action(phaseTemplateLane.templateId)
+    if (!result.ok) {
+      setActionError(result.error.message)
+      return
+    }
+
+    setActionError(null)
+  }
+
+  function handleReviewPhaseTemplateSeed(action: 'accept' | 'reject'): void {
+    const resolver = action === 'accept' ? onAcceptPhaseTemplateSeed : onRejectPhaseTemplateSeed
+    if (!resolver) {
+      return
+    }
+
+    const result = resolver()
+    if (!result.ok) {
+      setActionError(result.error.message)
+      return
+    }
+
+    setActionError(null)
   }
 
   function handleUseLookupFood(): void {
@@ -1624,6 +2002,16 @@ export function AddFoodSheet({
       isDirty={sheetDirty}
       discardMessage="Your add-food progress will be lost if you close this sheet."
     >
+      <input
+        ref={mealPhotoInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        aria-label="Choose meal photo"
+        tabIndex={-1}
+        onChange={handleMealPhotoSelection}
+      />
       {sheetMode === 'form' ? (
         <Suspense fallback={<div className="px-4 py-6 text-sm text-slate-600 dark:text-slate-300">Loading food form...</div>}>
           <FoodForm
@@ -1897,102 +2285,359 @@ export function AddFoodSheet({
           </form>
         </div>
       ) : (
-        <BrowsePane
-          mode={mode}
-          query={query}
-          searchInputRef={searchInputRef}
-          contentRef={browseContentRef}
-          onQueryChange={handleBrowseQueryChange}
-          describeFoodEnabled={describeFoodEnabled}
-          describeDraft={describeDraft}
-          onStartDescribeFood={handleStartDescribeFood}
-          onApplyDescribeDraft={handleApplyDescribeDraft}
-          onDismissDescribeDraft={dismissDescribeDraft}
-          selectedFood={selectedFood}
-          selectedFoodId={selectedFoodId}
-          onSelectFood={handleBrowseSelectFood}
-          onClearSelectedFood={() => setSelectedFoodId(null)}
-          servings={servings}
-          onServingsChange={setServings}
-          onSubmitFood={submitFood}
-          canUseLastAmount={canUseLastAmount}
-          keepOpenAfterAdd={keepOpenAfterAdd}
-          onChangeKeepOpenAfterAdd={onChangeKeepOpenAfterAdd}
-          lookupMessage={lookupMessage}
-          isOnline={isOnline}
-          actionError={actionError}
-          onOpenCustomFood={() =>
-            requestDiscard(
-              () => {
-                openFoodForm({
-                  title: 'Create custom food',
-                  submitLabel: 'Save custom food',
-                  source: 'custom',
-                  returnMode: 'browse',
-                })
-              },
-              'Discard your current add-food progress and create a custom food instead?',
-            )
-          }
-          onOpenScanner={() =>
-            requestDiscard(
-              () => {
-                setActionError(null)
-                startFreshScanner()
-              },
-              'Discard your current selection and switch to barcode scanning?',
-            )
-          }
-          onOpenOcr={() =>
-            requestDiscard(
-              () => {
-                setActionError(null)
-                startFreshLabelCapture()
-              },
-              'Discard your current selection and switch to nutrition-label OCR?',
-            )
-          }
-          lastLookupResult={lastLookupResult}
-          onReviewLastScan={() => {
-            stopScanner()
-            setLookupResult(lastLookupResult)
-            if (lastLookupResult) {
-              setLookupMessage(buildLookupMessage(lastLookupResult))
+        <div className="space-y-4">
+          {phaseTemplateLaneVisible ? (
+            <section className="space-y-3">
+              <SectionHeader
+                title="Phase template"
+                detail={`${phaseTemplateLane.dayTypeLabel} ready`}
+              />
+              <div className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900 dark:text-white">
+                      {phaseTemplateLane.templateLabel}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
+                      {phaseTemplateLane.state === 'pending_review'
+                        ? `Suggestion for ${phaseTemplateLane.seedSuggestion?.meal ?? mealLabel ?? 'today'}.`
+                        : phaseTemplateLane.state === 'empty'
+                          ? 'No accepted meal template exists yet for this cut day.'
+                          : `${phaseTemplateLane.mealCount} mapped meal${
+                              phaseTemplateLane.mealCount === 1 ? '' : 's'
+                            } for this cut day.`}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
+                    {phaseTemplateLane.dayTypeLabel}
+                  </span>
+                </div>
+                {phaseTemplateLane.state === 'pending_review' && phaseTemplateLane.seedSuggestion ? (
+                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
+                    Suggested seed: {phaseTemplateLane.seedSuggestion.savedMealName} for{' '}
+                    {phaseTemplateLane.seedSuggestion.meal}.
+                  </p>
+                ) : phaseTemplateLane.currentMeal ? (
+                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
+                    {phaseTemplateLane.currentMeal.meal}: {phaseTemplateLane.currentMeal.savedMealName}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
+                    Mapped for {phaseTemplateLane.meals.map((entry) => entry.meal).join(', ')}.
+                  </p>
+                )}
+                {phaseTemplateLane.secondaryHint ? (
+                  <p className="mt-2 text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                    {phaseTemplateLane.secondaryHint}
+                  </p>
+                ) : null}
+                {mode === 'add' ? (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {phaseTemplateLane.state === 'pending_review' ? (
+                      <>
+                        <button
+                          type="button"
+                          className="action-button w-full"
+                          onClick={() => handleReviewPhaseTemplateSeed('accept')}
+                        >
+                          Accept suggestion
+                        </button>
+                        <button
+                          type="button"
+                          className="action-button-secondary w-full"
+                          onClick={() => handleReviewPhaseTemplateSeed('reject')}
+                        >
+                          Not now
+                        </button>
+                      </>
+                    ) : phaseTemplateLane.state === 'empty' ? (
+                      <button
+                        type="button"
+                        className="action-button-secondary w-full sm:col-span-2"
+                        onClick={() => {
+                          onOpenPhaseTemplateSettings?.()
+                          closeSheet()
+                        }}
+                      >
+                        Choose saved meal
+                      </button>
+                    ) : phaseTemplateLane.currentMeal ? (
+                      <button
+                        type="button"
+                        className="action-button w-full"
+                        onClick={() => handleApplyPhaseTemplate('fill_meal')}
+                      >
+                        Fill {phaseTemplateLane.currentMeal.meal}
+                      </button>
+                    ) : null}
+                    {phaseTemplateLane.mealCount > 1 ? (
+                      <button
+                        type="button"
+                        className="action-button-secondary w-full"
+                        onClick={() => handleApplyPhaseTemplate('fill_day')}
+                      >
+                        Fill full day
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+          {mealAwareLaneVisible ? (
+            <section className="space-y-3">
+              <SectionHeader
+                title="Meal-aware quick log"
+                detail="Saved meals, repeats, favorites, and recents"
+              />
+              <div className="grid gap-3">
+                {mealAwareQuickLogItems.map((item) => {
+                  if (item.kind === 'saved_meal') {
+                    return (
+                      <div
+                        key={item.key}
+                        className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900 dark:text-white">{item.result.name}</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-300">
+                              {Math.round(item.result.calories ?? 0)} cal | {Math.round(item.result.protein ?? 0)}P |{' '}
+                              {Math.round(item.result.carbs ?? 0)}C | {Math.round(item.result.fat ?? 0)}F
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
+                            saved meal
+                          </span>
+                        </div>
+                        {mode === 'add' ? (
+                          <button
+                            type="button"
+                            className="action-button mt-3 w-full"
+                            onClick={() => handleApplySavedMealSelection(item.result.id)}
+                          >
+                            Review and apply
+                          </button>
+                        ) : null}
+                      </div>
+                    )
+                  }
+
+                  if (item.kind === 'repeat') {
+                    return (
+                      <div
+                        key={item.key}
+                        className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-900 dark:text-white">{item.food.name}</p>
+                            <p className="text-sm text-slate-500 dark:text-slate-300">
+                              {item.food.brand ? `${item.food.brand} - ` : ''}
+                              {item.food.servingSize}
+                              {item.food.servingUnit}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
+                            repeat
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                          {describeFood(item.food)}
+                        </p>
+                        {mode === 'add' ? (
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            <button
+                              type="button"
+                              className="action-button w-full"
+                              onClick={() => submitFood(item.food, item.servings, true)}
+                            >
+                              Use last amount
+                            </button>
+                            <button
+                              type="button"
+                              className="action-button-secondary w-full"
+                              onClick={() => handleBrowseSelectFood(item.food.id)}
+                            >
+                              Review details
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={item.key}
+                      className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900 dark:text-white">{item.food.name}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-300">
+                            {item.food.brand ? `${item.food.brand} - ` : ''}
+                            {item.food.servingSize}
+                            {item.food.servingUnit}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {favoriteIdSet.has(item.food.id) ? 'favorite' : 'recent'}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                        {describeFood(item.food)}
+                      </p>
+                      {mode === 'add' ? (
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            className="action-button w-full"
+                            onClick={() => submitFood(item.food, 1, true)}
+                          >
+                            Add 1x
+                          </button>
+                          {canUseLastAmount(item.food) ? (
+                            <button
+                              type="button"
+                              className="action-button-secondary w-full"
+                              onClick={() => submitFood(item.food, item.food.lastServings ?? 1, true)}
+                            >
+                              Use last amount
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          ) : null}
+          <BrowsePane
+            mode={mode}
+            query={query}
+            searchInputRef={searchInputRef}
+            contentRef={browseContentRef}
+            onQueryChange={handleBrowseQueryChange}
+            describeFoodEnabled={describeFoodEnabled}
+            describeDraft={describeDraft}
+            onStartDescribeFood={handleStartDescribeFood}
+            onApplyDescribeDraft={handleApplyDescribeDraft}
+            onDismissDescribeDraft={dismissDescribeDraft}
+            captureConvenienceEnabled={captureConvenienceEnabled}
+            captureDraft={captureDraft}
+            onApplyCaptureDraft={handleApplyCaptureDraft}
+            onDismissCaptureDraft={dismissCaptureDraft}
+            selectedFood={selectedFood}
+            selectedFoodId={selectedFoodId}
+            onSelectFood={handleBrowseSelectFood}
+            onClearSelectedFood={() => setSelectedFoodId(null)}
+            servings={servings}
+            onServingsChange={setServings}
+            onSubmitFood={submitFood}
+            canUseLastAmount={canUseLastAmount}
+            keepOpenAfterAdd={keepOpenAfterAdd}
+            onChangeKeepOpenAfterAdd={onChangeKeepOpenAfterAdd}
+            lookupMessage={lookupMessage}
+            isOnline={isOnline}
+            actionError={actionError}
+            onOpenCustomFood={() =>
+              requestDiscard(
+                () => {
+                  openFoodForm({
+                    title: 'Create custom food',
+                    submitLabel: 'Save custom food',
+                    source: 'custom',
+                    returnMode: 'browse',
+                  })
+                },
+                'Discard your current add-food progress and create a custom food instead?',
+              )
             }
-            setLookupError(null)
-            setSheetMode('scanner')
-          }}
-          quickFoods={quickFoods}
-          favoriteFoodIds={favoriteIdSet}
-          onToggleFavoriteFood={onToggleFavoriteFood ? toggleFavorite : undefined}
-          savedMealSearchResults={savedMealSearchResults}
-          onApplySavedMealSelection={handleApplySavedMealSelection}
-          recipeSearchResults={recipeSearchResults}
-          onConfirmRecipeSelection={handleConfirmRecipeSelection}
-          personalLibraryEnabled={personalLibraryEnabled}
-          repeatCandidates={repeatFoodResults}
-          foodCatalogSearchEnabled={foodCatalogSearchEnabled}
-          catalogSearchResults={visibleCatalogSearchResults}
-          catalogTotalResults={catalogSearchResults.length}
-          catalogLibraryMatches={catalogLibraryMatches}
-          catalogCollapsed={shouldCollapseCatalog && !catalogExpanded}
-          onExpandCatalog={() => setCatalogExpanded(true)}
-          remoteStatus={remoteStatus}
-          remoteLoadingMore={remoteLoadingMore}
-          hasMoreRemoteResults={hasMoreRemoteResults}
-          onLoadMoreRemoteResults={loadMoreRemoteResults}
-          onImportCatalogFood={handleImportCatalogFood}
-          debouncedQuery={debouncedQuery}
-          displayedSearchResults={displayedSearchResults}
-          visibleSearchResults={visibleSearchResults}
-          hiddenSearchResultCount={hiddenSearchResultCount}
-          onShowMoreResults={handleShowMoreResults}
-          archivedImportCandidate={archivedImportCandidate}
-          onRestoreArchivedImport={handleRestoreArchivedImport}
-          discardAction={discardAction}
-          discardMessage={discardMessage}
-          onCancelDiscard={() => setDiscardAction(null)}
-        />
+            onOpenScanner={() =>
+              requestDiscard(
+                () => {
+                  setActionError(null)
+                  startFreshScanner()
+                },
+                'Discard your current selection and switch to barcode scanning?',
+              )
+            }
+            onOpenOcr={() =>
+              requestDiscard(
+                () => {
+                  setActionError(null)
+                  startFreshLabelCapture()
+                },
+                'Discard your current selection and switch to nutrition-label OCR?',
+              )
+            }
+            onOpenVoiceCapture={() =>
+              requestDiscard(
+                () => {
+                  setActionError(null)
+                  handleStartVoiceCapture()
+                },
+                'Discard your current selection and switch to voice capture?',
+              )
+            }
+            onOpenMealPhotoCapture={() =>
+              requestDiscard(
+                () => {
+                  setActionError(null)
+                  handleOpenMealPhotoCapture()
+                },
+                'Discard your current selection and switch to meal-photo capture?',
+              )
+            }
+            lastLookupResult={lastLookupResult}
+            onReviewLastScan={() => {
+              stopScanner()
+              setLookupResult(lastLookupResult)
+              if (lastLookupResult) {
+                setLookupMessage(buildLookupMessage(lastLookupResult))
+              }
+              setLookupError(null)
+              setSheetMode('scanner')
+            }}
+            quickFoods={quickFoods}
+            favoriteFoodIds={favoriteIdSet}
+            loggingShortcutPreference={loggingShortcutPreference}
+            loggingToolbarStyle={loggingToolbarStyle}
+            loggingShortcuts={loggingShortcuts}
+            mealAwareLaneVisible={mealAwareLaneVisible}
+            phaseTemplateLaneVisible={phaseTemplateLaneVisible}
+            onToggleFavoriteFood={onToggleFavoriteFood ? toggleFavorite : undefined}
+            savedMealSearchResults={savedMealSearchResults}
+            onApplySavedMealSelection={handleApplySavedMealSelection}
+            recipeSearchResults={recipeSearchResults}
+            onConfirmRecipeSelection={handleConfirmRecipeSelection}
+            personalLibraryEnabled={personalLibraryEnabled}
+            repeatCandidates={repeatFoodResults}
+            foodCatalogSearchEnabled={foodCatalogSearchEnabled}
+            catalogSearchResults={visibleCatalogSearchResults}
+            catalogTotalResults={catalogSearchResults.length}
+            catalogLibraryMatches={catalogLibraryMatches}
+            catalogCollapsed={shouldCollapseCatalog && !catalogExpanded}
+            onExpandCatalog={() => setCatalogExpanded(true)}
+            remoteStatus={remoteStatus}
+            remoteLoadingMore={remoteLoadingMore}
+            hasMoreRemoteResults={hasMoreRemoteResults}
+            onLoadMoreRemoteResults={loadMoreRemoteResults}
+            onImportCatalogFood={handleImportCatalogFood}
+            debouncedQuery={debouncedQuery}
+            displayedSearchResults={displayedSearchResults}
+            visibleSearchResults={visibleSearchResults}
+            hiddenSearchResultCount={hiddenSearchResultCount}
+            onShowMoreResults={handleShowMoreResults}
+            archivedImportCandidate={archivedImportCandidate}
+            onRestoreArchivedImport={handleRestoreArchivedImport}
+            discardAction={discardAction}
+            discardMessage={discardMessage}
+            onCancelDiscard={() => setDiscardAction(null)}
+          />
+        </div>
       )}
     </BottomSheet>
   )

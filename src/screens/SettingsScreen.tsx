@@ -4,6 +4,9 @@ import { BottomSheet } from '../components/BottomSheet'
 import { FoodForm } from '../components/FoodForm'
 import { NotesEditorSheet } from '../components/NotesEditorSheet'
 import { TemplateSummaryCard } from '../components/TemplateSummaryCard'
+import { NUTRIENT_DEFINITION_LIST_V1 } from '../domain/nutrition'
+import { useHistoryImport } from '../hooks/useHistoryImport'
+import type { BootstrapResolutionView } from '../hooks/useSync'
 import { isFoodEditable } from '../hooks/useFoods'
 import { useImportExport } from '../hooks/useImportExport'
 import { useSafetySnapshots } from '../hooks/useSafetySnapshots'
@@ -14,17 +17,27 @@ import type {
   BackupPreview,
   BootstrapResolution,
   BootstrapStatusSummary,
+  CanonicalNutrientKey,
+  CutDayType,
   DietPhase,
   DietPhaseEvent,
   DiagnosticsSummary,
   Food,
   FoodDraft,
+  FoodReviewItem,
+  HistoryImportPreview,
+  HistoryImportProvider,
   ImportMode,
+  LoggingShortcutId,
+  LoggingToolbarStyle,
+  MealTemplate,
   Recipe,
   RecoverableDataIssue,
   RecoveryCheckIn,
   SyncCounts,
   SyncState,
+  ToolbarColorToken,
+  ToolbarShortcutConfig,
   UserSettings,
 } from '../types'
 import { FEATURE_FLAGS } from '../config/featureFlags'
@@ -38,15 +51,20 @@ interface SettingsScreenProps {
   syncAuthNotice: string | null
   syncAuthError: string | null
   bootstrapSummary: BootstrapStatusSummary | null
+  bootstrapResolutionView: BootstrapResolutionView | null
   mergePreview: SyncCounts | null
   bootstrapBusy: boolean
   diagnosticsSummary: DiagnosticsSummary
   foods: Food[]
   recipes: Recipe[]
+  savedMeals?: MealTemplate[]
+  foodReviewQueue?: FoodReviewItem[]
   recoveryIssues: RecoverableDataIssue[]
   previewPsmfGarminUiState?: PreviewPsmfGarminUiState | null
   activePsmfPhase?: DietPhase | null
   activeDietBreakPhase?: DietPhase | null
+  activeCarbCyclePhase?: DietPhase | null
+  activeCarbCycleHighCarbDays?: DietPhaseEvent[]
   expiredPsmfPhase?: DietPhase | null
   plannedPhases?: DietPhase[]
   historicalPhases?: DietPhase[]
@@ -72,6 +90,7 @@ interface SettingsScreenProps {
     calorieTargetOverride: number,
     notes?: string,
   ) => ActionResult<DietPhase>
+  onStartCarbCycle?: (startDate: string, plannedEndDate: string, notes?: string) => ActionResult<DietPhase>
   onScheduleRefeed?: (
     phaseId: string,
     date: string,
@@ -84,7 +103,14 @@ interface SettingsScreenProps {
     calorieTargetOverride: number,
     notes?: string,
   ) => ActionResult<DietPhaseEvent>
+  onScheduleHighCarbDay?: (
+    phaseId: string,
+    date: string,
+    calorieTargetOverride: number,
+    notes?: string,
+  ) => ActionResult<DietPhaseEvent>
   onDeleteRefeed?: (eventId: string) => ActionResult<void>
+  onDeleteHighCarbDay?: (eventId: string) => ActionResult<void>
   onCancelPhase?: (phaseId: string) => ActionResult<DietPhase>
   onUpdatePhaseNotes?: (phaseId: string, notes?: string) => ActionResult<DietPhase>
   onSelectPsmfPhase?: (phaseId: string | null) => void
@@ -101,6 +127,7 @@ interface SettingsScreenProps {
   onConnectGarmin?: () => void
   onSyncGarmin?: () => void
   onDisconnectGarmin?: () => void
+  onOpenLogDate?: (date: string) => void
   onCreateFood: (draft: FoodDraft) => ActionResult<Food>
   onUpdateFood: (foodId: string, draft: FoodDraft) => ActionResult<void>
   onArchiveFood: (foodId: string) => ActionResult<void>
@@ -110,6 +137,7 @@ interface SettingsScreenProps {
   onArchiveRecipe: (recipeId: string) => ActionResult<Recipe>
   onRestoreRecipe: (recipeId: string) => ActionResult<Recipe>
   onDeleteRecipe: (recipeId: string) => ActionResult<void>
+  onDismissFoodReviewItem?: (reviewItemId: string) => void
   onFindDuplicateFood: (draft: FoodDraft, excludeFoodId?: string) => Food | null
   onSendMagicLink: (email: string) => Promise<void> | void
   onSignOut: () => void
@@ -200,6 +228,89 @@ interface NotesEditorState {
   initialNotes?: string
   refeedDate?: string
   refeedCalories?: number
+}
+
+const LOGGING_SHORTCUT_OPTIONS: Array<{
+  id: LoggingShortcutId
+  label: string
+  description: string
+}> = [
+  { id: 'scanner', label: 'Barcode scanner', description: 'Fastest path for known packaged foods.' },
+  { id: 'ocr', label: 'Nutrition label OCR', description: 'Good when the barcode path is incomplete.' },
+  { id: 'custom', label: 'Custom food', description: 'Fastest path for your own manual entries.' },
+]
+
+const TOOLBAR_STYLE_OPTIONS: Array<{
+  id: LoggingToolbarStyle
+  label: string
+  description: string
+}> = [
+  { id: 'search_barcode', label: 'Search + barcode', description: 'Search stays primary and barcode stays one tap away.' },
+  { id: 'search_barcode_custom', label: 'Search + barcode + custom', description: 'Keep custom food in the primary row.' },
+  { id: 'four_custom', label: 'Four custom', description: 'Render the full customizable shortcut row.' },
+  { id: 'none', label: 'None', description: 'Hide the top row but keep search and barcode available.' },
+]
+
+const TOOLBAR_COLOR_TOKENS: ToolbarColorToken[] = ['teal', 'slate', 'amber', 'rose']
+const DEFAULT_SHORTCUT_COLORS: Record<LoggingShortcutId, ToolbarColorToken> = {
+  scanner: 'teal',
+  ocr: 'amber',
+  custom: 'slate',
+}
+
+const PHASE_TEMPLATE_DAY_TYPES: Array<{
+  dayType: CutDayType
+  label: string
+  description: string
+}> = [
+  { dayType: 'psmf_day', label: 'PSMF day', description: 'Lean repeat-food structure for aggressive cut days.' },
+  { dayType: 'refeed_day', label: 'Refeed day', description: 'Higher-carb repeat meals for planned refeed days.' },
+  { dayType: 'diet_break_day', label: 'Diet break day', description: 'Maintenance-style repeat meals while recovery is prioritized.' },
+  { dayType: 'high_carb_day', label: 'High-carb day', description: 'Carb-cycle day templates for glycogen and training support.' },
+]
+
+const DEFAULT_PHASE_TEMPLATE_LABELS: Record<CutDayType, string> = {
+  psmf_day: 'PSMF day',
+  refeed_day: 'Refeed day',
+  diet_break_day: 'Diet break day',
+  high_carb_day: 'High-carb day',
+  standard_cut_day: 'Standard cut day',
+}
+
+function normalizeLoggingShortcutIds(
+  ids: readonly LoggingShortcutId[] | undefined,
+): LoggingShortcutId[] {
+  const seen = new Set<LoggingShortcutId>()
+  const normalized: LoggingShortcutId[] = []
+
+  for (const id of ids ?? []) {
+    if (!LOGGING_SHORTCUT_OPTIONS.some((option) => option.id === id) || seen.has(id)) {
+      continue
+    }
+
+    seen.add(id)
+    normalized.push(id)
+  }
+
+  for (const option of LOGGING_SHORTCUT_OPTIONS) {
+    if (!seen.has(option.id)) {
+      normalized.push(option.id)
+    }
+  }
+
+  return normalized
+}
+
+function normalizeToolbarShortcutConfigs(
+  configs: readonly ToolbarShortcutConfig[] | undefined,
+): ToolbarShortcutConfig[] {
+  const configMap = new Map((configs ?? []).map((config) => [config.id, config]))
+  return normalizeLoggingShortcutIds(configs?.map((config) => config.id)).map((id, order) => ({
+    id,
+    order,
+    colorToken: configMap.get(id)?.colorToken ?? DEFAULT_SHORTCUT_COLORS[id],
+    visible: configMap.get(id)?.visible ?? true,
+  }))
 }
 
 function buildSettingsFormState(settings: UserSettings): SettingsFormState {
@@ -320,7 +431,34 @@ function buildBackupFilename(): string {
   return `macrotracker-backup-${timestamp}.json`
 }
 
+function formatHistoryImportProvider(provider: HistoryImportProvider): string {
+  return provider === 'macrofactor' ? 'MacroFactor' : 'Renpho'
+}
+
+function formatHistoryImportFileKind(kind: HistoryImportPreview['fileKinds'][number]): string {
+  switch (kind) {
+    case 'macrofactor_food_rows':
+      return 'MacroFactor food rows'
+    case 'macrofactor_weights':
+      return 'MacroFactor weights'
+    case 'renpho_weights':
+      return 'Renpho weights'
+    default:
+      return kind
+  }
+}
+
 const LAST_MANUAL_EXPORT_AT_KEY = 'mt_last_manual_export_at'
+const ADVANCED_NUTRIENT_KEYS: CanonicalNutrientKey[] = NUTRIENT_DEFINITION_LIST_V1.map(
+  (entry) => entry.key,
+)
+const NUTRIENT_LABELS = new Map(
+  NUTRIENT_DEFINITION_LIST_V1.map((entry) => [entry.key, entry.label] as const),
+)
+
+function formatNutrientLabel(key: CanonicalNutrientKey): string {
+  return NUTRIENT_LABELS.get(key) ?? key
+}
 
 function readPersistedTimestamp(key: string): string | null {
   if (typeof window === 'undefined') {
@@ -375,6 +513,17 @@ function buildDiagnosticsFilename(): string {
   return `macrotracker-diagnostics-${timestamp}.json`
 }
 
+function areVisibleSyncCountsZero(counts: SyncCounts): boolean {
+  return (
+    counts.foods === 0 &&
+    counts.logEntries === 0 &&
+    counts.weights === 0 &&
+    counts.savedMeals === 0 &&
+    counts.recipes === 0 &&
+    counts.favoriteFoods === 0
+  )
+}
+
 function SettingsScreen({
   settings,
   syncConfigured,
@@ -383,15 +532,20 @@ function SettingsScreen({
   syncAuthNotice,
   syncAuthError,
   bootstrapSummary,
+  bootstrapResolutionView,
   mergePreview,
   bootstrapBusy,
   diagnosticsSummary,
   foods,
   recipes,
+  savedMeals = [],
+  foodReviewQueue = [],
   recoveryIssues,
   previewPsmfGarminUiState,
   activePsmfPhase,
   activeDietBreakPhase,
+  activeCarbCyclePhase,
+  activeCarbCycleHighCarbDays = [],
   expiredPsmfPhase,
   plannedPhases = [],
   historicalPhases = [],
@@ -409,9 +563,12 @@ function SettingsScreen({
   onExtendDietPhase,
   onCompleteDietPhase,
   onStartDietBreak,
+  onStartCarbCycle,
   onScheduleRefeed,
+  onScheduleHighCarbDay,
   onUpdateRefeed,
   onDeleteRefeed,
+  onDeleteHighCarbDay,
   onCancelPhase,
   onUpdatePhaseNotes,
   onSelectPsmfPhase,
@@ -422,6 +579,7 @@ function SettingsScreen({
   onConnectGarmin,
   onSyncGarmin,
   onDisconnectGarmin,
+  onOpenLogDate,
   onCreateFood,
   onUpdateFood,
   onArchiveFood,
@@ -431,6 +589,7 @@ function SettingsScreen({
   onArchiveRecipe,
   onRestoreRecipe,
   onDeleteRecipe,
+  onDismissFoodReviewItem,
   onFindDuplicateFood,
   onSendMagicLink,
   onSignOut,
@@ -443,8 +602,11 @@ function SettingsScreen({
   onFoodEditorStateChange,
 }: SettingsScreenProps) {
   const { applyImport, exportBackup, validateBackup } = useImportExport()
+  const { applyImport: applyHistoryImport, previewImport } = useHistoryImport()
   const { summary: safetySummary, captureSnapshot } = useSafetySnapshots()
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const macroFactorImportInputRef = useRef<HTMLInputElement | null>(null)
+  const renphoImportInputRef = useRef<HTMLInputElement | null>(null)
   const [settingsForm, setSettingsForm] = useState<SettingsFormState>(buildSettingsFormState(settings))
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [foodError, setFoodError] = useState<string | null>(null)
@@ -461,6 +623,9 @@ function SettingsScreen({
   const [importPreview, setImportPreview] = useState<BackupPreview | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
   const [importSuccess, setImportSuccess] = useState<string | null>(null)
+  const [historyImportPreview, setHistoryImportPreview] = useState<HistoryImportPreview | null>(null)
+  const [historyImportError, setHistoryImportError] = useState<string | null>(null)
+  const [historyImportSuccess, setHistoryImportSuccess] = useState<string | null>(null)
   const [lastExportedAt, setLastExportedAt] = useState<string | null>(() =>
     readPersistedTimestamp(LAST_MANUAL_EXPORT_AT_KEY),
   )
@@ -479,6 +644,11 @@ function SettingsScreen({
     buildRecoveryFormState(recoveryCheckInToday),
   )
   const [recoveryActionError, setRecoveryActionError] = useState<string | null>(null)
+  const [showAdvancedLoggingShortcuts, setShowAdvancedLoggingShortcuts] = useState(false)
+  const toolbarShortcutConfigs = useMemo(
+    () => normalizeToolbarShortcutConfigs(settings.loggingShortcuts),
+    [settings.loggingShortcuts],
+  )
 
   useEffect(() => {
     setSettingsForm(buildSettingsFormState(settings))
@@ -522,6 +692,10 @@ function SettingsScreen({
       ),
     [recipeQuery, recipes],
   )
+  const pendingFoodReviewItems = useMemo(
+    () => foodReviewQueue.filter((item) => item.status === 'pending'),
+    [foodReviewQueue],
+  )
 
   const bootstrapDefaultResolution: BootstrapResolution | null = useMemo(() => {
     if (!bootstrapSummary || bootstrapSummary.bootstrapCompleted) {
@@ -542,6 +716,57 @@ function SettingsScreen({
 
     return null
   }, [bootstrapSummary])
+  const bootstrapPrimaryAction = useMemo(() => {
+    if (!bootstrapResolutionView?.requiresResolution) {
+      return null
+    }
+
+    if (bootstrapResolutionView.reason === 'post_sign_in_conflict') {
+      if (bootstrapResolutionView.cloudEffectivelyEmpty === true) {
+        return {
+          label: 'Replace cloud with this device',
+          disabled: bootstrapBusy,
+          onClick: () => onApplyBootstrap('replaceCloudWithThisDevice'),
+        }
+      }
+
+      return {
+        label: 'Preview merge',
+        disabled: bootstrapBusy,
+        onClick: () => void onPreviewMerge(),
+      }
+    }
+
+    return {
+      label: `Apply default: ${bootstrapDefaultResolution ?? 'unavailable'}`,
+      disabled: !bootstrapDefaultResolution || bootstrapBusy,
+      onClick: () => bootstrapDefaultResolution && onApplyBootstrap(bootstrapDefaultResolution),
+    }
+  }, [
+    bootstrapBusy,
+    bootstrapDefaultResolution,
+    bootstrapResolutionView,
+    onApplyBootstrap,
+    onPreviewMerge,
+  ])
+  const showLocalSettingsNote = Boolean(
+    bootstrapSummary &&
+      bootstrapResolutionView &&
+      !bootstrapResolutionView.localEffectivelyEmpty &&
+      areVisibleSyncCountsZero(bootstrapSummary.localCounts),
+  )
+  const showCloudSettingsNote = Boolean(
+    bootstrapSummary &&
+      bootstrapResolutionView &&
+      bootstrapResolutionView.cloudEffectivelyEmpty === false &&
+      areVisibleSyncCountsZero(bootstrapSummary.cloudCounts),
+  )
+  const previewMergeIsPrimary =
+    bootstrapResolutionView?.reason === 'post_sign_in_conflict' &&
+    bootstrapResolutionView.cloudEffectivelyEmpty === false
+  const replaceCloudIsPrimary =
+    bootstrapResolutionView?.reason === 'post_sign_in_conflict' &&
+    bootstrapResolutionView.cloudEffectivelyEmpty === true
   const showCoachMinimumWarning =
     settingsForm.coachingMinCalories.trim().length > 0 &&
     Number.isFinite(Number.parseFloat(settingsForm.coachingMinCalories)) &&
@@ -585,6 +810,349 @@ function SettingsScreen({
     } catch (error) {
       setSettingsError(error instanceof Error ? error.message : 'Review the settings values.')
     }
+  }
+
+  function applyAdvancedSettingsPatch(patch: Partial<UserSettings>): void {
+    const result = onUpdateSettings({
+      ...settings,
+      ...patch,
+    })
+    setSettingsError(result.ok ? null : result.error.message)
+  }
+
+  function updatePhaseMealTemplateLabel(dayType: CutDayType, label: string): void {
+    const now = new Date().toISOString()
+    const existingTemplates = settings.phaseMealTemplates ?? []
+    const existing = existingTemplates.find((template) => template.dayType === dayType && !template.archivedAt)
+    const nextTemplate = existing
+      ? {
+          ...existing,
+          label: label.trim() || DEFAULT_PHASE_TEMPLATE_LABELS[dayType],
+          updatedAt: now,
+          source: 'manual' as const,
+        }
+      : {
+          id: crypto.randomUUID(),
+          label: label.trim() || DEFAULT_PHASE_TEMPLATE_LABELS[dayType],
+          dayType,
+          meals: [],
+          source: 'manual' as const,
+          createdAt: now,
+          updatedAt: now,
+        }
+    const remaining = existingTemplates.filter((template) => template.id !== existing?.id)
+    applyAdvancedSettingsPatch({
+      phaseMealTemplates: [...remaining, nextTemplate].sort((left, right) => left.dayType.localeCompare(right.dayType)),
+    })
+  }
+
+  function updatePhaseMealTemplateMeal(
+    dayType: CutDayType,
+    meal: MealTemplate['defaultMeal'] & string,
+    savedMealId: string,
+  ): void {
+    const now = new Date().toISOString()
+    const existingTemplates = settings.phaseMealTemplates ?? []
+    const existing = existingTemplates.find((template) => template.dayType === dayType && !template.archivedAt)
+    const base = existing ?? {
+      id: crypto.randomUUID(),
+      label: DEFAULT_PHASE_TEMPLATE_LABELS[dayType],
+      dayType,
+      meals: [],
+      source: 'saved_meal_map' as const,
+      createdAt: now,
+      updatedAt: now,
+    }
+    const nextMeals = [
+      ...base.meals.filter((entry) => entry.meal !== meal),
+      ...(savedMealId ? [{ meal, savedMealId }] : []),
+    ]
+    const nextTemplate = {
+      ...base,
+      meals: nextMeals,
+      source: 'saved_meal_map' as const,
+      updatedAt: now,
+    }
+    const remaining = existingTemplates.filter((template) => template.id !== existing?.id)
+    applyAdvancedSettingsPatch({
+      phaseMealTemplates: [...remaining, nextTemplate].sort((left, right) => left.dayType.localeCompare(right.dayType)),
+    })
+  }
+
+  function handleStartCarbCycleSubmit(): void {
+    if (!onStartCarbCycle) {
+      return
+    }
+    const result = onStartCarbCycle(
+      dietPhaseForm.startDate,
+      dietPhaseForm.plannedEndDate,
+      dietPhaseForm.notes,
+    )
+    if (!result.ok) {
+      handlePhaseActionError(result.error.message)
+      return
+    }
+    setPhaseActionError(null)
+    onReportGlobalError(null)
+  }
+
+  function handleScheduleHighCarbDaySubmit(): void {
+    if (!activeCarbCyclePhase || !onScheduleHighCarbDay) {
+      return
+    }
+    const calories = Number.parseFloat(dietPhaseForm.refeedCalories)
+    if (!dietPhaseForm.refeedDate.trim()) {
+      handlePhaseActionError('High-carb day date is required.')
+      return
+    }
+    if (!Number.isFinite(calories) || calories <= 0) {
+      handlePhaseActionError('High-carb day calories must be a positive number.')
+      return
+    }
+    const result = onScheduleHighCarbDay(
+      activeCarbCyclePhase.id,
+      dietPhaseForm.refeedDate,
+      calories,
+      dietPhaseForm.refeedNotes,
+    )
+    if (!result.ok) {
+      handlePhaseActionError(result.error.message)
+      return
+    }
+    setPhaseActionError(null)
+    onReportGlobalError(null)
+  }
+
+  function handleDeleteHighCarbDayAction(eventId: string): void {
+    if (!onDeleteHighCarbDay) {
+      return
+    }
+    const result = onDeleteHighCarbDay(eventId)
+    if (!result.ok) {
+      handlePhaseActionError(result.error.message)
+      return
+    }
+    setPhaseActionError(null)
+    onReportGlobalError(null)
+  }
+
+  function updateNutrientGoalMode(key: CanonicalNutrientKey, mode: 'auto' | 'custom' | 'none'): void {
+    const currentGoals = settings.nutrientGoals ?? {}
+    const nextGoal =
+      mode === 'auto'
+        ? { mode }
+        : mode === 'none'
+          ? { mode }
+          : {
+              mode,
+              target: currentGoals[key]?.target,
+              floor: currentGoals[key]?.floor,
+              ceiling: currentGoals[key]?.ceiling,
+            }
+    applyAdvancedSettingsPatch({
+      nutrientGoals: {
+        ...currentGoals,
+        [key]: nextGoal,
+      },
+    })
+  }
+
+  function updateNutrientGoalValue(
+    key: CanonicalNutrientKey,
+    field: 'floor' | 'target' | 'ceiling',
+    rawValue: string,
+  ): void {
+    const parsed = rawValue.trim() ? Number.parseFloat(rawValue) : undefined
+    if (rawValue.trim() && (!Number.isFinite(parsed) || parsed! < 0)) {
+      setSettingsError(`${formatNutrientLabel(key)} ${field} must be a valid positive number or blank.`)
+      return
+    }
+
+    const currentGoal = settings.nutrientGoals?.[key] ?? { mode: 'custom' as const }
+    applyAdvancedSettingsPatch({
+      nutrientGoals: {
+        ...(settings.nutrientGoals ?? {}),
+        [key]: {
+          ...currentGoal,
+          mode: currentGoal.mode === 'none' ? 'custom' : currentGoal.mode ?? 'custom',
+          [field]: parsed,
+        },
+      },
+    })
+  }
+
+  function togglePinnedNutrient(key: CanonicalNutrientKey): void {
+    const currentPins = settings.pinnedNutrients ?? []
+    const alreadyPinned = currentPins.some((entry) => entry.key === key)
+    const nextPins = alreadyPinned
+      ? currentPins.filter((entry) => entry.key !== key).map((entry, order) => ({ ...entry, order }))
+      : [...currentPins, { key, order: currentPins.length }]
+    applyAdvancedSettingsPatch({ pinnedNutrients: nextPins })
+  }
+
+  function toggleCoachModule(kind: 'partial_logging' | 'fasting' | 'logging_break' | 'program_update'): void {
+    const currentSettings = settings.coachModuleSettings ?? {}
+    applyAdvancedSettingsPatch({
+      coachModuleSettings: {
+        ...currentSettings,
+        [kind]: {
+          enabled: !(currentSettings[kind]?.enabled ?? true),
+        },
+      },
+    })
+  }
+
+  function updateFastCheckInPreference(patch: Partial<NonNullable<UserSettings['fastCheckInPreference']>>): void {
+    applyAdvancedSettingsPatch({
+      fastCheckInPreference: {
+        enabled: settings.fastCheckInPreference?.enabled ?? true,
+        skipModuleDetails: settings.fastCheckInPreference?.skipModuleDetails ?? true,
+        surfaceEntryPoint: settings.fastCheckInPreference?.surfaceEntryPoint ?? 'dashboard',
+        postResultModuleSummary: settings.fastCheckInPreference?.postResultModuleSummary ?? true,
+        ...patch,
+      },
+    })
+  }
+
+  function buildLoggingShortcutConfigs(
+    nextPreference: NonNullable<UserSettings['loggingShortcutPreference']>,
+  ): ToolbarShortcutConfig[] {
+    const existingConfigMap = new Map(
+      normalizeToolbarShortcutConfigs(settings.loggingShortcuts).map((config) => [config.id, config]),
+    )
+    return nextPreference.shortcutOrder.map((id, order) => ({
+      id,
+      order,
+      colorToken: existingConfigMap.get(id)?.colorToken ?? DEFAULT_SHORTCUT_COLORS[id],
+      visible: nextPreference.enabledShortcutIds.includes(id),
+    }))
+  }
+
+  function updateLoggingShortcutPreference(patch: Partial<NonNullable<UserSettings['loggingShortcutPreference']>>): void {
+    const enabledShortcutIds = normalizeLoggingShortcutIds(
+      settings.loggingShortcutPreference?.enabledShortcutIds,
+    )
+    const shortcutOrder = normalizeLoggingShortcutIds(
+      settings.loggingShortcutPreference?.shortcutOrder,
+    )
+    const nextPreference: NonNullable<UserSettings['loggingShortcutPreference']> = {
+      barcodeFirst: settings.loggingShortcutPreference?.barcodeFirst ?? true,
+      autologExactBarcodeHits: settings.loggingShortcutPreference?.autologExactBarcodeHits ?? true,
+      prioritizeRecents: settings.loggingShortcutPreference?.prioritizeRecents ?? true,
+      prioritizeFavorites: settings.loggingShortcutPreference?.prioritizeFavorites ?? true,
+      prioritizeSavedMeals: settings.loggingShortcutPreference?.prioritizeSavedMeals ?? true,
+      enabledShortcutIds,
+      shortcutOrder,
+      mealAwareLane: settings.loggingShortcutPreference?.mealAwareLane ?? true,
+      toolbarStyle: settings.loggingShortcutPreference?.toolbarStyle ?? 'search_barcode',
+      topShortcutId: settings.loggingShortcutPreference?.topShortcutId ?? 'scanner',
+      ...patch,
+    }
+
+    nextPreference.enabledShortcutIds = normalizeLoggingShortcutIds(nextPreference.enabledShortcutIds)
+    nextPreference.shortcutOrder = normalizeLoggingShortcutIds(nextPreference.shortcutOrder)
+    nextPreference.topShortcutId = nextPreference.topShortcutId ?? 'scanner'
+    if (!nextPreference.enabledShortcutIds.includes(nextPreference.topShortcutId)) {
+      nextPreference.topShortcutId = nextPreference.enabledShortcutIds[0] ?? 'scanner'
+    }
+
+    applyAdvancedSettingsPatch({
+      loggingShortcutPreference: nextPreference,
+      loggingToolbarStyle: nextPreference.toolbarStyle,
+      loggingShortcuts: buildLoggingShortcutConfigs(nextPreference),
+      featureSettingsVersionApplied: Math.max(settings.featureSettingsVersionApplied ?? 0, 1),
+    })
+  }
+
+  function updateToolbarShortcutConfig(
+    shortcutId: LoggingShortcutId,
+    patch: Partial<ToolbarShortcutConfig>,
+  ): void {
+    const nextConfigs = normalizeToolbarShortcutConfigs(settings.loggingShortcuts).map((config) =>
+      config.id === shortcutId ? { ...config, ...patch } : config,
+    )
+    applyAdvancedSettingsPatch({
+      loggingShortcuts: nextConfigs,
+      featureSettingsVersionApplied: Math.max(settings.featureSettingsVersionApplied ?? 0, 1),
+    })
+  }
+
+  function resetLoggingShortcuts(): void {
+    const defaultPreference: NonNullable<UserSettings['loggingShortcutPreference']> = {
+      barcodeFirst: true,
+      autologExactBarcodeHits: true,
+      prioritizeRecents: true,
+      prioritizeFavorites: true,
+      prioritizeSavedMeals: true,
+      enabledShortcutIds: LOGGING_SHORTCUT_OPTIONS.map((option) => option.id),
+      shortcutOrder: LOGGING_SHORTCUT_OPTIONS.map((option) => option.id),
+      mealAwareLane: true,
+      toolbarStyle: 'search_barcode',
+      topShortcutId: 'scanner',
+    }
+    applyAdvancedSettingsPatch({
+      loggingShortcutPreference: defaultPreference,
+      loggingToolbarStyle: defaultPreference.toolbarStyle,
+      loggingShortcuts: defaultPreference.shortcutOrder.map((id, order) => ({
+        id,
+        order,
+        colorToken: DEFAULT_SHORTCUT_COLORS[id],
+        visible: true,
+      })),
+      featureSettingsVersionApplied: Math.max(settings.featureSettingsVersionApplied ?? 0, 1),
+    })
+  }
+
+  function resetDashboardCustomization(): void {
+    applyAdvancedSettingsPatch({
+      dashboardLayout: {
+        order: ['coach', 'nutrition', 'food_review', 'garmin', 'workouts', 'body_progress', 'benchmark'],
+        hiddenSectionIds: [],
+        updatedAt: new Date().toISOString(),
+      },
+      dashboardDefaultsVersionApplied: Math.max(settings.dashboardDefaultsVersionApplied ?? 0, 1),
+      featureSettingsVersionApplied: Math.max(settings.featureSettingsVersionApplied ?? 0, 1),
+    })
+  }
+
+  function resetProgressComparePreferences(): void {
+    applyAdvancedSettingsPatch({
+      bodyProgressFocusState: {
+        focusedMetricKey: settings.bodyProgressFocusState?.focusedMetricKey,
+        comparePreset: 'same_day',
+        lastSelectedPose: 'front',
+        compareMode: 'side_by_side',
+        galleryMode: 'latest_vs_compare',
+      },
+      featureSettingsVersionApplied: Math.max(settings.featureSettingsVersionApplied ?? 0, 1),
+    })
+  }
+
+  function toggleLoggingShortcutEnabled(shortcutId: LoggingShortcutId): void {
+    const currentEnabled = normalizeLoggingShortcutIds(
+      settings.loggingShortcutPreference?.enabledShortcutIds,
+    )
+    const nextEnabled = currentEnabled.includes(shortcutId)
+      ? currentEnabled.filter((id) => id !== shortcutId)
+      : [...currentEnabled, shortcutId]
+
+    updateLoggingShortcutPreference({
+      enabledShortcutIds: nextEnabled.length ? nextEnabled : [shortcutId],
+    })
+  }
+
+  function moveLoggingShortcut(shortcutId: LoggingShortcutId, direction: -1 | 1): void {
+    const currentOrder = normalizeLoggingShortcutIds(settings.loggingShortcutPreference?.shortcutOrder)
+    const index = currentOrder.indexOf(shortcutId)
+    const nextIndex = index + direction
+    if (index === -1 || nextIndex < 0 || nextIndex >= currentOrder.length) {
+      return
+    }
+
+    const nextOrder = [...currentOrder]
+    const [moved] = nextOrder.splice(index, 1)
+    nextOrder.splice(nextIndex, 0, moved)
+    updateLoggingShortcutPreference({ shortcutOrder: nextOrder })
   }
 
   function handleSettingsSubmit(event: React.FormEvent<HTMLFormElement>): void {
@@ -657,6 +1225,25 @@ function SettingsScreen({
     onReportGlobalError(null)
   }
 
+  async function handleHistoryImportFiles(
+    provider: HistoryImportProvider,
+    files: FileList | File[],
+  ): Promise<void> {
+    const validationResult = await previewImport(provider, files)
+    if (!validationResult.ok) {
+      setHistoryImportPreview(null)
+      setHistoryImportError(validationResult.error.message)
+      setHistoryImportSuccess(null)
+      onReportGlobalError(validationResult.error)
+      return
+    }
+
+    setHistoryImportPreview(validationResult.data)
+    setHistoryImportError(null)
+    setHistoryImportSuccess(null)
+    onReportGlobalError(null)
+  }
+
   async function handleApplyImport(): Promise<void> {
     if (!importPreview) {
       return
@@ -672,7 +1259,7 @@ function SettingsScreen({
       return
     }
 
-    const importResult = applyImport(importPreview.backup, importMode)
+    const importResult = await applyImport(importPreview.backup, importMode)
     if (!importResult.ok) {
       setImportError(importResult.error.message)
       setImportSuccess(null)
@@ -692,6 +1279,42 @@ function SettingsScreen({
     onReportGlobalError(null)
   }
 
+  async function handleApplyHistoryImport(): Promise<void> {
+    if (!historyImportPreview) {
+      return
+    }
+
+    const snapshotResult = await captureSnapshot('pre-import-merge')
+    if (!snapshotResult.ok) {
+      setHistoryImportError(snapshotResult.error.message)
+      setHistoryImportSuccess(null)
+      onReportGlobalError(snapshotResult.error)
+      return
+    }
+
+    const importResult = await applyHistoryImport(historyImportPreview)
+    if (!importResult.ok) {
+      setHistoryImportError(importResult.error.message)
+      setHistoryImportSuccess(null)
+      onReportGlobalError(importResult.error)
+      return
+    }
+
+    setHistoryImportSuccess(
+      `Imported ${importResult.data.logEntries} log entries and ${importResult.data.weights} weights from ${formatHistoryImportProvider(historyImportPreview.provider)}.`,
+    )
+    setLastImportRollbackBackup(snapshotResult.data.backup)
+    setHistoryImportError(null)
+    setHistoryImportPreview(null)
+    if (macroFactorImportInputRef.current) {
+      macroFactorImportInputRef.current.value = ''
+    }
+    if (renphoImportInputRef.current) {
+      renphoImportInputRef.current.value = ''
+    }
+    onReportGlobalError(null)
+  }
+
   async function handleUndoLastImport(): Promise<void> {
     if (!lastImportRollbackBackup) {
       return
@@ -705,7 +1328,7 @@ function SettingsScreen({
       return
     }
 
-    const restoreResult = applyImport(lastImportRollbackBackup, 'replace')
+    const restoreResult = await applyImport(lastImportRollbackBackup, 'replace')
     if (!restoreResult.ok) {
       setImportError(restoreResult.error.message)
       setImportSuccess(null)
@@ -1194,6 +1817,68 @@ function SettingsScreen({
         </section>
       ) : null}
 
+      {FEATURE_FLAGS.foodTruthV2 ? (
+        <section className="app-card space-y-4 px-4 py-4">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+              Food review queue
+            </p>
+            <p className="font-display text-2xl text-slate-900 dark:text-white">
+              {pendingFoodReviewItems.length} pending review item{pendingFoodReviewItems.length === 1 ? '' : 's'}
+            </p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Imported-food conflicts and orphaned log links stay here until you resolve or dismiss them.
+            </p>
+          </div>
+
+          {pendingFoodReviewItems.length ? (
+            <div className="space-y-3">
+              {pendingFoodReviewItems.slice(0, 8).map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.title}</p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.reason}</p>
+                      <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        {item.source.replaceAll('_', ' ')}
+                        {item.linkedEntryDate ? ` • ${formatShortDate(item.linkedEntryDate)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {item.linkedEntryDate && onOpenLogDate ? (
+                        <button
+                          type="button"
+                          className="action-button-secondary"
+                          onClick={() => onOpenLogDate(item.linkedEntryDate!)}
+                        >
+                          Open log day
+                        </button>
+                      ) : null}
+                      {onDismissFoodReviewItem ? (
+                        <button
+                          type="button"
+                          className="action-button-secondary"
+                          onClick={() => onDismissFoodReviewItem(item.id)}
+                        >
+                          Dismiss
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[24px] border border-dashed border-teal-300 bg-teal-50/70 px-4 py-6 text-sm text-slate-600 dark:border-teal-500/40 dark:bg-teal-500/10 dark:text-slate-300">
+              No pending review items. New barcode, OCR, and import conflicts will surface here when they need user action.
+            </div>
+          )}
+        </section>
+      ) : null}
+
       {previewPsmfGarminUiState ? (
         <section className="app-card space-y-4 px-4 py-4" data-testid="psmf-diet-phase-section">
           <div className="space-y-1">
@@ -1628,6 +2313,138 @@ function SettingsScreen({
         </section>
       ) : null}
 
+      {settingsForm.goalMode === 'lose' && settingsForm.fatLossMode === 'carb_cycle' ? (
+        <section className="app-card space-y-4 px-4 py-4">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+              Carb cycle
+            </p>
+            <p className="font-display text-2xl text-slate-900 dark:text-white">Schedule high-carb days</p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              Carb-cycle phases keep higher-carb training days explicit instead of relying on manual toggles.
+            </p>
+          </div>
+
+          {activeCarbCyclePhase ? (
+            <div className="space-y-4 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                    Active phase
+                  </p>
+                  <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                    Carb cycle until {formatShortDate(activeCarbCyclePhase.plannedEndDate)}
+                  </p>
+                  {activeCarbCyclePhase.notes ? (
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{activeCarbCyclePhase.notes}</p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  High-carb date
+                  <input
+                    type="date"
+                    className="field mt-2"
+                    value={dietPhaseForm.refeedDate}
+                    onChange={(event) => setDietPhaseForm((current) => ({ ...current, refeedDate: event.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                  High-carb calories
+                  <input
+                    className="field mt-2"
+                    inputMode="numeric"
+                    value={dietPhaseForm.refeedCalories}
+                    onChange={(event) => setDietPhaseForm((current) => ({ ...current, refeedCalories: event.target.value }))}
+                  />
+                </label>
+              </div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                Notes
+                <textarea
+                  className="field mt-2 min-h-24"
+                  value={dietPhaseForm.refeedNotes}
+                  onChange={(event) => setDietPhaseForm((current) => ({ ...current, refeedNotes: event.target.value }))}
+                />
+              </label>
+              <button type="button" className="action-button w-full" onClick={handleScheduleHighCarbDaySubmit}>
+                Schedule high-carb day
+              </button>
+
+              {activeCarbCycleHighCarbDays.length ? (
+                <div className="space-y-2">
+                  {activeCarbCycleHighCarbDays.map((event) => (
+                    <div
+                      key={event.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-slate-50/90 px-4 py-3 dark:bg-slate-950/50"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {formatShortDate(event.date)} • {event.calorieTargetOverride} kcal
+                        </p>
+                        {event.notes ? (
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{event.notes}</p>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="action-button-secondary"
+                        onClick={() => handleDeleteHighCarbDayAction(event.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-[20px] bg-slate-50/90 px-4 py-3 text-sm text-slate-600 dark:bg-slate-950/50 dark:text-slate-300">
+                  No high-carb days scheduled yet.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                Start date
+                <input
+                  type="date"
+                  className="field mt-2"
+                  value={dietPhaseForm.startDate}
+                  onChange={(event) => setDietPhaseForm((current) => ({ ...current, startDate: event.target.value }))}
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                End date
+                <input
+                  type="date"
+                  className="field mt-2"
+                  value={dietPhaseForm.plannedEndDate}
+                  onChange={(event) => setDietPhaseForm((current) => ({ ...current, plannedEndDate: event.target.value }))}
+                />
+              </label>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                Notes
+                <textarea
+                  className="field mt-2 min-h-24"
+                  value={dietPhaseForm.notes}
+                  onChange={(event) => setDietPhaseForm((current) => ({ ...current, notes: event.target.value }))}
+                />
+              </label>
+              <button type="button" className="action-button w-full" onClick={handleStartCarbCycleSubmit}>
+                Start carb cycle
+              </button>
+            </div>
+          )}
+
+          {phaseActionError ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
+              {phaseActionError}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {previewPsmfGarminUiState ? (
         <section className="app-card space-y-4 px-4 py-4" data-testid="recovery-section">
           <div className="space-y-1">
@@ -1861,12 +2678,18 @@ function SettingsScreen({
           </div>
         ) : null}
 
-        {bootstrapSummary && !bootstrapSummary.bootstrapCompleted ? (
+        {bootstrapSummary && bootstrapResolutionView?.requiresResolution ? (
           <div className="space-y-4 rounded-[26px] border border-amber-200 bg-amber-50/90 px-4 py-4 dark:border-amber-500/30 dark:bg-amber-500/10">
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">Bootstrap required</p>
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+                {bootstrapResolutionView.reason === 'post_sign_in_conflict'
+                  ? 'Resolution required'
+                  : 'Bootstrap required'}
+              </p>
               <p className="text-sm text-amber-800 dark:text-amber-200">
-                Local device data and cloud data need a one-time resolution before sync can start.
+                {bootstrapResolutionView.reason === 'post_sign_in_conflict'
+                  ? 'This device already has local synced data. Choose how it should reconcile with the signed-in cloud account before sync can continue.'
+                  : 'Local device data and cloud data need a one-time resolution before sync can start.'}
               </p>
             </div>
 
@@ -1879,6 +2702,11 @@ function SettingsScreen({
                 <p>{bootstrapSummary.localCounts.savedMeals} saved meals</p>
                 <p>{bootstrapSummary.localCounts.recipes} recipes</p>
                 <p>{bootstrapSummary.localCounts.favoriteFoods} favorite foods</p>
+                {showLocalSettingsNote ? (
+                  <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                    Synced settings also count as data on this device.
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-amber-200 bg-white/70 px-4 py-3 dark:border-amber-500/30 dark:bg-slate-900/40">
                 <p className="font-semibold">Cloud</p>
@@ -1888,6 +2716,11 @@ function SettingsScreen({
                 <p>{bootstrapSummary.cloudCounts.savedMeals} saved meals</p>
                 <p>{bootstrapSummary.cloudCounts.recipes} recipes</p>
                 <p>{bootstrapSummary.cloudCounts.favoriteFoods} favorite foods</p>
+                {showCloudSettingsNote ? (
+                  <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">
+                    Synced settings also count as data in this cloud account.
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -1901,10 +2734,10 @@ function SettingsScreen({
               <button
                 type="button"
                 className="action-button"
-                onClick={() => bootstrapDefaultResolution && onApplyBootstrap(bootstrapDefaultResolution)}
-                disabled={!bootstrapDefaultResolution || bootstrapBusy}
+                onClick={() => bootstrapPrimaryAction?.onClick()}
+                disabled={bootstrapPrimaryAction?.disabled ?? true}
               >
-                {bootstrapBusy ? 'Working...' : `Apply default: ${bootstrapDefaultResolution ?? 'unavailable'}`}
+                {bootstrapBusy ? 'Working...' : (bootstrapPrimaryAction?.label ?? 'Apply default: unavailable')}
               </button>
               <button
                 type="button"
@@ -1914,14 +2747,16 @@ function SettingsScreen({
               >
                 Use cloud on this device
               </button>
-              <button
-                type="button"
-                className="action-button-secondary"
-                onClick={() => void onPreviewMerge()}
-                disabled={bootstrapBusy}
-              >
-                Preview merge
-              </button>
+              {!previewMergeIsPrimary ? (
+                <button
+                  type="button"
+                  className="action-button-secondary"
+                  onClick={() => void onPreviewMerge()}
+                  disabled={bootstrapBusy}
+                >
+                  Preview merge
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="action-button-secondary"
@@ -1930,14 +2765,16 @@ function SettingsScreen({
               >
                 Merge this device into cloud
               </button>
-              <button
-                type="button"
-                className="action-button-secondary"
-                onClick={() => onApplyBootstrap('replaceCloudWithThisDevice')}
-                disabled={bootstrapBusy}
-              >
-                Replace cloud with this device
-              </button>
+              {!replaceCloudIsPrimary ? (
+                <button
+                  type="button"
+                  className="action-button-secondary"
+                  onClick={() => onApplyBootstrap('replaceCloudWithThisDevice')}
+                  disabled={bootstrapBusy}
+                >
+                  Replace cloud with this device
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -2135,10 +2972,11 @@ function SettingsScreen({
           {settingsForm.goalMode === 'lose' ? (
             <div className="space-y-2">
               <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Fat-loss mode</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {([
                   { value: 'standard_cut' as const, label: 'Standard cut' },
                   { value: 'psmf' as const, label: 'PSMF' },
+                  { value: 'carb_cycle' as const, label: 'Carb cycle' },
                 ]).map((option) => (
                   <button
                     key={option.value}
@@ -2160,7 +2998,7 @@ function SettingsScreen({
                 ))}
               </div>
               <p className="text-sm text-slate-600 dark:text-slate-300">
-                Standard cut allows normal calorie adjustments. PSMF treats protein adherence as primary and prevents further automatic calorie decreases.
+                Standard cut allows normal calorie adjustments. PSMF treats protein adherence as primary. Carb cycle keeps cut phases explicit while scheduled high-carb days support training and adherence.
               </p>
             </div>
           ) : null}
@@ -2294,6 +3132,479 @@ function SettingsScreen({
             </div>
           </div>
 
+          {FEATURE_FLAGS.nutrientGoalsV1 ? (
+            <div className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+                  Nutrient goals and focus
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Set nutrient goals to auto, custom, or none, and pin the nutrients that matter on the dashboard.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {ADVANCED_NUTRIENT_KEYS.map((key) => {
+                  const goal = settings.nutrientGoals?.[key]
+                  const mode = goal?.mode ?? 'auto'
+                  const pinned = settings.pinnedNutrients?.some((entry) => entry.key === key) ?? false
+                  return (
+                    <div key={key} className="rounded-[22px] bg-slate-50/90 px-4 py-4 dark:bg-slate-950/50">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">{formatNutrientLabel(key)}</p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                            {pinned ? 'Pinned on dashboard' : 'Not pinned'}
+                          </p>
+                        </div>
+                        <button type="button" className="action-button-secondary" onClick={() => togglePinnedNutrient(key)}>
+                          {pinned ? 'Unpin' : 'Pin'}
+                        </button>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                        {(['auto', 'custom', 'none'] as const).map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            className={`rounded-2xl px-3 py-2 text-sm font-semibold transition ${
+                              mode === option
+                                ? 'bg-teal-700 text-white'
+                                : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                            }`}
+                            onClick={() => updateNutrientGoalMode(key, option)}
+                          >
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                      {mode === 'custom' ? (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                            Floor
+                            <input className="field mt-2" inputMode="decimal" defaultValue={goal?.floor ?? ''} onBlur={(event) => updateNutrientGoalValue(key, 'floor', event.target.value)} />
+                          </label>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                            Target
+                            <input className="field mt-2" inputMode="decimal" defaultValue={goal?.target ?? ''} onBlur={(event) => updateNutrientGoalValue(key, 'target', event.target.value)} />
+                          </label>
+                          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                            Ceiling
+                            <input className="field mt-2" inputMode="decimal" defaultValue={goal?.ceiling ?? ''} onBlur={(event) => updateNutrientGoalValue(key, 'ceiling', event.target.value)} />
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {FEATURE_FLAGS.coachModulesV1 ? (
+            <div className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+                  Coach modules and fast check-in
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Weekly packets evaluate these modules before generating a recommendation.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {([
+                  ['partial_logging', 'Partial logging'],
+                  ['fasting', 'Fasting'],
+                  ['logging_break', 'Logging break'],
+                  ['program_update', 'Program update'],
+                ] as const).map(([kind, label]) => (
+                  <label key={kind} className="flex items-center justify-between rounded-[22px] bg-slate-50/90 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                    <span>{label}</span>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-teal-700"
+                      checked={settings.coachModuleSettings?.[kind]?.enabled ?? true}
+                      onChange={() => toggleCoachModule(kind)}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex items-center justify-between rounded-[22px] bg-slate-50/90 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                  <span>Enable fast check-in</span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-teal-700"
+                    checked={settings.fastCheckInPreference?.enabled ?? true}
+                    onChange={(event) => updateFastCheckInPreference({ enabled: event.target.checked })}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded-[22px] bg-slate-50/90 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                  <span>Skip module detail screens</span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-teal-700"
+                    checked={settings.fastCheckInPreference?.skipModuleDetails ?? true}
+                    onChange={(event) => updateFastCheckInPreference({ skipModuleDetails: event.target.checked })}
+                  />
+                </label>
+                <label className="flex items-center justify-between rounded-[22px] bg-slate-50/90 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                  <span>Show unresolved-module summary after result</span>
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-teal-700"
+                    checked={settings.fastCheckInPreference?.postResultModuleSummary ?? true}
+                    onChange={(event) => updateFastCheckInPreference({ postResultModuleSummary: event.target.checked })}
+                  />
+                </label>
+              </div>
+              <div className="space-y-2">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Preferred entry point
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['dashboard', 'coach'] as const).map((surface) => (
+                    <button
+                      key={surface}
+                      type="button"
+                      className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                        (settings.fastCheckInPreference?.surfaceEntryPoint ?? 'dashboard') === surface
+                          ? 'bg-teal-700 text-white'
+                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                      }`}
+                      onClick={() => updateFastCheckInPreference({ surfaceEntryPoint: surface })}
+                    >
+                      {surface === 'dashboard' ? 'Dashboard' : 'Coach'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {FEATURE_FLAGS.cohesionFinishV1 ? (
+            <div className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+                  Feature settings
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  One hub for the dashboard, shortcuts, workouts, and body-progress controls that affect daily execution.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  { label: 'Dashboard', description: 'Reset layout and hidden sections', action: resetDashboardCustomization },
+                  { label: 'Shortcuts', description: 'Reset toolbar style, order, and colors', action: resetLoggingShortcuts },
+                  { label: 'Workouts', description: 'Defaults live inside each program card on the workouts screen' },
+                  { label: 'Body Progress', description: 'Reset compare preset, pose, and gallery mode', action: resetProgressComparePreferences },
+                ].map((section) => (
+                  <div key={section.label} className="rounded-[22px] bg-slate-50/90 px-4 py-4 dark:bg-slate-950/50">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{section.label}</p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{section.description}</p>
+                    {section.action ? (
+                      <button type="button" className="action-button-secondary mt-3 w-full" onClick={() => section.action()}>
+                        Reset
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {FEATURE_FLAGS.loggingShortcutsV1 ? (
+            <div className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+                  Logging shortcuts
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Tune the add-food fast path around barcode, recents, favorites, and saved meals.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {([
+                  ['autologExactBarcodeHits', 'Autolog trusted exact barcode hits'],
+                  ['mealAwareLane', 'Show meal-aware lane first'],
+                  ['barcodeFirst', 'Show barcode first'],
+                ] as const).map(([key, label]) => (
+                  <label key={key} className="flex items-center justify-between rounded-[22px] bg-slate-50/90 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                    <span>{label}</span>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-teal-700"
+                      checked={settings.loggingShortcutPreference?.[key] ?? true}
+                      onChange={(event) => updateLoggingShortcutPreference({ [key]: event.target.checked })}
+                    />
+                  </label>
+                ))}
+              </div>
+              {FEATURE_FLAGS.quietSettingsV1 ? (
+                <div className="rounded-[22px] border border-black/5 bg-slate-50/90 px-4 py-4 dark:border-white/10 dark:bg-slate-950/50">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                        Advanced shortcut controls
+                      </p>
+                      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                        Toolbar style, ranking controls, and shortcut visibility stay tucked away until you need them.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="action-button-secondary"
+                      onClick={() => setShowAdvancedLoggingShortcuts((current) => !current)}
+                    >
+                      {showAdvancedLoggingShortcuts ? 'Hide advanced controls' : 'Show advanced controls'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {!FEATURE_FLAGS.quietSettingsV1 || showAdvancedLoggingShortcuts ? (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {([
+                      ['prioritizeRecents', 'Prioritize recents'],
+                      ['prioritizeFavorites', 'Prioritize favorites'],
+                      ['prioritizeSavedMeals', 'Prioritize saved meals'],
+                    ] as const).map(([key, label]) => (
+                      <label key={key} className="flex items-center justify-between rounded-[22px] bg-slate-50/90 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                        <span>{label}</span>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-teal-700"
+                          checked={settings.loggingShortcutPreference?.[key] ?? true}
+                          onChange={(event) => updateLoggingShortcutPreference({ [key]: event.target.checked })}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      Toolbar style
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {TOOLBAR_STYLE_OPTIONS.map(({ id: toolbarStyle, label, description }) => (
+                        <button
+                          key={toolbarStyle}
+                          type="button"
+                          className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                            (settings.loggingToolbarStyle ?? settings.loggingShortcutPreference?.toolbarStyle ?? 'search_barcode') === toolbarStyle
+                              ? 'bg-teal-700 text-white'
+                              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                          }`}
+                          onClick={() => updateLoggingShortcutPreference({ toolbarStyle })}
+                        >
+                          <span className="block">{label}</span>
+                          <span className="mt-1 block text-[11px] font-medium normal-case opacity-80">
+                            {description}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      Visible shortcuts
+                    </p>
+                    <div className="space-y-2">
+                      {toolbarShortcutConfigs.map(
+                        (shortcutId, index, orderedIds) => {
+                          const shortcut = LOGGING_SHORTCUT_OPTIONS.find((option) => option.id === shortcutId.id)
+                          if (!shortcut) {
+                            return null
+                          }
+
+                          const enabled = shortcutId.visible
+
+                          return (
+                            <div
+                              key={shortcutId.id}
+                              className="rounded-[22px] bg-slate-50/90 px-4 py-3 dark:bg-slate-950/50"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                    {shortcut.label}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                    {shortcut.description}
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="action-button-secondary"
+                                    onClick={() => moveLoggingShortcut(shortcutId.id, -1)}
+                                    disabled={index === 0}
+                                  >
+                                    Earlier
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="action-button-secondary"
+                                    onClick={() => moveLoggingShortcut(shortcutId.id, 1)}
+                                    disabled={index === orderedIds.length - 1}
+                                  >
+                                    Later
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={`rounded-2xl px-3 py-2 text-sm font-semibold transition ${
+                                      enabled
+                                        ? 'bg-teal-700 text-white'
+                                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                                    }`}
+                                    onClick={() => toggleLoggingShortcutEnabled(shortcutId.id)}
+                                  >
+                                    {enabled ? 'Enabled' : 'Hidden'}
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {TOOLBAR_COLOR_TOKENS.map((colorToken) => (
+                                  <button
+                                    key={`${shortcutId.id}-${colorToken}`}
+                                    type="button"
+                                    className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] transition ${
+                                      shortcutId.colorToken === colorToken
+                                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                                        : 'bg-white text-slate-600 dark:bg-slate-900 dark:text-slate-300'
+                                    }`}
+                                    onClick={() => updateToolbarShortcutConfig(shortcutId.id, { colorToken })}
+                                  >
+                                    {colorToken}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        },
+                      )}
+                    </div>
+                  </div>
+                  <button type="button" className="action-button-secondary w-full" onClick={resetLoggingShortcuts}>
+                    Reset shortcut configuration
+                  </button>
+                  <div className="space-y-2">
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      Top shortcut
+                    </p>
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {LOGGING_SHORTCUT_OPTIONS.map(({ id: topShortcutId, label }) => (
+                        <button
+                          key={topShortcutId}
+                          type="button"
+                          className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                            (settings.loggingShortcutPreference?.topShortcutId ?? 'scanner') === topShortcutId
+                              ? 'bg-teal-700 text-white'
+                              : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                          }`}
+                          onClick={() =>
+                            updateLoggingShortcutPreference({
+                              topShortcutId,
+                              enabledShortcutIds: Array.from(
+                                new Set([
+                                  ...normalizeLoggingShortcutIds(
+                                    settings.loggingShortcutPreference?.enabledShortcutIds,
+                                  ),
+                                  topShortcutId,
+                                ]),
+                              ) as LoggingShortcutId[],
+                            })
+                          }
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+
+          {FEATURE_FLAGS.phaseTemplatesV1 ? (
+            <div className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+                  Phase meal templates
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Map saved meals to serious-cut day types so add-food can offer meal-fill and day-fill actions first.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {PHASE_TEMPLATE_DAY_TYPES.map(({ dayType, label, description }) => {
+                  const template = settings.phaseMealTemplates?.find((entry) => entry.dayType === dayType && !entry.archivedAt)
+                  return (
+                    <div key={dayType} className="rounded-[22px] bg-slate-50/90 px-4 py-4 dark:bg-slate-950/50">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{label}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
+                      </div>
+                      <label className="mt-3 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                        Template label
+                        <input
+                          className="field mt-2"
+                          value={template?.label ?? DEFAULT_PHASE_TEMPLATE_LABELS[dayType]}
+                          onChange={(event) => updatePhaseMealTemplateLabel(dayType, event.target.value)}
+                        />
+                      </label>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((meal) => (
+                          <label key={`${dayType}-${meal}`} className="block text-sm font-medium text-slate-700 dark:text-slate-200">
+                            {meal}
+                            <select
+                              className="field mt-2"
+                              value={template?.meals.find((entry) => entry.meal === meal)?.savedMealId ?? ''}
+                              onChange={(event) => updatePhaseMealTemplateMeal(dayType, meal, event.target.value)}
+                            >
+                              <option value="">None</option>
+                              {savedMeals.map((savedMeal) => (
+                                <option key={`${dayType}-${meal}-${savedMeal.id}`} value={savedMeal.id}>
+                                  {savedMeal.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {FEATURE_FLAGS.garminIntelligenceV2 ? (
+            <div className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+                  Garmin history surface
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Choose the default Garmin history window for dashboard and body-weight review.
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(['7d', '30d', '90d'] as const).map((window) => (
+                  <button
+                    key={window}
+                    type="button"
+                    className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                      (settings.garminHistoryWindow ?? '7d') === window
+                        ? 'bg-teal-700 text-white'
+                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                    }`}
+                    onClick={() => applyAdvancedSettingsPatch({ garminHistoryWindow: window })}
+                  >
+                    {window}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {settingsError ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
               {settingsError}
@@ -2313,6 +3624,9 @@ function SettingsScreen({
           </p>
           <p className="font-display text-2xl text-slate-900 dark:text-white">
             Protect your data
+          </p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Recovery packs include foods, logs, Garmin imports, body progress, workouts, and coaching history.
           </p>
         </div>
 
@@ -2343,6 +3657,8 @@ function SettingsScreen({
           type="file"
           accept="application/json"
           className="hidden"
+          aria-label="Backup import file"
+          tabIndex={-1}
           onChange={(event) => {
             const file = event.target.files?.[0]
             if (!file) {
@@ -2364,7 +3680,10 @@ function SettingsScreen({
             <div className="space-y-1">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Backup preview</p>
               <p className="text-sm text-slate-600 dark:text-slate-300">
-                {importPreview.counts.foods} foods • {importPreview.counts.weights} weights • {importPreview.counts.logDays} logged days • {importPreview.counts.logEntries} entries
+                {importPreview.counts.foods} foods | {importPreview.counts.weights} weights | {importPreview.counts.logDays} logged days | {importPreview.counts.logEntries} entries
+              </p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {importPreview.counts.foodReviewQueue} review items | {importPreview.counts.bodyProgressSnapshots} body snapshots | {importPreview.counts.workoutSessions} workout sessions | {importPreview.counts.garminImportedWeights + importPreview.counts.garminModifierRecords + importPreview.counts.garminWorkoutSummaries} Garmin records
               </p>
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                 Exported {formatLocalDateTime(importPreview.backup.exportedAt)}
@@ -2418,6 +3737,142 @@ function SettingsScreen({
         {importSuccess ? (
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200">
             {importSuccess}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="app-card space-y-4 px-4 py-4">
+        <div className="space-y-1">
+          <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+            Third-party history import
+          </p>
+          <p className="font-display text-2xl text-slate-900 dark:text-white">
+            Backfill from other apps
+          </p>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-3 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Import MacroFactor history</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Accepts the fixture-backed MacroFactor item-level food-row and weight export shapes.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="action-button-secondary w-full gap-2"
+              onClick={() => macroFactorImportInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+              Select MacroFactor files
+            </button>
+            <input
+              ref={macroFactorImportInputRef}
+              data-testid="macrofactor-history-input"
+              type="file"
+              multiple
+              accept=".csv,text/csv"
+              className="hidden"
+              aria-label="MacroFactor history files"
+              tabIndex={-1}
+              onChange={(event) => {
+                const files = event.target.files
+                if (!files || files.length === 0) {
+                  return
+                }
+
+                void handleHistoryImportFiles('macrofactor', files)
+              }}
+            />
+          </div>
+
+          <div className="space-y-3 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">Import Renpho weights</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Imports weight history only. Body-composition columns are previewed as ignored.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="action-button-secondary w-full gap-2"
+              onClick={() => renphoImportInputRef.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+              Select Renpho file
+            </button>
+            <input
+              ref={renphoImportInputRef}
+              data-testid="renpho-history-input"
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              aria-label="Renpho history file"
+              tabIndex={-1}
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (!file) {
+                  return
+                }
+
+                void handleHistoryImportFiles('renpho', [file])
+              }}
+            />
+          </div>
+        </div>
+
+        {historyImportPreview ? (
+          <div className="space-y-4 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                {formatHistoryImportProvider(historyImportPreview.provider)} preview
+              </p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {historyImportPreview.counts.logEntries} log entries • {historyImportPreview.counts.weights} weights •{' '}
+                {historyImportPreview.counts.supportedFiles} supported file{historyImportPreview.counts.supportedFiles === 1 ? '' : 's'}
+              </p>
+              {historyImportPreview.dateRange ? (
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  {formatShortDate(historyImportPreview.dateRange.start)} to {formatShortDate(historyImportPreview.dateRange.end)}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+              Detected files: {historyImportPreview.fileKinds.map((kind) => formatHistoryImportFileKind(kind)).join(', ')}
+            </div>
+
+            {historyImportPreview.warnings.length > 0 ? (
+              <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                {historyImportPreview.warnings.map((warning) => (
+                  <p key={`${warning.code}:${warning.fileName ?? warning.message}`}>
+                    {warning.fileName ? `${warning.fileName}: ` : ''}
+                    {warning.message}
+                  </p>
+                ))}
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+              Import to this device merges logs and weights only. Each new import replaces the single undo snapshot target.
+            </div>
+
+            <button type="button" className="action-button w-full" onClick={() => void handleApplyHistoryImport()}>
+              Import to this device
+            </button>
+          </div>
+        ) : null}
+
+        {historyImportError ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
+            {historyImportError}
+          </div>
+        ) : null}
+
+        {historyImportSuccess ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-200">
+            {historyImportSuccess}
           </div>
         ) : null}
       </section>

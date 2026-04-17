@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 interface BottomSheetProps {
   open: boolean
@@ -10,6 +10,23 @@ interface BottomSheetProps {
   discardTitle?: string
   discardMessage?: string
   children: ReactNode
+}
+
+function getFocusableElements(container: HTMLElement | null): HTMLElement[] {
+  if (!container) {
+    return []
+  }
+
+  return [...container.querySelectorAll<HTMLElement>(
+    'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  )].filter((element) => {
+    if (element.hasAttribute('hidden')) {
+      return false
+    }
+
+    const style = window.getComputedStyle(element)
+    return style.display !== 'none' && style.visibility !== 'hidden'
+  })
 }
 
 export function BottomSheet({
@@ -23,6 +40,8 @@ export function BottomSheet({
   children,
 }: BottomSheetProps) {
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
+  const sheetRef = useRef<HTMLDivElement | null>(null)
+  const discardDialogRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!open) {
@@ -36,6 +55,62 @@ export function BottomSheet({
       document.body.style.overflow = previousOverflow
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    const activeContainer = showDiscardConfirm ? discardDialogRef.current : sheetRef.current
+    const [firstFocusable] = getFocusableElements(activeContainer)
+    firstFocusable?.focus()
+  }, [open, showDiscardConfirm])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'Tab') {
+        return
+      }
+
+      const activeContainer = showDiscardConfirm ? discardDialogRef.current : sheetRef.current
+      const focusableElements = getFocusableElements(activeContainer)
+      if (focusableElements.length === 0) {
+        event.preventDefault()
+        return
+      }
+
+      const firstFocusable = focusableElements[0]
+      const lastFocusable = focusableElements[focusableElements.length - 1]
+      const activeElement = document.activeElement as HTMLElement | null
+      const containsActive = activeContainer?.contains(activeElement) ?? false
+
+      if (!containsActive) {
+        event.preventDefault()
+        firstFocusable.focus()
+        return
+      }
+
+      if (event.shiftKey && activeElement === firstFocusable) {
+        event.preventDefault()
+        lastFocusable.focus()
+        return
+      }
+
+      if (!event.shiftKey && activeElement === lastFocusable) {
+        event.preventDefault()
+        firstFocusable.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open, showDiscardConfirm])
 
   function requestClose(): void {
     if (isDirty) {
@@ -57,6 +132,7 @@ export function BottomSheet({
       role="presentation"
     >
       <div
+        ref={sheetRef}
         className="max-h-[92vh] w-full max-w-[480px] overflow-hidden rounded-[32px] border border-white/10 bg-white/95 shadow-2xl dark:bg-slate-950/95"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
@@ -88,6 +164,7 @@ export function BottomSheet({
       {showDiscardConfirm ? (
         <div className="fixed inset-0 z-10 flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
           <div
+            ref={discardDialogRef}
             className="w-full max-w-sm rounded-[28px] border border-white/10 bg-white/95 p-5 shadow-2xl dark:bg-slate-950/95"
             onClick={(event) => event.stopPropagation()}
             role="alertdialog"

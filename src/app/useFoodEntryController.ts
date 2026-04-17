@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type {
   ActionResult,
   AppActionError,
+  CaptureConvenienceSource,
   Food,
   FoodLogEntry,
   FoodSnapshot,
@@ -14,6 +15,8 @@ export type FoodSheetContext =
   | {
       kind: 'add'
       meal: MealType
+      entryContext: 'meal_slot' | 'global_add'
+      captureSource?: CaptureConvenienceSource | null
     }
   | {
       kind: 'replace'
@@ -102,9 +105,20 @@ export function useFoodEntryController({
     setFoodSheetDirty(false)
   }
 
-  function openAddFood(meal: MealType): void {
+  function openAddFood(
+    meal: MealType,
+    options?: {
+      entryContext?: 'meal_slot' | 'global_add'
+      captureSource?: CaptureConvenienceSource | null
+    },
+  ): void {
     ensureEditableIntakeDay(() => {
-      setFoodSheetContext({ kind: 'add', meal })
+      setFoodSheetContext({
+        kind: 'add',
+        meal,
+        entryContext: options?.entryContext ?? 'meal_slot',
+        captureSource: options?.captureSource ?? null,
+      })
       reportError(null)
     })
   }

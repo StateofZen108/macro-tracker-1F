@@ -24,6 +24,8 @@ test('corrupted food storage is surfaced and blocked from silent overwrite', asy
     await deleteDatabase('macrotracker-storage')
   })
   await page.reload()
+  await expect(page.getByText(/recoverable data issues need review/i).first()).toBeVisible()
+  await goToLog(page)
 
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
@@ -36,7 +38,10 @@ test('corrupted food storage is surfaced and blocked from silent overwrite', asy
   await addFoodSheet.getByLabel('Carbs (g)').fill('10')
   await addFoodSheet.getByLabel('Fat (g)').fill('1')
   await addFoodSheet.getByRole('button', { name: /save custom food/i }).click()
-  await expect(page.getByText(/stored data for this section is unreadable/i).first()).toBeVisible()
+  await expect(page.getByText(/recoverable data issues need review/i).first()).toBeVisible()
+  await expect(
+    page.evaluate(() => window.localStorage.getItem('mt_foods')),
+  ).resolves.toBe('{broken')
 })
 
 test('quota failures do not leave a partial meal save behind', async ({ page }) => {
@@ -105,7 +110,9 @@ test('export and replace import restore logged history', async ({ page }) => {
   await expect(entryRow(page, 'Backup Chicken')).toBeHidden()
 
   await goToSettings(page)
-  await page.locator('input[type="file"]').setInputFiles(downloadPath as string)
+  await page
+    .locator('input[type="file"][accept="application/json"]')
+    .setInputFiles(downloadPath as string)
   await expect(page.getByText(/backup preview/i)).toBeVisible()
   const backupText = await readFile(downloadPath as string, 'utf8')
   const applyImportResult = await page.evaluate(async ({ rawBackupText }) => {
@@ -115,7 +122,7 @@ test('export and replace import restore logged history', async ({ page }) => {
       return { ok: false, message: validation.error.message }
     }
 
-    const result = importExport.applyBackupImport(validation.data.backup, 'replace')
+    const result = await importExport.applyBackupImport(validation.data.backup, 'replace')
     if (!result.ok) {
       return { ok: false, message: result.error.message }
     }

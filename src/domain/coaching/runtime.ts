@@ -11,7 +11,7 @@ import { COACH_ENGINE_CONFIG } from './engine/_constants'
 export type RecoverySeverity = 'green' | 'yellow' | 'red'
 
 export interface CoachPhaseRecord {
-  type: 'psmf' | 'diet_break'
+  type: 'psmf' | 'diet_break' | 'carb_cycle'
   status: 'planned' | 'active' | 'expired' | 'completed' | 'cancelled'
   startDate: string
   plannedEndDate: string
@@ -45,6 +45,15 @@ export interface CoachWellnessRecord {
   derivedCardioMinutes?: number
 }
 
+export interface CoachGarminModifierRecord {
+  date: string
+  steps?: number
+  sleepMinutes?: number
+  restingHeartRate?: number
+  activeCalories?: number
+  derivedCardioMinutes?: number
+}
+
 export interface CoachRuntimeState {
   phasePlan?: {
     phases?: CoachPhaseRecord[]
@@ -53,6 +62,7 @@ export interface CoachRuntimeState {
   recovery?: {
     checkIns?: CoachRecoveryCheckIn[]
     wellness?: CoachWellnessRecord[]
+    garminModifiers?: CoachGarminModifierRecord[]
   }
 }
 
@@ -106,7 +116,14 @@ function parsePhaseRecord(value: unknown): CoachPhaseRecord | null {
     return null
   }
 
-  const type = value.type === 'diet_break' ? 'diet_break' : value.type === 'psmf' ? 'psmf' : null
+  const type =
+    value.type === 'diet_break'
+      ? 'diet_break'
+      : value.type === 'psmf'
+        ? 'psmf'
+        : value.type === 'carb_cycle'
+          ? 'carb_cycle'
+          : null
   const status =
     value.status === 'planned' ||
     value.status === 'active' ||
@@ -191,6 +208,26 @@ function parseWellnessRecord(value: unknown): CoachWellnessRecord | null {
   }
 }
 
+function parseGarminModifierRecord(value: unknown): CoachGarminModifierRecord | null {
+  if (!isRecord(value)) {
+    return null
+  }
+
+  const date = parseString(value.date)
+  if (!date) {
+    return null
+  }
+
+  return {
+    date,
+    steps: parseNumber(value.steps),
+    sleepMinutes: parseNumber(value.sleepMinutes),
+    restingHeartRate: parseNumber(value.restingHeartRate),
+    activeCalories: parseNumber(value.activeCalories),
+    derivedCardioMinutes: parseNumber(value.derivedCardioMinutes),
+  }
+}
+
 function normalizeCoachRuntimeState(raw: Record<string, unknown>): CoachRuntimeState | undefined {
   const phasePlan = isRecord(raw.phasePlan)
     ? {
@@ -218,6 +255,11 @@ function normalizeCoachRuntimeState(raw: Record<string, unknown>): CoachRuntimeS
           ? raw.recovery.wellness
               .map((record) => parseWellnessRecord(record))
               .filter((record): record is CoachWellnessRecord => record !== null)
+          : undefined,
+        garminModifiers: Array.isArray(raw.recovery.garminModifiers)
+          ? raw.recovery.garminModifiers
+              .map((record) => parseGarminModifierRecord(record))
+              .filter((record): record is CoachGarminModifierRecord => record !== null)
           : undefined,
       }
     : undefined

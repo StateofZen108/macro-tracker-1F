@@ -8,6 +8,10 @@ import type {
   CoachProviderConfig,
   CoachQueuedQuestion,
   CoachState,
+  CheckInRecord,
+  CutDayPlan,
+  FastCheckInRun,
+  WorkoutActionCard,
 } from '../types'
 
 interface CoachScreenProps {
@@ -27,6 +31,13 @@ interface CoachScreenProps {
   onChangePreferredMode: (mode: CoachMode) => void
   onToggleCitationsExpanded: (nextValue: boolean) => void
   onSetProvider: (provider: CoachProviderConfig['provider']) => void
+  currentCheckIn?: CheckInRecord | null
+  fastCheckInEnabled?: boolean
+  lastFastCheckInRun?: FastCheckInRun
+  onRunFastCheckIn?: () => void
+  cutDayPlan?: CutDayPlan | null
+  workoutAction?: WorkoutActionCard
+  onOpenWorkouts?: () => void
 }
 
 function stateCopy(state: CoachState): { title: string; description: string } {
@@ -64,6 +75,23 @@ function stateCopy(state: CoachState): { title: string; description: string } {
   }
 }
 
+function formatEvidenceReason(reason: WorkoutActionCard['evidenceReasons'][number]): string {
+  switch (reason) {
+    case 'readiness_freshness':
+      return 'Readiness freshness'
+    case 'anchor_lift_trend':
+      return 'Anchor-lift trend'
+    case 'recent_records':
+      return 'Recent records'
+    case 'volume_floor':
+      return 'Volume floor'
+    case 'completion_adherence':
+      return 'Completion adherence'
+    default:
+      return reason
+  }
+}
+
 export function CoachScreen({
   coachState,
   preferredMode,
@@ -81,6 +109,13 @@ export function CoachScreen({
   onChangePreferredMode,
   onToggleCitationsExpanded,
   onSetProvider,
+  currentCheckIn = null,
+  fastCheckInEnabled = false,
+  lastFastCheckInRun,
+  onRunFastCheckIn,
+  cutDayPlan = null,
+  workoutAction,
+  onOpenWorkouts,
 }: CoachScreenProps) {
   const [question, setQuestion] = useState('')
   const feedbackByMessageId = useMemo(
@@ -99,6 +134,138 @@ export function CoachScreen({
           <p className="font-display text-2xl text-slate-900 dark:text-white">{stateBanner.title}</p>
           <p className="text-sm text-slate-600 dark:text-slate-300">{stateBanner.description}</p>
         </div>
+
+        {fastCheckInEnabled && currentCheckIn ? (
+          <div className="space-y-3 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Fast check-in</p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                Run the one-tap recommendation path from the current persisted week, then switch to Standard Check-In if module review is still needed.
+              </p>
+            </div>
+            <button type="button" className="action-button w-full" onClick={() => onRunFastCheckIn?.()}>
+              Run Fast Check-In
+            </button>
+            {lastFastCheckInRun ? (
+              <div className="rounded-[20px] bg-slate-100/80 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/60 dark:text-slate-200">
+                <p className="font-semibold text-slate-900 dark:text-white">{lastFastCheckInRun.recommendationSummary}</p>
+                {lastFastCheckInRun.unresolvedModules.length ? (
+                  <p className="mt-1">
+                    {lastFastCheckInRun.unresolvedModules.length} unresolved module
+                    {lastFastCheckInRun.unresolvedModules.length === 1 ? '' : 's'} still point back to Standard Check-In.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {cutDayPlan ? (
+          <div className="space-y-3 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Cut day
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  {cutDayPlan.macroIntentLabel}
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{cutDayPlan.whyToday}</p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                {cutDayPlan.dayType.replaceAll('_', ' ')}
+              </span>
+            </div>
+            <div className="rounded-[18px] bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+              Training intent: {cutDayPlan.trainingIntentLabel}
+            </div>
+          </div>
+        ) : null}
+
+        {workoutAction ? (
+          <div className="space-y-3 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Today&apos;s training action
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  {workoutAction.title}
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {workoutAction.summary}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {workoutAction.freshnessLabel}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {workoutAction.confidence} confidence
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {workoutAction.mode === 'review_first' ? 'Review first' : 'Directive'}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {workoutAction.source === 'manual_override' ? 'Manual' : 'Computed'}
+                </span>
+              </div>
+            </div>
+            {workoutAction.secondaryNote ? (
+              <div className="rounded-[18px] bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                {workoutAction.secondaryNote}
+              </div>
+            ) : null}
+            <div className="rounded-[18px] bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+              {workoutAction.confidenceReason}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded-[18px] bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Fuel
+                </p>
+                <p className="mt-1">{workoutAction.fuelDirective}</p>
+              </div>
+              <div className="rounded-[18px] bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Volume
+                </p>
+                <p className="mt-1">{workoutAction.volumeDirective}</p>
+              </div>
+              <div className="rounded-[18px] bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Preservation risk
+                </p>
+                <p className="mt-1">{workoutAction.preservationRisk}</p>
+              </div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {workoutAction.reasons.map((reason) => (
+                <div
+                  key={reason}
+                  className="rounded-[18px] bg-slate-100/80 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/60 dark:text-slate-200"
+                >
+                  {reason}
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {workoutAction.evidenceReasons.map((reason) => (
+                <span
+                  key={reason}
+                  className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  {formatEvidenceReason(reason)}
+                </span>
+              ))}
+            </div>
+            {onOpenWorkouts ? (
+              <button type="button" className="action-button-secondary w-full" onClick={onOpenWorkouts}>
+                {workoutAction.primaryCta}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-[22px] border border-black/5 bg-white/70 px-4 py-3 dark:border-white/10 dark:bg-slate-900/70">

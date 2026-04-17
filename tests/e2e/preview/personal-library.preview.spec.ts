@@ -74,7 +74,7 @@ test('remote imports become local foods and immediately resolve as in-library ma
 
   await openMealSheet(page)
   await page.getByRole('checkbox').check()
-  await getAddFoodSearchInput(page).fill('greek yogurt')
+  await (await getAddFoodSearchInput(page)).fill('greek yogurt')
   await clickCatalogImportAction(page)
 
   await expect(page.getByText(/in your library/i)).toBeVisible()
@@ -105,7 +105,7 @@ test('archived remote matches offer restore instead of creating a duplicate', as
 
   await openMealSheet(page)
   await page.getByRole('checkbox').check()
-  await getAddFoodSearchInput(page).fill('greek yogurt')
+  await (await getAddFoodSearchInput(page)).fill('greek yogurt')
   await page.getByRole('button', { name: /^import and log$/i }).click()
 
   await expect(page.getByText(/already in your archived library/i)).toBeVisible()

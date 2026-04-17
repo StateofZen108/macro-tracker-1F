@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { FEATURE_FLAGS } from '../config/featureFlags'
-import { evaluateCheckInWeek, upsertCheckInRecord } from '../domain/checkIns/math'
+import {
+  evaluateCheckInWeek,
+  isCheckInWindowActiveForDate,
+  upsertCheckInRecord,
+} from '../domain/checkIns/math'
 import {
   updateCoachingDecisionRecordStatus,
   upsertCoachingDecisionRecord,
@@ -63,24 +67,27 @@ export function useWeeklyCheckIns(
     [activityLog, dayMeta, interventions, logsByDate, recoveryIssueCount, settings, weights],
   )
   const lastShadowEventKeyRef = useRef<string | null>(null)
+  const lastCoachV3PacketEventKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
-    const nextHistory = upsertCheckInRecord(checkInHistory, current.record)
-    if (JSON.stringify(nextHistory) === JSON.stringify(checkInHistory)) {
+    const latestHistory = loadCheckInHistory()
+    const nextHistory = upsertCheckInRecord(latestHistory, current.record)
+    if (JSON.stringify(nextHistory) === JSON.stringify(latestHistory)) {
       return
     }
 
     void saveCheckInHistory(nextHistory)
-  }, [checkInHistory, current.record])
+  }, [current.record])
 
   useEffect(() => {
-    const nextHistory = upsertCoachingDecisionRecord(coachingDecisionHistory, current.decisionRecord)
-    if (JSON.stringify(nextHistory) === JSON.stringify(coachingDecisionHistory)) {
+    const latestHistory = loadCoachingDecisionHistory()
+    const nextHistory = upsertCoachingDecisionRecord(latestHistory, current.decisionRecord)
+    if (JSON.stringify(nextHistory) === JSON.stringify(latestHistory)) {
       return
     }
 
     void saveCoachingDecisionHistory(nextHistory)
-  }, [coachingDecisionHistory, current.decisionRecord])
+  }, [current.decisionRecord])
 
   useEffect(() => {
     if (!FEATURE_FLAGS.coachMethodV2 || !current.shadowComparison) {
@@ -123,6 +130,33 @@ export function useWeeklyCheckIns(
     current.record.id,
     current.shadowComparison,
   ])
+
+  useEffect(() => {
+    if (!FEATURE_FLAGS.coachEngineV3 || !current.record.weeklyCheckInPacket) {
+      return
+    }
+
+    const packet = current.record.weeklyCheckInPacket
+    const eventKey = `${current.record.id}:${packet.decisionType}:${packet.confidenceBand}:${packet.generatedAt}`
+    if (lastCoachV3PacketEventKeyRef.current === eventKey) {
+      return
+    }
+
+    lastCoachV3PacketEventKeyRef.current = eventKey
+    void recordDiagnosticsEvent({
+      eventType: 'coach_v3_packet_generated',
+      severity: 'info',
+      scope: 'diagnostics',
+      recordKey: current.record.id,
+      message: 'Coach Engine V3 packet generated for the latest weekly check-in.',
+      payload: {
+        decisionType: packet.decisionType,
+        confidenceBand: packet.confidenceBand,
+        confidenceScore: packet.confidenceScore,
+        nextCheckInDate: packet.nextCheckInDate,
+      },
+    })
+  }, [current.record.id, current.record.weeklyCheckInPacket])
 
   const currentRecord = useMemo(() => {
     return checkInHistory.find((entry) => entry.id === current.record.id) ?? current.record
@@ -167,6 +201,56 @@ export function useWeeklyCheckIns(
     }
   }
 
+  function markOverridden(
+    overrideDecisionRecordId: string,
+    effectiveDate: string,
+  ): ActionResult<CheckInRecord> {
+    const existingRecord =
+      loadCheckInHistory().find((entry) => entry.id === current.record.id) ?? current.record
+    if (!existingRecord) {
+      return fail('There is no completed weekly check-in to override yet.')
+    }
+
+    if (!isCheckInWindowActiveForDate(existingRecord, effectiveDate)) {
+      return {
+        ok: true,
+        data: existingRecord,
+      }
+    }
+
+    const nextRecord: CheckInRecord = {
+      ...existingRecord,
+      status: 'overridden',
+      supersededByDecisionRecordId: overrideDecisionRecordId,
+      appliedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    const nextHistory = upsertCheckInRecord(loadCheckInHistory(), nextRecord).map((entry) =>
+      entry.id === nextRecord.id ? nextRecord : entry,
+    )
+    const result = saveCheckInHistory(nextHistory)
+    if (!result.ok) {
+      return result as ActionResult<CheckInRecord>
+    }
+
+    if (existingRecord.decisionRecordId) {
+      const nextDecisionHistory = updateCoachingDecisionRecordStatus(
+        loadCoachingDecisionHistory(),
+        existingRecord.decisionRecordId,
+        'overridden',
+      )
+      const decisionResult = saveCoachingDecisionHistory(nextDecisionHistory)
+      if (!decisionResult.ok) {
+        return decisionResult as ActionResult<CheckInRecord>
+      }
+    }
+
+    return {
+      ok: true,
+      data: nextRecord,
+    }
+  }
+
   return {
     currentCheckIn: currentRecord,
     canApplyTargets: current.canApplyTargets,
@@ -174,5 +258,6 @@ export function useWeeklyCheckIns(
     coachingDecisionHistory,
     markApplied: () => updateCurrentStatus('applied'),
     markKept: () => updateCurrentStatus('kept'),
+    markOverridden,
   }
 }

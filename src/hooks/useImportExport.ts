@@ -15,7 +15,7 @@ export function useImportExport() {
   )
 
   const applyImport = useCallback(
-    (backup: BackupFile, mode: ImportMode): ActionResult<BackupPreview['counts']> =>
+    (backup: BackupFile, mode: ImportMode): Promise<ActionResult<BackupPreview['counts']>> =>
       applyBackupImport(backup, mode),
     [],
   )

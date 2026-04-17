@@ -217,9 +217,12 @@ function normalizeState(value: unknown, queue: SyncMutation[], deadLetters: Sync
       typeof value.highWatermark === 'number' && Number.isFinite(value.highWatermark)
         ? Math.max(0, Math.round(value.highWatermark))
         : 0,
-    bootstrapCompletedForUserId:
-      typeof value.bootstrapCompletedForUserId === 'string' && value.bootstrapCompletedForUserId.trim()
-        ? value.bootstrapCompletedForUserId
+    bootstrapResolvedForUserId:
+      typeof value.bootstrapResolvedForUserId === 'string' && value.bootstrapResolvedForUserId.trim()
+        ? value.bootstrapResolvedForUserId
+        : typeof value.bootstrapCompletedForUserId === 'string' &&
+            value.bootstrapCompletedForUserId.trim()
+          ? value.bootstrapCompletedForUserId
         : undefined,
     currentUserId:
       typeof value.currentUserId === 'string' && value.currentUserId.trim()
@@ -704,18 +707,18 @@ export function setSyncUser(userId: string | undefined, authEmail?: string): voi
       highWatermark: switchingUsers ? 0 : currentState.highWatermark,
       recordVersions: switchingUsers ? {} : currentState.recordVersions,
       localRecordUpdatedAt: switchingUsers ? {} : currentState.localRecordUpdatedAt,
-      bootstrapCompletedForUserId:
-        switchingUsers ? undefined : currentState.bootstrapCompletedForUserId,
+      bootstrapResolvedForUserId:
+        switchingUsers ? undefined : currentState.bootstrapResolvedForUserId,
       lastSyncError: switchingUsers ? undefined : currentState.lastSyncError,
       blockingMessage: switchingUsers ? undefined : currentState.blockingMessage,
     }
   })
 }
 
-export function markBootstrapCompletedForUser(userId: string): void {
+export function markBootstrapResolvedForUser(userId: string): void {
   updateSyncState((currentState) => ({
     ...currentState,
-    bootstrapCompletedForUserId: userId,
+    bootstrapResolvedForUserId: userId,
   }))
 }
 

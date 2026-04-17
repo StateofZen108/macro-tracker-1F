@@ -18,6 +18,49 @@ export interface FeatureFlags {
   barcodeTruthUiV1: boolean
   labelOcrTrustV1: boolean
   barcodeProviderFatsecretV1: boolean
+  safeAutoUpdatePwa: boolean
+  nutritionOverviewV1: boolean
+  coachEngineV3: boolean
+  nutritionOverviewV2: boolean
+  foodTruthV2: boolean
+  garminIntelligenceV2: boolean
+  bodyMetricsV1: boolean
+  progressPhotosV1: boolean
+  workoutsV1: boolean
+  encryptedSyncV2: boolean
+  coachEvidenceAI: boolean
+  benchmarkSuiteV1: boolean
+  recoveryPacksV1: boolean
+  dashboardV1: boolean
+  coachModulesV1: boolean
+  bodyProgressGalleryV2: boolean
+  cutModeV1: boolean
+  nutrientGoalsV1: boolean
+  fastCheckInV1: boolean
+  loggingShortcutsV1: boolean
+  workoutsAnalyticsV2: boolean
+  bodyProgressCompareV1: boolean
+  dashboardInsightsV2: boolean
+  nutritionCatalogV3: boolean
+  workoutRecordsV1: boolean
+  bodyMetricVisibilityV1: boolean
+  claimGateV1: boolean
+  commandHomeV1: boolean
+  repeatLoggingV2: boolean
+  trainingGuidanceV2: boolean
+  progressStoryV1: boolean
+  quietSettingsV1: boolean
+  captureConvenienceV1: boolean
+  cutDayOsV1: boolean
+  phaseTemplatesV1: boolean
+  trainingPreservationV1: boolean
+  progressProofV2: boolean
+  quietPowerV1: boolean
+  commandSurfaceV2: boolean
+  loggingMaturityV1: boolean
+  trainingTrustV1: boolean
+  progressProofFinishV1: boolean
+  cohesionFinishV1: boolean
 }
 
 export function resolveFeatureFlag(
@@ -65,6 +108,49 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     barcodeTruthUiV1: resolveFeatureFlag(env.VITE_FF_BARCODE_TRUTH_UI_V1, mode),
     labelOcrTrustV1: resolveFeatureFlag(env.VITE_FF_LABEL_OCR_TRUST_V1, mode),
     barcodeProviderFatsecretV1: resolveFeatureFlag(env.VITE_FF_BARCODE_PROVIDER_FATSECRET_V1, mode),
+    safeAutoUpdatePwa: resolveFeatureFlag(env.VITE_FF_SAFE_AUTO_UPDATE_PWA, mode),
+    nutritionOverviewV1: resolveFeatureFlag(env.VITE_FF_NUTRITION_OVERVIEW_V1, mode),
+    coachEngineV3: resolveFeatureFlag(env.VITE_FF_COACH_ENGINE_V3, mode),
+    nutritionOverviewV2: resolveFeatureFlag(env.VITE_FF_NUTRITION_OVERVIEW_V2, mode),
+    foodTruthV2: resolveFeatureFlag(env.VITE_FF_FOOD_TRUTH_V2, mode),
+    garminIntelligenceV2: resolveFeatureFlag(env.VITE_FF_GARMIN_INTELLIGENCE_V2, mode),
+    bodyMetricsV1: resolveFeatureFlag(env.VITE_FF_BODY_METRICS_V1, mode),
+    progressPhotosV1: resolveFeatureFlag(env.VITE_FF_PROGRESS_PHOTOS_V1, mode),
+    workoutsV1: resolveFeatureFlag(env.VITE_FF_WORKOUTS_V1, mode),
+    encryptedSyncV2: resolveFeatureFlag(env.VITE_FF_ENCRYPTED_SYNC_V2, mode),
+    coachEvidenceAI: resolveFeatureFlag(env.VITE_FF_COACH_EVIDENCE_AI, mode),
+    benchmarkSuiteV1: resolveFeatureFlag(env.VITE_FF_BENCHMARK_SUITE_V1, mode),
+    recoveryPacksV1: resolveFeatureFlag(env.VITE_FF_RECOVERY_PACKS_V1, mode),
+    dashboardV1: resolveFeatureFlag(env.VITE_FF_DASHBOARD_V1, mode),
+    coachModulesV1: resolveFeatureFlag(env.VITE_FF_COACH_MODULES_V1, mode),
+    bodyProgressGalleryV2: resolveFeatureFlag(env.VITE_FF_BODY_PROGRESS_GALLERY_V2, mode),
+    cutModeV1: resolveFeatureFlag(env.VITE_FF_CUT_MODE_V1, mode),
+    nutrientGoalsV1: resolveFeatureFlag(env.VITE_FF_NUTRIENT_GOALS_V1, mode),
+    fastCheckInV1: resolveFeatureFlag(env.VITE_FF_FAST_CHECK_IN_V1, mode),
+    loggingShortcutsV1: resolveFeatureFlag(env.VITE_FF_LOGGING_SHORTCUTS_V1, mode),
+    workoutsAnalyticsV2: resolveFeatureFlag(env.VITE_FF_WORKOUTS_ANALYTICS_V2, mode),
+    bodyProgressCompareV1: resolveFeatureFlag(env.VITE_FF_BODY_PROGRESS_COMPARE_V1, mode),
+    dashboardInsightsV2: resolveFeatureFlag(env.VITE_FF_DASHBOARD_INSIGHTS_V2, mode),
+    nutritionCatalogV3: resolveFeatureFlag(env.VITE_FF_NUTRITION_CATALOG_V3, mode),
+    workoutRecordsV1: resolveFeatureFlag(env.VITE_FF_WORKOUT_RECORDS_V1, mode),
+    bodyMetricVisibilityV1: resolveFeatureFlag(env.VITE_FF_BODY_METRIC_VISIBILITY_V1, mode),
+    claimGateV1: resolveFeatureFlag(env.VITE_FF_CLAIM_GATE_V1, mode),
+    commandHomeV1: resolveFeatureFlag(env.VITE_FF_COMMAND_HOME_V1, mode),
+    repeatLoggingV2: resolveFeatureFlag(env.VITE_FF_REPEAT_LOGGING_V2, mode),
+    trainingGuidanceV2: resolveFeatureFlag(env.VITE_FF_TRAINING_GUIDANCE_V2, mode),
+    progressStoryV1: resolveFeatureFlag(env.VITE_FF_PROGRESS_STORY_V1, mode),
+    quietSettingsV1: resolveFeatureFlag(env.VITE_FF_QUIET_SETTINGS_V1, mode),
+    captureConvenienceV1: resolveFeatureFlag(env.VITE_FF_CAPTURE_CONVENIENCE_V1, mode),
+    cutDayOsV1: resolveFeatureFlag(env.VITE_FF_CUT_DAY_OS_V1, mode),
+    phaseTemplatesV1: resolveFeatureFlag(env.VITE_FF_PHASE_TEMPLATES_V1, mode),
+    trainingPreservationV1: resolveFeatureFlag(env.VITE_FF_TRAINING_PRESERVATION_V1, mode),
+    progressProofV2: resolveFeatureFlag(env.VITE_FF_PROGRESS_PROOF_V2, mode),
+    quietPowerV1: resolveFeatureFlag(env.VITE_FF_QUIET_POWER_V1, mode),
+    commandSurfaceV2: resolveFeatureFlag(env.VITE_FF_COMMAND_SURFACE_V2, mode),
+    loggingMaturityV1: resolveFeatureFlag(env.VITE_FF_LOGGING_MATURITY_V1, mode),
+    trainingTrustV1: resolveFeatureFlag(env.VITE_FF_TRAINING_TRUST_V1, mode),
+    progressProofFinishV1: resolveFeatureFlag(env.VITE_FF_PROGRESS_PROOF_FINISH_V1, mode),
+    cohesionFinishV1: resolveFeatureFlag(env.VITE_FF_COHESION_FINISH_V1, mode),
   }
 
   if (!resolvedFlags.catalogProviderV2) {
@@ -108,6 +194,131 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     resolvedFlags.barcodeTruthUiV1 = false
     resolvedFlags.labelOcrTrustV1 = false
     resolvedFlags.barcodeProviderFatsecretV1 = false
+  }
+
+  if (!resolvedFlags.nutritionOverviewV1) {
+    resolvedFlags.nutritionOverviewV2 = false
+  }
+
+  if (!resolvedFlags.garminConnectV1) {
+    resolvedFlags.garminIntelligenceV2 = false
+  }
+
+  if (!resolvedFlags.coachEngineV3) {
+    resolvedFlags.coachModulesV1 = false
+    resolvedFlags.fastCheckInV1 = false
+  }
+
+  if (!resolvedFlags.bodyMetricsV1 && !resolvedFlags.progressPhotosV1) {
+    resolvedFlags.bodyProgressGalleryV2 = false
+    resolvedFlags.bodyProgressCompareV1 = false
+  }
+
+  if (!resolvedFlags.nutritionOverviewV2) {
+    resolvedFlags.nutrientGoalsV1 = false
+    resolvedFlags.nutritionCatalogV3 = false
+  }
+
+  if (!resolvedFlags.foodTruthV2) {
+    resolvedFlags.loggingShortcutsV1 = false
+  }
+
+  if (!resolvedFlags.workoutsV1) {
+    resolvedFlags.workoutsAnalyticsV2 = false
+    resolvedFlags.workoutRecordsV1 = false
+  }
+
+  if (!resolvedFlags.dashboardV1) {
+    resolvedFlags.dashboardInsightsV2 = false
+    resolvedFlags.claimGateV1 = false
+    resolvedFlags.commandHomeV1 = false
+  }
+
+  if (!resolvedFlags.workoutsAnalyticsV2) {
+    resolvedFlags.workoutRecordsV1 = false
+  }
+
+  if (!resolvedFlags.bodyMetricsV1 && !resolvedFlags.progressPhotosV1) {
+    resolvedFlags.bodyMetricVisibilityV1 = false
+    resolvedFlags.progressStoryV1 = false
+  }
+
+  if (!resolvedFlags.benchmarkSuiteV1) {
+    resolvedFlags.claimGateV1 = false
+  }
+
+  if (!resolvedFlags.dashboardV1 || !resolvedFlags.coachEngineV3) {
+    resolvedFlags.cutModeV1 = false
+  }
+
+  if (!resolvedFlags.loggingShortcutsV1) {
+    resolvedFlags.repeatLoggingV2 = false
+  }
+
+  if (!resolvedFlags.cutModeV1) {
+    resolvedFlags.cutDayOsV1 = false
+  }
+
+  if (!resolvedFlags.repeatLoggingV2) {
+    resolvedFlags.phaseTemplatesV1 = false
+  }
+
+  if (!resolvedFlags.workoutsAnalyticsV2 || !resolvedFlags.coachEngineV3) {
+    resolvedFlags.trainingGuidanceV2 = false
+  }
+
+  if (!resolvedFlags.trainingGuidanceV2) {
+    resolvedFlags.trainingPreservationV1 = false
+  }
+
+  if (!resolvedFlags.bodyProgressCompareV1) {
+    resolvedFlags.progressStoryV1 = false
+  }
+
+  if (!resolvedFlags.progressStoryV1) {
+    resolvedFlags.progressProofV2 = false
+  }
+
+  if (
+    !resolvedFlags.loggingShortcutsV1 &&
+    !resolvedFlags.workoutsAnalyticsV2 &&
+    !resolvedFlags.bodyProgressCompareV1
+  ) {
+    resolvedFlags.quietSettingsV1 = false
+  }
+
+  if (!resolvedFlags.dashboardV1 || !resolvedFlags.loggingShortcutsV1) {
+    resolvedFlags.captureConvenienceV1 = false
+  }
+
+  if (!resolvedFlags.quietSettingsV1) {
+    resolvedFlags.quietPowerV1 = false
+  }
+
+  if (!resolvedFlags.commandHomeV1) {
+    resolvedFlags.commandSurfaceV2 = false
+  }
+
+  if (!resolvedFlags.phaseTemplatesV1) {
+    resolvedFlags.loggingMaturityV1 = false
+  }
+
+  if (!resolvedFlags.trainingPreservationV1) {
+    resolvedFlags.trainingTrustV1 = false
+  }
+
+  if (!resolvedFlags.progressProofV2) {
+    resolvedFlags.progressProofFinishV1 = false
+  }
+
+  if (
+    !resolvedFlags.quietPowerV1 ||
+    !resolvedFlags.commandSurfaceV2 ||
+    !resolvedFlags.loggingMaturityV1 ||
+    !resolvedFlags.trainingTrustV1 ||
+    !resolvedFlags.progressProofFinishV1
+  ) {
+    resolvedFlags.cohesionFinishV1 = false
   }
 
   return resolvedFlags

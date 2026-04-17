@@ -7,6 +7,7 @@ import {
   saveFoodLogWithUsage,
   saveFoodLogWithUsages,
 } from '../utils/storage/logs'
+import { dismissFoodReviewItem, resolveFoodReviewItem } from '../utils/storage/foodReviewQueue'
 import { buildEntrySnapshot } from '../utils/storage/foods'
 import { subscribeToStorage } from '../utils/storage/core'
 
@@ -109,6 +110,7 @@ export function useFoodLog(date: string) {
 
   function replaceEntryFood(entryId: string, food: Food): ActionResult<void> {
     const currentEntries = sortEntries(loadFoodLog(date))
+    const currentEntry = currentEntries.find((entry) => entry.id === entryId)
     const nextEntries = currentEntries.map((entry) =>
       entry.id === entryId
         ? {
@@ -117,6 +119,7 @@ export function useFoodLog(date: string) {
             snapshot: buildEntrySnapshot(food),
             updatedAt: new Date().toISOString(),
             needsReview: false,
+            reviewItemId: undefined,
           }
         : entry,
     )
@@ -128,11 +131,15 @@ export function useFoodLog(date: string) {
       replacedEntry?.servings ?? 1,
     )
     setLastError(result.ok ? null : result.error)
+    if (result.ok && currentEntry?.reviewItemId) {
+      void resolveFoodReviewItem(currentEntry.reviewItemId, food.id)
+    }
     return result
   }
 
   function deleteEntry(entryId: string): ActionResult<void> {
-    return updateDateEntries(date, (currentEntries) =>
+    const currentEntry = loadFoodLog(date).find((entry) => entry.id === entryId)
+    const result = updateDateEntries(date, (currentEntries) =>
       isSyncEnabled()
         ? currentEntries.map((entry) =>
             entry.id === entryId
@@ -145,6 +152,10 @@ export function useFoodLog(date: string) {
           )
         : currentEntries.filter((entry) => entry.id !== entryId),
     )
+    if (result.ok && currentEntry?.reviewItemId) {
+      void dismissFoodReviewItem(currentEntry.reviewItemId)
+    }
+    return result
   }
 
   function restoreEntry(entry: FoodLogEntry): ActionResult<void> {
@@ -177,6 +188,7 @@ export function useFoodLog(date: string) {
             {
               foodId: entry.foodId,
               servings: entry.servings,
+              meal: entry.meal,
             },
           ]
         : [],

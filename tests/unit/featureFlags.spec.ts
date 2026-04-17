@@ -27,6 +27,49 @@ describe('feature flags', () => {
       barcodeTruthUiV1: false,
       labelOcrTrustV1: false,
       barcodeProviderFatsecretV1: false,
+      safeAutoUpdatePwa: false,
+      nutritionOverviewV1: false,
+      coachEngineV3: false,
+      nutritionOverviewV2: false,
+      foodTruthV2: false,
+      garminIntelligenceV2: false,
+      bodyMetricsV1: false,
+      progressPhotosV1: false,
+      workoutsV1: false,
+      encryptedSyncV2: false,
+      coachEvidenceAI: false,
+      benchmarkSuiteV1: false,
+      recoveryPacksV1: false,
+      dashboardV1: false,
+      coachModulesV1: false,
+      bodyProgressGalleryV2: false,
+      cutModeV1: false,
+      nutrientGoalsV1: false,
+      fastCheckInV1: false,
+      loggingShortcutsV1: false,
+      workoutsAnalyticsV2: false,
+      bodyProgressCompareV1: false,
+      dashboardInsightsV2: false,
+      nutritionCatalogV3: false,
+      workoutRecordsV1: false,
+      bodyMetricVisibilityV1: false,
+      claimGateV1: false,
+      commandHomeV1: false,
+      cutDayOsV1: false,
+      repeatLoggingV2: false,
+      phaseTemplatesV1: false,
+      trainingGuidanceV2: false,
+      trainingPreservationV1: false,
+      progressStoryV1: false,
+      progressProofV2: false,
+      quietSettingsV1: false,
+      quietPowerV1: false,
+      captureConvenienceV1: false,
+      commandSurfaceV2: false,
+      loggingMaturityV1: false,
+      trainingTrustV1: false,
+      progressProofFinishV1: false,
+      cohesionFinishV1: false,
     })
   })
 
@@ -55,6 +98,49 @@ describe('feature flags', () => {
       barcodeTruthUiV1: true,
       labelOcrTrustV1: true,
       barcodeProviderFatsecretV1: true,
+      safeAutoUpdatePwa: true,
+      nutritionOverviewV1: true,
+      coachEngineV3: true,
+      nutritionOverviewV2: true,
+      foodTruthV2: true,
+      garminIntelligenceV2: true,
+      bodyMetricsV1: true,
+      progressPhotosV1: true,
+      workoutsV1: true,
+      encryptedSyncV2: true,
+      coachEvidenceAI: true,
+      benchmarkSuiteV1: true,
+      recoveryPacksV1: true,
+      dashboardV1: true,
+      coachModulesV1: true,
+      bodyProgressGalleryV2: true,
+      cutModeV1: true,
+      nutrientGoalsV1: true,
+      fastCheckInV1: true,
+      loggingShortcutsV1: true,
+      workoutsAnalyticsV2: true,
+      bodyProgressCompareV1: true,
+      dashboardInsightsV2: true,
+      nutritionCatalogV3: true,
+      workoutRecordsV1: true,
+      bodyMetricVisibilityV1: true,
+      claimGateV1: true,
+      commandHomeV1: true,
+      cutDayOsV1: true,
+      repeatLoggingV2: true,
+      phaseTemplatesV1: true,
+      trainingGuidanceV2: true,
+      trainingPreservationV1: true,
+      progressStoryV1: true,
+      progressProofV2: true,
+      quietSettingsV1: true,
+      quietPowerV1: true,
+      captureConvenienceV1: true,
+      commandSurfaceV2: true,
+      loggingMaturityV1: true,
+      trainingTrustV1: true,
+      progressProofFinishV1: true,
+      cohesionFinishV1: true,
     })
   })
 
@@ -102,6 +188,113 @@ describe('feature flags', () => {
       barcodeTruthUiV1: false,
       labelOcrTrustV1: false,
       barcodeProviderFatsecretV1: false,
+      safeAutoUpdatePwa: false,
+      nutritionOverviewV1: false,
+      coachEngineV3: false,
+      nutritionOverviewV2: false,
+      foodTruthV2: false,
+      garminIntelligenceV2: false,
+      bodyMetricsV1: false,
+      progressPhotosV1: false,
+      workoutsV1: false,
+      encryptedSyncV2: false,
+      coachEvidenceAI: false,
+      benchmarkSuiteV1: false,
+      recoveryPacksV1: false,
+      dashboardV1: false,
+      coachModulesV1: false,
+      bodyProgressGalleryV2: false,
+      cutModeV1: false,
+      nutrientGoalsV1: false,
+      fastCheckInV1: false,
+      loggingShortcutsV1: false,
+      workoutsAnalyticsV2: false,
+      bodyProgressCompareV1: false,
+      dashboardInsightsV2: false,
+      nutritionCatalogV3: false,
+      workoutRecordsV1: false,
+      bodyMetricVisibilityV1: false,
+      claimGateV1: false,
+      commandHomeV1: false,
+      cutDayOsV1: false,
+      repeatLoggingV2: false,
+      phaseTemplatesV1: false,
+      trainingGuidanceV2: false,
+      trainingPreservationV1: false,
+      progressStoryV1: false,
+      progressProofV2: false,
+      quietSettingsV1: false,
+      quietPowerV1: false,
+      captureConvenienceV1: false,
+      commandSurfaceV2: false,
+      loggingMaturityV1: false,
+      trainingTrustV1: false,
+      progressProofFinishV1: false,
+      cohesionFinishV1: false,
     })
+  })
+
+  it('disables cut mode when dashboard or coach engine v3 are off', () => {
+    expect(
+      buildFeatureFlags({
+        MODE: 'production',
+        VITE_FF_DASHBOARD_V1: 'true',
+        VITE_FF_COACH_ENGINE_V3: 'false',
+        VITE_FF_CUT_MODE_V1: 'true',
+      }).cutModeV1,
+    ).toBe(false)
+
+    expect(
+      buildFeatureFlags({
+        MODE: 'production',
+        VITE_FF_DASHBOARD_V1: 'false',
+        VITE_FF_COACH_ENGINE_V3: 'true',
+        VITE_FF_CUT_MODE_V1: 'true',
+      }).cutModeV1,
+    ).toBe(false)
+  })
+
+  it('downgrades new dependent flags when their prerequisites are disabled', () => {
+    const flags = buildFeatureFlags({
+      MODE: 'production',
+      VITE_FF_NUTRITION_OVERVIEW_V2: 'false',
+      VITE_FF_NUTRIENT_GOALS_V1: 'true',
+      VITE_FF_COACH_ENGINE_V3: 'false',
+      VITE_FF_FAST_CHECK_IN_V1: 'true',
+      VITE_FF_FOOD_TRUTH_V2: 'false',
+      VITE_FF_LOGGING_SHORTCUTS_V1: 'true',
+      VITE_FF_WORKOUTS_V1: 'false',
+      VITE_FF_WORKOUTS_ANALYTICS_V2: 'true',
+      VITE_FF_BODY_METRICS_V1: 'false',
+      VITE_FF_PROGRESS_PHOTOS_V1: 'false',
+      VITE_FF_BODY_PROGRESS_COMPARE_V1: 'true',
+      VITE_FF_DASHBOARD_V1: 'false',
+      VITE_FF_DASHBOARD_INSIGHTS_V2: 'true',
+      VITE_FF_NUTRITION_CATALOG_V3: 'true',
+      VITE_FF_WORKOUT_RECORDS_V1: 'true',
+      VITE_FF_BODY_METRIC_VISIBILITY_V1: 'true',
+      VITE_FF_CLAIM_GATE_V1: 'true',
+      VITE_FF_COMMAND_HOME_V1: 'true',
+      VITE_FF_REPEAT_LOGGING_V2: 'true',
+      VITE_FF_TRAINING_GUIDANCE_V2: 'true',
+      VITE_FF_PROGRESS_STORY_V1: 'true',
+      VITE_FF_QUIET_SETTINGS_V1: 'true',
+    })
+
+    expect(flags.nutrientGoalsV1).toBe(false)
+    expect(flags.nutritionCatalogV3).toBe(false)
+    expect(flags.fastCheckInV1).toBe(false)
+    expect(flags.loggingShortcutsV1).toBe(false)
+    expect(flags.workoutsAnalyticsV2).toBe(false)
+    expect(flags.workoutRecordsV1).toBe(false)
+    expect(flags.bodyProgressCompareV1).toBe(false)
+    expect(flags.bodyMetricVisibilityV1).toBe(false)
+    expect(flags.dashboardInsightsV2).toBe(false)
+    expect(flags.claimGateV1).toBe(false)
+    expect(flags.commandHomeV1).toBe(false)
+    expect(flags.repeatLoggingV2).toBe(false)
+    expect(flags.trainingGuidanceV2).toBe(false)
+    expect(flags.progressStoryV1).toBe(false)
+    expect(flags.quietSettingsV1).toBe(false)
   })
 })

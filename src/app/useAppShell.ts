@@ -36,7 +36,7 @@ function buildAppError(message: string): AppActionError {
 }
 
 export function useAppShell() {
-  const [activeTab, setActiveTab] = useState<TabId>('log')
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard')
   const [selectedDate, setSelectedDate] = useState(getTodayDateKey())
   const [globalError, setGlobalError] = useState<AppActionError | null>(null)
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null)

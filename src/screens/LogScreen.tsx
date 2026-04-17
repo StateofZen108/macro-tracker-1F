@@ -11,6 +11,7 @@ import type {
   ActivityDraft,
   ActivityEntry,
   CoachingInsight,
+  CutDayPlan,
   DayConfounderMarker,
   DayStatus,
   Food,
@@ -38,6 +39,7 @@ interface LogScreenProps {
   coachingInsight: CoachingInsight
   recommendationDismissed: boolean
   settings: UserSettings
+  cutDayPlan?: CutDayPlan | null
   onChangeDate: (date: string) => void
   onChangeDayStatus: (status: DayStatus) => void
   onToggleDayMarker: (marker: DayConfounderMarker) => void
@@ -115,32 +117,77 @@ interface ActivityCardProps {
   onDelete: () => ActionResult<void>
 }
 
+function formatOptionalActivityNumber(value: number | undefined): string {
+  return value === undefined ? '' : `${value}`
+}
+
+function buildActivityEntrySignature(entry: ActivityEntry | null): string {
+  if (!entry) {
+    return 'none'
+  }
+
+  return [
+    entry.date,
+    entry.steps ?? '',
+    entry.cardioMinutes ?? '',
+    entry.cardioType ?? '',
+    entry.notes ?? '',
+    entry.updatedAt,
+    entry.deletedAt ?? '',
+  ].join('|')
+}
+
 function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
-  const [stepsInput, setStepsInput] = useState(entry?.steps ? `${entry.steps}` : '')
+  const [stepsInput, setStepsInput] = useState(formatOptionalActivityNumber(entry?.steps))
   const [cardioMinutesInput, setCardioMinutesInput] = useState(
-    entry?.cardioMinutes ? `${entry.cardioMinutes}` : '',
+    formatOptionalActivityNumber(entry?.cardioMinutes),
   )
   const [cardioType, setCardioType] = useState<ActivityDraft['cardioType']>(entry?.cardioType)
   const [notes, setNotes] = useState(entry?.notes ?? '')
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const lastSyncedEntrySignatureRef = useRef(buildActivityEntrySignature(entry))
+
+  useEffect(() => {
+    const nextSignature = buildActivityEntrySignature(entry)
+    if (lastSyncedEntrySignatureRef.current === nextSignature) {
+      return
+    }
+
+    lastSyncedEntrySignatureRef.current = nextSignature
+    setStepsInput(formatOptionalActivityNumber(entry?.steps))
+    setCardioMinutesInput(formatOptionalActivityNumber(entry?.cardioMinutes))
+    setCardioType(entry?.cardioType)
+    setNotes(entry?.notes ?? '')
+    setErrorMessage(null)
+  }, [entry?.cardioMinutes, entry?.cardioType, entry?.date, entry?.notes, entry?.steps, entry?.updatedAt, entry?.deletedAt])
 
   function handleSave(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault()
 
-    const parsedSteps = stepsInput.trim() ? Number.parseInt(stepsInput, 10) : undefined
-    const parsedCardioMinutes = cardioMinutesInput.trim()
-      ? Number.parseInt(cardioMinutesInput, 10)
+    const formData = new FormData(event.currentTarget)
+    const rawSteps = `${formData.get('steps') ?? ''}`.trim()
+    const rawCardioMinutes = `${formData.get('cardioMinutes') ?? ''}`.trim()
+    const rawCardioType = `${formData.get('cardioType') ?? ''}`.trim()
+    const rawNotes = `${formData.get('notes') ?? ''}`
+    const parsedSteps = rawSteps ? Number.parseInt(rawSteps, 10) : undefined
+    const parsedCardioMinutes = rawCardioMinutes
+      ? Number.parseInt(rawCardioMinutes, 10)
       : undefined
+    const parsedCardioType =
+      rawCardioType === 'walk' ||
+      rawCardioType === 'incline_treadmill' ||
+      rawCardioType === 'bike' ||
+      rawCardioType === 'run' ||
+      rawCardioType === 'other'
+        ? rawCardioType
+        : undefined
 
-    if (stepsInput.trim() && (!Number.isFinite(parsedSteps) || (parsedSteps ?? 0) < 0)) {
+    if (rawSteps && (!Number.isFinite(parsedSteps) || (parsedSteps ?? 0) < 0)) {
       setErrorMessage('Enter valid daily steps before saving activity.')
       return
     }
 
-    if (
-      cardioMinutesInput.trim() &&
-      (!Number.isFinite(parsedCardioMinutes) || (parsedCardioMinutes ?? 0) < 0)
-    ) {
+    if (rawCardioMinutes && (!Number.isFinite(parsedCardioMinutes) || (parsedCardioMinutes ?? 0) < 0)) {
       setErrorMessage('Enter valid cardio minutes before saving activity.')
       return
     }
@@ -148,8 +195,8 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
     const result = onSave({
       steps: parsedSteps,
       cardioMinutes: parsedCardioMinutes,
-      cardioType,
-      notes,
+      cardioType: parsedCardioType,
+      notes: rawNotes,
     })
     if (!result.ok) {
       setErrorMessage(result.error.message)
@@ -176,6 +223,7 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
             Steps
             <input
+              name="steps"
               className="field mt-2"
               inputMode="numeric"
               placeholder="Optional"
@@ -186,6 +234,7 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
             Cardio minutes
             <input
+              name="cardioMinutes"
               className="field mt-2"
               inputMode="numeric"
               placeholder="Optional"
@@ -198,6 +247,7 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
           Cardio type
           <select
+            name="cardioType"
             className="field mt-2"
             value={cardioType ?? ''}
             onChange={(event) =>
@@ -218,6 +268,7 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
         <label className="block text-sm font-medium text-slate-700 dark:text-slate-200">
           Note
           <textarea
+            name="notes"
             className="field mt-2 min-h-[72px]"
             placeholder="Optional note"
             value={notes}
@@ -275,6 +326,7 @@ export function LogScreen({
   coachingInsight,
   recommendationDismissed,
   settings,
+  cutDayPlan = null,
   onChangeDate,
   onChangeDayStatus,
   onToggleDayMarker,
@@ -462,6 +514,28 @@ export function LogScreen({
             onDelete={onDeleteActivity}
           />
         </div>
+
+        {cutDayPlan ? (
+          <section className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                  Cut day
+                </p>
+                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                  {cutDayPlan.macroIntentLabel}
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{cutDayPlan.whyToday}</p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                {cutDayPlan.dayType.replaceAll('_', ' ')}
+              </span>
+            </div>
+            <div className="mt-3 rounded-[18px] bg-slate-50/90 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
+              Training intent: {cutDayPlan.trainingIntentLabel}
+            </div>
+          </section>
+        ) : null}
 
         <div
           className="grid grid-cols-2 gap-3 sm:grid-cols-4"

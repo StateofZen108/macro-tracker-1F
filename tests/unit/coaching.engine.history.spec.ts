@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { CoachingDecisionRecord } from '../../src/types'
-import { upsertCoachingDecisionRecord } from '../../src/domain/coaching/engine/history'
+import {
+  buildManualOverrideDecisionRecord,
+  upsertCoachingDecisionRecord,
+} from '../../src/domain/coaching/engine/history'
 
 describe('coaching decision history', () => {
   it('does not churn updatedAt when the decision payload is logically unchanged', () => {
@@ -40,5 +43,29 @@ describe('coaching decision history', () => {
     }
 
     expect(upsertCoachingDecisionRecord([existingRecord], nextRecord)).toEqual([existingRecord])
+  })
+
+  it('normalizes manual override decision windows to date keys', () => {
+    const record = buildManualOverrideDecisionRecord(
+      {
+        calorieTarget: 2000,
+        proteinTarget: 180,
+        carbTarget: 200,
+        fatTarget: 60,
+      },
+      {
+        calorieTarget: 2100,
+        proteinTarget: 190,
+        carbTarget: 180,
+        fatTarget: 55,
+      },
+      '2026-04-16T12:00:00.000Z',
+      'coach_override',
+    )
+
+    expect(record.windowStart).toBe('2026-04-16')
+    expect(record.windowEnd).toBe('2026-04-16')
+    expect(record.effectiveDate).toBe('2026-04-16')
+    expect(record.id).toContain('manual_override:2026-04-16:')
   })
 })

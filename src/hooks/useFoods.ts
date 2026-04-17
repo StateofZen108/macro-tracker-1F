@@ -1,4 +1,5 @@
 import { useState, useSyncExternalStore } from 'react'
+import { FEATURE_FLAGS } from '../config/featureFlags'
 import { findDuplicateFoodMatch } from '../domain/foods/dedupe'
 import {
   buildImportedFoodDraft,
@@ -11,6 +12,7 @@ import {
 import type { ActionResult, AppActionError, Food, FoodDraft } from '../types'
 import { recordDiagnosticsEvent } from '../utils/diagnostics'
 import { isSyncEnabled } from '../utils/sync/core'
+import { queueFoodReviewItem } from '../utils/storage/foodReviewQueue'
 import {
   getFoodReferenceCount,
   loadFoods,
@@ -91,6 +93,57 @@ function matchesQuery(food: Food, query: string): boolean {
 
 function isActiveFood(food: Food): boolean {
   return !food.archivedAt
+}
+
+function buildReviewQueueSource(draft: FoodDraft): 'barcode' | 'ocr' | 'catalog_import' {
+  if (draft.labelNutrition) {
+    return 'ocr'
+  }
+
+  if (draft.barcode) {
+    return 'barcode'
+  }
+
+  return 'catalog_import'
+}
+
+function maybeQueueImportedFoodReview(food: Food, draft: FoodDraft): void {
+  if (!FEATURE_FLAGS.foodTruthV2) {
+    return
+  }
+
+  const trustLevel = draft.importTrust?.level
+  if (trustLevel !== 'exact_review' && trustLevel !== 'blocked') {
+    return
+  }
+
+  const result = queueFoodReviewItem({
+    source: buildReviewQueueSource(draft),
+    title: food.name,
+    reason:
+      trustLevel === 'blocked'
+        ? 'This imported food is blocked from trusted autolog until you confirm its serving basis and macro truth.'
+        : 'This imported food needs manual review before it should be treated as trusted food truth.',
+    linkedFoodId: food.id,
+    barcode: food.barcode,
+    trustLevel,
+  })
+
+  void recordDiagnosticsEvent({
+    eventType: result.ok
+      ? 'food_truth_v2_review_item_created'
+      : 'food_truth_v2_review_item_creation_failed',
+    severity: result.ok ? 'info' : 'warning',
+    scope: 'diagnostics',
+    recordKey: food.id,
+    message: result.ok
+      ? `${food.name} was added to the persistent food review queue.`
+      : `Unable to add ${food.name} to the persistent food review queue.`,
+    payload: {
+      source: buildReviewQueueSource(draft),
+      trustLevel,
+    },
+  })
 }
 
 export function isFoodEditable(food: Food): boolean {
@@ -395,6 +448,7 @@ export function useFoods() {
       }
 
       setLastError(null)
+      maybeQueueImportedFoodReview(mergedFood, normalizedDraft)
       return ok(mergedFood)
     }
 
@@ -412,6 +466,8 @@ export function useFoods() {
         recordKey: result.data.id,
       })
     }
+
+    maybeQueueImportedFoodReview(result.data, normalizedDraft)
 
     return result
   }

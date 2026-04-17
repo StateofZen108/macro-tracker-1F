@@ -1,4 +1,4 @@
-import { FileText, LoaderCircle, MessageSquare, Scale, Settings2, TriangleAlert, Wifi, WifiOff, X } from 'lucide-react'
+import { Dumbbell, FileText, House, LoaderCircle, MessageSquare, Scale, Settings2, TriangleAlert, Wifi, WifiOff, X } from 'lucide-react'
 import {
   lazy,
   Suspense,
@@ -40,6 +40,7 @@ import { useDayMeta } from './hooks/useDayMeta'
 import { useDiagnostics } from './hooks/useDiagnostics'
 import { useDietPhases } from './hooks/useDietPhases'
 import { useFavoriteFoods } from './hooks/useFavoriteFoods'
+import { useBodyProgress } from './hooks/useBodyProgress'
 import { useFoodLog } from './hooks/useFoodLog'
 import { useFoods } from './hooks/useFoods'
 import { useGarmin } from './hooks/useGarmin'
@@ -55,34 +56,69 @@ import { useUiPrefs } from './hooks/useUiPrefs'
 import { useWeeklyCheckIns } from './hooks/useWeeklyCheckIns'
 import { useWellness } from './hooks/useWellness'
 import { useWeights } from './hooks/useWeights'
+import { useWorkouts } from './hooks/useWorkouts'
+import { DashboardScreen } from './screens/DashboardScreen'
 import { LogScreen } from './screens/LogScreen'
 import type {
   ActionResult,
+  BodyProgressQuickCompare,
+  BodyProgressScaleContext,
+  CaptureConvenienceSource,
   CoachingReasonCode,
+  CutDayPlan,
   DayStatus,
   DietPhase,
   DietPhaseEvent,
   FoodLogEntry,
+  PhaseMealTemplate,
   RecoveryCheckIn,
   LegacyCoachingCode,
   MealType,
+  MorningPhoneSnapshot,
+  RepeatLogRecommendation,
+  SavedMeal,
   TabId,
   UserSettings,
+  WorkoutActionCard,
 } from './types'
 import { FEATURE_FLAGS } from './config/featureFlags'
+import { reconcileFoodReviewQueue } from './domain/foods/reviewQueue'
+import { buildCoreClaimSnapshot } from './domain/benchmark'
 import {
   evaluateCoachRuntimeState,
   type CoachRuntimeState,
 } from './domain/coaching/runtime'
 import { initializeDiagnosticsPersistence } from './utils/diagnostics'
 import { recordDiagnosticsEvent } from './utils/diagnostics'
-import { getNutrientAmountV1 } from './domain/nutrition'
+import { buildNutritionOverview, getNutrientAmountV1 } from './domain/nutrition'
 import { buildManualOverrideDecisionRecord } from './domain/coaching'
-import { formatShortDate, getTodayDateKey } from './utils/dates'
+import {
+  buildBodyProgressQuickCompare,
+  buildCoachInterventionCards,
+  buildCutDayPlan,
+  buildCutCockpitSnapshot,
+  buildMorningPhoneSnapshot,
+  buildRecoveryReadiness,
+} from './domain/personalCut'
+import { addDays, enumerateDateKeys, formatShortDate, getTodayDateKey } from './utils/dates'
 import { calculateFoodNutrition, sumNutrition } from './utils/macros'
 import { appendCoachingDecision } from './utils/storage/coachDecisions'
 import { subscribeToStorage } from './utils/storage/core'
+import { loadActivityLog } from './utils/storage/activity'
 import { loadAllFoodLogs, loadFoodLog, saveFoodLog } from './utils/storage/logs'
+import {
+  dismissFoodReviewItem,
+  loadFoodReviewQueue,
+  saveFoodReviewQueue,
+  subscribeToFoodReviewQueue,
+} from './utils/storage/foodReviewQueue'
+import {
+  loadGarminImportedWeights,
+  loadGarminModifierRecords,
+  loadGarminWorkoutSummaries,
+  subscribeToGarminImportStorage,
+} from './utils/storage/garminImports'
+import { loadBenchmarkReports, subscribeToBenchmarkReports } from './utils/storage/benchmarkReports'
 import { getInitializationError, getRecoveryIssues } from './utils/storage/recovery'
 import { initializeStorage, isStorageInitialized } from './utils/storage/schema'
 const AddFoodSheet = lazy(async () => {
@@ -101,13 +137,19 @@ const CoachScreen = lazy(async () => {
   const module = await import('./screens/CoachScreen')
   return { default: module.CoachScreen }
 })
+const WorkoutsScreen = lazy(async () => {
+  const module = await import('./screens/WorkoutsScreen')
+  return { default: module.WorkoutsScreen }
+})
 const TAB_ITEMS: Array<{
   id: TabId
   label: string
   icon: typeof FileText
 }> = [
+  { id: 'dashboard', label: 'Home', icon: House },
   { id: 'log', label: 'Log', icon: FileText },
   { id: 'weight', label: 'Weight', icon: Scale },
+  { id: 'workouts', label: 'Workouts', icon: Dumbbell },
   { id: 'coach', label: 'Coach', icon: MessageSquare },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ]
@@ -258,9 +300,61 @@ function renderLazyFallback(message: string) {
   return <div className="app-card px-4 py-6 text-sm text-slate-600 dark:text-slate-300">{message}</div>
 }
 
-function AppContent() {
+function buildScaleContextFromCutDayPlan(
+  cutDayPlan: CutDayPlan | null | undefined,
+): BodyProgressScaleContext {
+  if (cutDayPlan?.dayType === 'refeed_day') {
+    return 'expected_refeed_spike'
+  }
+
+  if (cutDayPlan?.dayType === 'diet_break_day') {
+    return 'expected_diet_break_spike'
+  }
+
+  return 'neutral'
+}
+
+function buildDefaultPhaseTemplateLabel(dayType: PhaseMealTemplate['dayType']): string {
+  switch (dayType) {
+    case 'psmf_day':
+      return 'PSMF day'
+    case 'refeed_day':
+      return 'Refeed day'
+    case 'diet_break_day':
+      return 'Diet break day'
+    case 'high_carb_day':
+      return 'High-carb day'
+    default:
+      return 'Standard cut day'
+  }
+}
+
+function buildFoodLogEntriesFromSavedMeal(input: {
+  savedMeal: SavedMeal
+  date: string
+  meal: MealType
+}): FoodLogEntry[] {
+  const baseTime = Date.now()
+  return input.savedMeal.entries.map((entry, index) => {
+    const timestamp = new Date(baseTime + index).toISOString()
+    return {
+      id: crypto.randomUUID(),
+      foodId: entry.foodId,
+      snapshot: entry.snapshot,
+      date: input.date,
+      meal: input.meal,
+      servings: entry.servings,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+  })
+}
+
+function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   const appChromeStyles = { '--app-bottom-clearance': 'calc(env(safe-area-inset-bottom) + 8.5rem)' } as CSSProperties
   const autoSnapshotPrimedRef = useRef(false)
+  const [lastStorageMutationAt, setLastStorageMutationAt] = useState(() => Date.now())
+  const [hasUserInteracted, setHasUserInteracted] = useState(false)
 
   const {
     activeTab,
@@ -280,7 +374,6 @@ function AppContent() {
 
   const recoveryIssues = getRecoveryIssues()
   const initializationError = getInitializationError()
-  const pwaShell = usePwaShell(true)
   const { captureDailySnapshot } = useSafetySnapshots()
 
   const {
@@ -298,6 +391,7 @@ function AppContent() {
     getFoodReferenceCount,
   } = useFoods()
   const allLogsByDate = loadAllFoodLogs()
+  const allActivityLog = useSyncExternalStore(subscribeToStorage, loadActivityLog, loadActivityLog)
   const { settings, updateSettings } = useSettings()
   const sync = useSync()
   const diagnostics = useDiagnostics()
@@ -309,9 +403,12 @@ function AppContent() {
     extendPhase,
     completePhase,
     startDietBreak,
+    startCarbCycle,
     scheduleRefeed,
+    scheduleHighCarbDay,
     updateRefeed,
     deleteRefeed,
+    deleteHighCarbDay,
     cancelPhase,
     updatePhaseNotes,
   } = useDietPhases()
@@ -323,10 +420,36 @@ function AppContent() {
     deleteEntry: deleteRecoveryCheckInEntry,
   } = useRecoveryCheckIns()
   const { wellnessEntries } = useWellness()
+  const foodReviewQueue = useSyncExternalStore(
+    subscribeToFoodReviewQueue,
+    loadFoodReviewQueue,
+    loadFoodReviewQueue,
+  )
+  const garminImportedWeights = useSyncExternalStore(
+    subscribeToGarminImportStorage,
+    loadGarminImportedWeights,
+    loadGarminImportedWeights,
+  )
+  const garminModifierRecords = useSyncExternalStore(
+    subscribeToGarminImportStorage,
+    loadGarminModifierRecords,
+    loadGarminModifierRecords,
+  )
+  const garminWorkoutSummaries = useSyncExternalStore(
+    subscribeToGarminImportStorage,
+    loadGarminWorkoutSummaries,
+    loadGarminWorkoutSummaries,
+  )
+  const benchmarkReports = useSyncExternalStore(
+    subscribeToBenchmarkReports,
+    loadBenchmarkReports,
+    loadBenchmarkReports,
+  )
   const garmin = useGarmin(sync.session)
   const { uiPrefs, updateUiPrefs } = useUiPrefs()
   const { weights, saveWeight, deleteWeight } = useWeights()
-  const { getDayMeta, getDayStatus, setDayStatus, toggleDayMarker } = useDayMeta()
+  const bodyProgress = useBodyProgress()
+  const { dayMeta, getDayMeta, getDayStatus, setDayStatus, toggleDayMarker } = useDayMeta()
   const {
     getEntry: getActivityEntry,
     saveEntry: saveActivityEntry,
@@ -377,6 +500,7 @@ function AppContent() {
     entries,
     addEntry,
     addSnapshotEntry,
+    appendEntries,
     saveEntries,
     updateEntryServings,
     replaceEntryFood,
@@ -395,6 +519,26 @@ function AppContent() {
       )
     },
     [dietPhases],
+  )
+  const todayCutDayPlan = useMemo<CutDayPlan>(
+    () =>
+      buildCutDayPlan({
+        date: todayDateKey,
+        phases: normalizedDietPhases,
+        phaseEvents: dietPhaseEvents,
+        phaseMealTemplates: settings.phaseMealTemplates,
+      }),
+    [dietPhaseEvents, normalizedDietPhases, settings.phaseMealTemplates, todayDateKey],
+  )
+  const selectedDateCutDayPlan = useMemo<CutDayPlan>(
+    () =>
+      buildCutDayPlan({
+        date: selectedDate,
+        phases: normalizedDietPhases,
+        phaseEvents: dietPhaseEvents,
+        phaseMealTemplates: settings.phaseMealTemplates,
+      }),
+    [dietPhaseEvents, normalizedDietPhases, selectedDate, settings.phaseMealTemplates],
   )
   const coachRuntime = useMemo<CoachRuntimeState | undefined>(() => {
     if (
@@ -447,10 +591,21 @@ function AppContent() {
               derivedCardioMinutes: entry.derivedCardioMinutes,
             }))
           : [],
+        garminModifiers: FEATURE_FLAGS.garminIntelligenceV2
+          ? garminModifierRecords.map((record) => ({
+              date: record.date,
+              steps: record.steps,
+              sleepMinutes: record.sleepMinutes,
+              restingHeartRate: record.restingHeartRate,
+              activeCalories: record.activeCalories,
+              derivedCardioMinutes: record.derivedCardioMinutes,
+            }))
+          : [],
       },
     }
   }, [
     dietPhaseEvents,
+    garminModifierRecords,
     normalizedDietPhases,
     recoveryCheckIns,
     wellnessEntries,
@@ -465,6 +620,22 @@ function AppContent() {
         : settings,
     [coachRuntime, settings],
   )
+  const recoveryReadiness = useMemo(
+    () =>
+      buildRecoveryReadiness({
+        today: todayDateKey,
+        modifierRecords: FEATURE_FLAGS.garminIntelligenceV2 ? garminModifierRecords : [],
+        workoutSummaries: FEATURE_FLAGS.garminIntelligenceV2 ? garminWorkoutSummaries : [],
+      }),
+    [garminModifierRecords, garminWorkoutSummaries, todayDateKey],
+  )
+  const workouts = useWorkouts({
+    recoverySeverity: recoveryReadiness.state,
+    readiness: recoveryReadiness,
+    cutDayPlan: todayCutDayPlan,
+    stepRecords: garminModifierRecords.map((record) => ({ date: record.date, steps: record.steps })),
+    activeGymProfileId: settings.activeGymProfileId,
+  })
   const coachingInsight = useCoaching(coachingSettings, weights, recoveryIssues.length)
   const {
     currentCheckIn,
@@ -473,8 +644,94 @@ function AppContent() {
     coachingDecisionHistory,
     markApplied,
     markKept,
+    markOverridden,
   } = useWeeklyCheckIns(coachingSettings, weights, recoveryIssues.length)
-  const visibleCurrentCheckIn = FEATURE_FLAGS.weeklyDecisionCard ? currentCheckIn : null
+  const visibleCurrentCheckIn = useMemo(() => {
+    if (!FEATURE_FLAGS.weeklyDecisionCard || !currentCheckIn) {
+      return null
+    }
+
+    if (!currentCheckIn.weeklyCheckInPacket) {
+      return currentCheckIn
+    }
+
+    const interventions = FEATURE_FLAGS.cutModeV1
+      ? buildCoachInterventionCards({
+          checkIn: currentCheckIn,
+          strengthRetention: workouts.snapshot.strengthRetention,
+          readiness: recoveryReadiness,
+        })
+      : currentCheckIn.weeklyCheckInPacket.interventions
+    const moduleSettings = settings.coachModuleSettings ?? {}
+    const moduleOutputs = (['partial_logging', 'fasting', 'logging_break', 'program_update'] as const).map((kind) => ({
+      kind,
+      enabled: moduleSettings[kind]?.enabled ?? true,
+      summary:
+        kind === 'partial_logging'
+          ? 'Partial logging is evaluated before a weekly adjustment is shown.'
+          : kind === 'fasting'
+            ? 'Fasting days remain eligible and are carried through the packet evidence.'
+            : kind === 'logging_break'
+              ? 'Logging breaks are surfaced as an explicit coaching confounder.'
+              : 'Program updates stay attached to the current packet as an auditable module.',
+    }))
+    const datesInWindow = enumerateDateKeys(currentCheckIn.weekStartDate, currentCheckIn.weekEndDate)
+    const statusesInWindow = datesInWindow.map((date) => ({
+      date,
+      status: dayMeta.find((entry) => entry.date === date)?.status,
+      loggedEntryCount: (allFoodLogs[date] ?? []).filter((entry) => !entry.deletedAt).length,
+    }))
+    const unresolvedModuleCandidates = [
+      moduleSettings.partial_logging?.enabled !== false &&
+      statusesInWindow.some((entry) => entry.status === 'partial')
+        ? {
+            kind: 'partial_logging' as const,
+            title: 'Partial logging needs review',
+            unresolved: true,
+            reason: 'At least one day in this check-in window is still marked partial.',
+          }
+        : null,
+      moduleSettings.fasting?.enabled !== false &&
+      statusesInWindow.some((entry) => entry.status === 'fasting')
+        ? {
+            kind: 'fasting' as const,
+            title: 'Fasting days remain unresolved',
+            unresolved: true,
+            reason: 'This window includes fasting days that Standard Check-In can review in detail.',
+          }
+        : null,
+      moduleSettings.logging_break?.enabled !== false &&
+      statusesInWindow.some((entry) => !entry.status && entry.loggedEntryCount === 0)
+        ? {
+            kind: 'logging_break' as const,
+            title: 'Logging-break signal detected',
+            unresolved: true,
+            reason: 'One or more days in this window have no intake state and no logged entries.',
+          }
+        : null,
+      moduleSettings.program_update?.enabled !== false &&
+      (workouts.snapshot.strengthRetention.anchorLiftTrend === 'down' ||
+        workouts.snapshot.strengthRetention.volumeFloorStatus !== 'met')
+        ? {
+            kind: 'program_update' as const,
+            title: 'Program update may be needed',
+            unresolved: true,
+            reason: 'Strength or volume-floor signals suggest Standard Check-In should review the program context.',
+          }
+        : null,
+    ].filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+
+    return {
+      ...currentCheckIn,
+      weeklyCheckInPacket: {
+        ...currentCheckIn.weeklyCheckInPacket,
+        interventions,
+        moduleOutputs,
+        fastCheckInEquivalent: settings.fastCheckInPreference?.enabled ?? true,
+        unresolvedModuleCandidates,
+      },
+    }
+  }, [allFoodLogs, currentCheckIn, dayMeta, recoveryReadiness, settings.coachModuleSettings, settings.fastCheckInPreference?.enabled, workouts.snapshot.strengthRetention])
   const visibleCheckInHistory = FEATURE_FLAGS.weeklyDecisionCard ? checkInHistory : []
   const visibleCoachingDecisionHistory = FEATURE_FLAGS.weeklyDecisionCard
     ? coachingDecisionHistory
@@ -498,6 +755,69 @@ function AppContent() {
     () => (FEATURE_FLAGS.recipes ? recipes : []),
     [recipes],
   )
+
+  useEffect(() => {
+    if (!FEATURE_FLAGS.foodTruthV2) {
+      return
+    }
+
+    const reconciliation = reconcileFoodReviewQueue({
+      foods,
+      logsByDate: allFoodLogs,
+      queue: loadFoodReviewQueue(),
+    })
+
+    if (!reconciliation.changedDates.length && reconciliation.createdReviewItemIds.length === 0 && reconciliation.resolvedReviewItemIds.length === 0) {
+      return
+    }
+
+    let saveFailed = false
+
+    for (const date of reconciliation.changedDates) {
+      const nextEntries = reconciliation.logsByDate[date]
+      const result = saveFoodLog(date, nextEntries ?? [])
+      if (!result.ok) {
+        saveFailed = true
+        reportError(result.error)
+        break
+      }
+    }
+
+    if (saveFailed) {
+      return
+    }
+
+    const queueResult = saveFoodReviewQueue(reconciliation.queue)
+    if (!queueResult.ok) {
+      void recordDiagnosticsEvent({
+        eventType: 'food_truth_v2_review_item_creation_failed',
+        severity: 'warning',
+        scope: 'diagnostics',
+        message: 'Unable to persist the food review queue after orphaned-entry reconciliation.',
+        payload: {
+          createdReviewItemIds: reconciliation.createdReviewItemIds,
+        },
+      })
+      reportError(queueResult.error)
+      return
+    }
+
+    if (reconciliation.createdReviewItemIds.length > 0) {
+      void recordDiagnosticsEvent({
+        eventType: 'food_truth_v2_orphaned_entry_queued',
+        severity: 'info',
+        scope: 'diagnostics',
+        message: 'One or more orphaned food log entries were queued for review.',
+        payload: {
+          createdReviewItemIds: reconciliation.createdReviewItemIds,
+          changedDates: reconciliation.changedDates,
+        },
+      })
+    }
+
+    reportError(null)
+  }, [allFoodLogs, foods, reportError])
+
   const previewPsmfGarminUiOverride = readPreviewPsmfGarminUiState()
   const activePsmfPhase = useMemo(
     () =>
@@ -508,6 +828,12 @@ function AppContent() {
   const activeDietBreakPhase = useMemo(
     () =>
       normalizedDietPhases.find((phase) => phase.type === 'diet_break' && phase.status === 'active') ??
+      null,
+    [normalizedDietPhases],
+  )
+  const activeCarbCyclePhase = useMemo(
+    () =>
+      normalizedDietPhases.find((phase) => phase.type === 'carb_cycle' && phase.status === 'active') ??
       null,
     [normalizedDietPhases],
   )
@@ -578,6 +904,13 @@ function AppContent() {
     () => (selectedPsmfPhase ? refeedsByPhaseId[selectedPsmfPhase.id] ?? [] : []),
     [refeedsByPhaseId, selectedPsmfPhase],
   )
+  const activeCarbCycleHighCarbDays = useMemo(
+    () =>
+      activeCarbCyclePhase
+        ? (refeedsByPhaseId[activeCarbCyclePhase.id] ?? []).filter((event) => event.type === 'high_carb_day')
+        : [],
+    [activeCarbCyclePhase, refeedsByPhaseId],
+  )
   const currentWindowRefeeds = useMemo(
     () =>
       visibleCurrentCheckIn
@@ -632,6 +965,42 @@ function AppContent() {
       const label = mapBlockedReasonLabel(blockedReason.code)
       if (label) {
         blockedReasonLabels.add(label)
+      }
+    }
+
+    if (FEATURE_FLAGS.garminConnectV1 && visibleCurrentCheckIn) {
+      const windowStart = visibleCurrentCheckIn.weekStartDate
+      const windowEnd = visibleCurrentCheckIn.weekEndDate
+      const windowWellnessEntries = wellnessEntries.filter(
+        (entry) => entry.date >= windowStart && entry.date <= windowEnd && !entry.deletedAt,
+      )
+      const localActivityDates = new Set(
+        allActivityLog
+          .filter(
+            (entry) =>
+              entry.date >= windowStart &&
+              entry.date <= windowEnd &&
+              !entry.deletedAt &&
+              (typeof entry.steps === 'number' || typeof entry.cardioMinutes === 'number'),
+          )
+          .map((entry) => entry.date),
+      )
+      const garminFallbackDays = windowWellnessEntries.filter(
+        (entry) =>
+          !localActivityDates.has(entry.date) &&
+          (typeof entry.steps === 'number' || typeof entry.derivedCardioMinutes === 'number'),
+      ).length
+
+      if (windowWellnessEntries.length > 0) {
+        supplementalLines.push(
+          `Garmin supplied wellness context on ${windowWellnessEntries.length} of 7 check-in days.`,
+        )
+      }
+
+      if (garminFallbackDays > 0) {
+        supplementalLines.push(
+          `Garmin filled steps or cardio context on ${garminFallbackDays} day${garminFallbackDays === 1 ? '' : 's'} without local activity logs.`,
+        )
       }
     }
 
@@ -706,8 +1075,191 @@ function AppContent() {
   const selectedDateTotals = sumNutrition(
     entries.map((entry) => calculateFoodNutrition(entry.snapshot, entry.servings)),
   )
+  const nutritionOverview = useMemo(
+    () =>
+      FEATURE_FLAGS.nutritionOverviewV1
+        ? buildNutritionOverview({
+            today: todayDateKey,
+            logsByDate: allFoodLogs,
+            dayMeta,
+            foods,
+            includeV2: FEATURE_FLAGS.nutritionOverviewV2,
+            settings,
+          })
+        : null,
+    [allFoodLogs, dayMeta, foods, settings, todayDateKey],
+  )
+  const garminSurface = useMemo(() => {
+    const selectedHistoryWindow = settings.garminHistoryWindow ?? '7d'
+    const buildWindowSummary = (window: '7d' | '30d' | '90d') => {
+      const offset = window === '7d' ? -6 : window === '30d' ? -29 : -89
+      const windowStart = addDays(todayDateKey, offset)
+      const modifiers = garminModifierRecords.filter((record) => record.date >= windowStart && record.date <= todayDateKey)
+      const workoutsInWindow = garminWorkoutSummaries.filter((record) => record.date >= windowStart && record.date <= todayDateKey)
+      const sleepValues = modifiers
+        .map((record) => record.sleepMinutes)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+      const rhrValues = modifiers
+        .map((record) => record.restingHeartRate)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+
+      return {
+        window,
+        modifierDayCount: modifiers.length,
+        workoutSummaryCount: workoutsInWindow.length,
+        averageSleepMinutes: sleepValues.length
+          ? sleepValues.reduce((sum, value) => sum + value, 0) / sleepValues.length
+          : undefined,
+        averageRestingHeartRate: rhrValues.length
+          ? rhrValues.reduce((sum, value) => sum + value, 0) / rhrValues.length
+          : undefined,
+        totalSteps: modifiers.reduce((sum, record) => sum + (record.steps ?? 0), 0),
+        totalActiveCalories: modifiers.reduce((sum, record) => sum + (record.activeCalories ?? 0), 0),
+      }
+    }
+
+    if (!FEATURE_FLAGS.garminIntelligenceV2) {
+      return {
+        importedWeightCount: 0,
+        ignoredConflictCount: 0,
+        modifierDayCount7d: 0,
+        workoutSummaryCount7d: 0,
+        readiness: recoveryReadiness,
+        historyWindow: selectedHistoryWindow,
+        history: [],
+        visibleConflictDates: [],
+        syncStatus: garmin.connection.status,
+      }
+    }
+
+    const history = [buildWindowSummary('7d'), buildWindowSummary('30d'), buildWindowSummary('90d')]
+    const currentWindow = history.find((entry) => entry.window === selectedHistoryWindow) ?? history[0]
+
+    return {
+      importedWeightCount: garminImportedWeights.length,
+      ignoredConflictCount: garminImportedWeights.filter((record) => record.state === 'ignored_conflict').length,
+      modifierDayCount7d: history[0]?.modifierDayCount ?? 0,
+      workoutSummaryCount7d: history[0]?.workoutSummaryCount ?? 0,
+      latestImportedWeightDate: garminImportedWeights[0]?.date,
+      averageSleepMinutes7d: currentWindow?.averageSleepMinutes,
+      averageRestingHeartRate7d: currentWindow?.averageRestingHeartRate,
+      totalSteps7d: currentWindow?.totalSteps,
+      totalActiveCalories7d: currentWindow?.totalActiveCalories,
+      readiness: recoveryReadiness,
+      historyWindow: selectedHistoryWindow,
+      history,
+      visibleConflictDates: garminImportedWeights
+        .filter((record) => record.state === 'ignored_conflict')
+        .map((record) => record.date),
+      syncStatus: garmin.connection.status,
+    }
+  }, [
+    garmin.connection.status,
+    garminImportedWeights,
+    garminModifierRecords,
+    garminWorkoutSummaries,
+    recoveryReadiness,
+    settings.garminHistoryWindow,
+    todayDateKey,
+  ])
+  const cutCockpit = useMemo(
+    () =>
+      FEATURE_FLAGS.cutModeV1
+        ? buildCutCockpitSnapshot({
+            nutritionOverview,
+            readiness: recoveryReadiness,
+            strengthRetention: workouts.snapshot.strengthRetention,
+            weeklyIntervention: visibleCurrentCheckIn?.weeklyCheckInPacket?.interventions?.[0],
+            bodyProgressSnapshots:
+              FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1
+                ? bodyProgress.snapshots
+                : [],
+          })
+        : null,
+    [
+      bodyProgress.snapshots,
+      nutritionOverview,
+      recoveryReadiness,
+      visibleCurrentCheckIn?.weeklyCheckInPacket?.interventions,
+      workouts.snapshot.strengthRetention,
+    ],
+  )
+  const latestBenchmarkReport = benchmarkReports[0] ?? null
+  const claimSnapshot = useMemo(
+    () =>
+      FEATURE_FLAGS.claimGateV1
+        ? buildCoreClaimSnapshot({
+            allCriticalReleasesGa:
+              FEATURE_FLAGS.fastCheckInV1 &&
+              FEATURE_FLAGS.nutritionCatalogV3 &&
+              FEATURE_FLAGS.nutrientGoalsV1 &&
+              FEATURE_FLAGS.loggingShortcutsV1 &&
+              FEATURE_FLAGS.workoutsAnalyticsV2 &&
+              FEATURE_FLAGS.workoutRecordsV1 &&
+              FEATURE_FLAGS.bodyMetricVisibilityV1 &&
+              FEATURE_FLAGS.bodyProgressCompareV1 &&
+              FEATURE_FLAGS.bodyProgressGalleryV2 &&
+              FEATURE_FLAGS.dashboardInsightsV2 &&
+              FEATURE_FLAGS.recoveryPacksV1,
+            readiness: {
+              fastCheckInSurfaceReady:
+                FEATURE_FLAGS.fastCheckInV1 &&
+                (settings.fastCheckInPreference?.enabled ?? true) &&
+                Boolean(settings.fastCheckInPreference?.surfaceEntryPoint ?? 'dashboard'),
+              nutritionDepthReady:
+                FEATURE_FLAGS.nutritionCatalogV3 &&
+                FEATURE_FLAGS.nutrientGoalsV1 &&
+                (nutritionOverview?.supportedNutrients.length ?? 0) >= 50,
+              loggingSurfaceReady:
+                FEATURE_FLAGS.loggingShortcutsV1 &&
+                Boolean(settings.loggingShortcutPreference?.toolbarStyle) &&
+                Boolean(settings.loggingShortcutPreference?.topShortcutId),
+              workoutsAnalyticsDepthReady:
+                FEATURE_FLAGS.workoutsAnalyticsV2 &&
+                FEATURE_FLAGS.workoutRecordsV1 &&
+                Array.isArray(workouts.snapshot.weeklyTargetsProgress) &&
+                Array.isArray(workouts.snapshot.recentRecords),
+              bodyProgressSurfaceReady:
+                FEATURE_FLAGS.bodyMetricVisibilityV1 &&
+                FEATURE_FLAGS.bodyProgressCompareV1 &&
+                FEATURE_FLAGS.bodyProgressGalleryV2,
+              dashboardClaimReady:
+                FEATURE_FLAGS.dashboardInsightsV2 &&
+                Boolean(settings.dashboardLayout) &&
+                Boolean(settings.dashboardInsights?.length),
+              recoverableGapClosureData: FEATURE_FLAGS.recoveryPacksV1,
+            },
+            scenarios: latestBenchmarkReport?.scenarios ?? [],
+            reportId: latestBenchmarkReport?.id,
+            latestBenchmarkCreatedAt: latestBenchmarkReport?.createdAt,
+          })
+        : null,
+    [
+      latestBenchmarkReport?.createdAt,
+      latestBenchmarkReport?.id,
+      latestBenchmarkReport?.scenarios,
+      nutritionOverview?.supportedNutrients.length,
+      settings.dashboardInsights,
+      settings.dashboardLayout,
+      settings.fastCheckInPreference?.enabled,
+      settings.fastCheckInPreference?.surfaceEntryPoint,
+      settings.loggingShortcutPreference?.toolbarStyle,
+      settings.loggingShortcutPreference?.topShortcutId,
+      workouts.snapshot.recentRecords,
+      workouts.snapshot.weeklyTargetsProgress,
+    ],
+  )
   const recommendationDismissed = settings.coachingDismissedAt?.slice(0, 10) === selectedDate
   const hasGlobalRecoveryBanner = Boolean(initializationError || recoveryIssues.length)
+
+  useEffect(() => {
+    if (
+      (!FEATURE_FLAGS.dashboardV1 && activeTab === 'dashboard') ||
+      (!FEATURE_FLAGS.workoutsV1 && activeTab === 'workouts')
+    ) {
+      setActiveTab('log')
+    }
+  }, [activeTab, setActiveTab])
 
   useEffect(() => {
     if (!autoSnapshotPrimedRef.current) {
@@ -929,6 +1481,330 @@ function AppContent() {
       })
       .slice(0, 6)
   }, [allLogsByDate, foodEntryController.foodSheetContext, foods, selectedDate, visibleFavorites])
+  const todayWorkoutActionOverride = useMemo(
+    () =>
+      [...(settings.workoutActionOverrides ?? [])]
+        .filter((entry) => entry.date === todayDateKey)
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null,
+    [settings.workoutActionOverrides, todayDateKey],
+  )
+  const effectiveWorkoutSnapshot = useMemo(() => {
+    if (!todayWorkoutActionOverride) {
+      return workouts.snapshot
+    }
+
+    const computedActionCard = workouts.snapshot.actionCard
+    const actionLabel =
+      todayWorkoutActionOverride.action === 'back_off'
+        ? 'Back off'
+        : todayWorkoutActionOverride.action === 'hold'
+          ? 'Hold'
+          : todayWorkoutActionOverride.action === 'push'
+            ? 'Push'
+            : 'Stay neutral'
+    const manualActionCard: WorkoutActionCard = {
+      action: todayWorkoutActionOverride.action,
+      title: 'Manual training override',
+      summary: `${actionLabel} is locked in for today by manual override.`,
+      reasons: [
+        `Override saved for ${formatShortDate(todayWorkoutActionOverride.date)}.`,
+        computedActionCard
+          ? `Computed action was ${computedActionCard.action.replace('_', ' ')}.`
+          : 'No computed action card was available.',
+      ],
+      source: 'manual_override',
+      evaluatedAt: todayWorkoutActionOverride.updatedAt,
+      readinessFresh: computedActionCard?.readinessFresh ?? false,
+      confidence: computedActionCard?.confidence ?? 'medium',
+      stalenessReason: computedActionCard?.stalenessReason,
+      reasonOrder: ['readiness', 'anchor_lift', 'records', 'completion'],
+      mode: computedActionCard?.mode ?? 'review_first',
+      secondaryNote: 'Manual override is active until you clear it or the day rolls over.',
+      primaryCta: 'Review today\'s training signals',
+      fuelDirective: computedActionCard?.fuelDirective ?? 'Fuel to match the current cut day before you train.',
+      volumeDirective: computedActionCard?.volumeDirective ?? 'Keep volume tight and protect performance.',
+      preservationRisk: computedActionCard?.preservationRisk ?? 'medium',
+      evidenceReasons:
+        computedActionCard?.evidenceReasons ?? [
+          'readiness_freshness',
+          'anchor_lift_trend',
+          'recent_records',
+          'volume_floor',
+          'completion_adherence',
+        ],
+      confidenceReason:
+        computedActionCard?.confidenceReason ??
+        'Manual override is active, so the computed card is shown as context only.',
+      freshnessLabel: computedActionCard?.freshnessLabel ?? 'No readiness',
+    }
+
+    return {
+      ...workouts.snapshot,
+      actionCard: manualActionCard,
+    }
+  }, [todayWorkoutActionOverride, workouts.snapshot])
+  const dashboardMeal = useMemo<MealType>(() => {
+    const hour = new Date().getHours()
+    if (hour < 11) {
+      return 'breakfast'
+    }
+    if (hour < 16) {
+      return 'lunch'
+    }
+    if (hour < 21) {
+      return 'dinner'
+    }
+    return 'snack'
+  }, [])
+  const savedMealsForDashboardMeal = useMemo(
+    () =>
+      visibleSavedMeals.filter(
+        (template) => !template.defaultMeal || template.defaultMeal === dashboardMeal,
+      ),
+    [dashboardMeal, visibleSavedMeals],
+  )
+  const selectedDatePhaseTemplateLane = useMemo(() => {
+    if (
+      !FEATURE_FLAGS.phaseTemplatesV1 ||
+      !foodEntryController.foodSheetContext ||
+      foodEntryController.foodSheetContext.kind !== 'add'
+    ) {
+      return null
+    }
+
+    const addContext = foodEntryController.foodSheetContext
+    const templateForDay =
+      settings.phaseMealTemplates?.find(
+        (template) =>
+          template.dayType === selectedDateCutDayPlan.dayType && !template.archivedAt,
+      ) ?? null
+    const acceptedTemplate =
+      templateForDay && (templateForDay.seedReviewState ?? 'accepted') === 'accepted'
+        ? templateForDay
+        : null
+    const mappedMeals = acceptedTemplate
+      ? acceptedTemplate.meals
+          .map((mapping) => {
+            if (!mapping.savedMealId) {
+              return null
+            }
+            const savedMeal =
+              visibleSavedMeals.find((template) => template.id === mapping.savedMealId) ?? null
+            if (!savedMeal) {
+              return null
+            }
+            return {
+              meal: mapping.meal,
+              savedMealId: savedMeal.id,
+              savedMealName: savedMeal.name,
+            }
+          })
+          .filter(
+            (mapping): mapping is { meal: MealType; savedMealId: string; savedMealName: string } =>
+              mapping !== null,
+          )
+      : []
+
+    if (acceptedTemplate && mappedMeals.length > 0) {
+      const currentMeal = mappedMeals.find((mapping) => mapping.meal === addContext.meal)
+      return {
+        state: 'active' as const,
+        templateId: acceptedTemplate.id,
+        templateLabel: acceptedTemplate.label,
+        dayTypeLabel: selectedDateCutDayPlan.macroIntentLabel,
+        mealCount: mappedMeals.length,
+        currentMeal,
+        meals: mappedMeals,
+      }
+    }
+
+    const suggestedSavedMeal =
+      [...visibleSavedMeals]
+        .filter((savedMeal) => savedMeal.defaultMeal === addContext.meal && !savedMeal.archivedAt)
+        .sort((left, right) => {
+          const usedCompare = (right.lastUsedAt ?? '').localeCompare(left.lastUsedAt ?? '')
+          if (usedCompare !== 0) {
+            return usedCompare
+          }
+          return (right.usageCount ?? 0) - (left.usageCount ?? 0)
+        })[0] ?? null
+    const seedSource = suggestedSavedMeal
+      ? `saved_meal:${suggestedSavedMeal.id}:${selectedDateCutDayPlan.dayType}:${addContext.meal}`
+      : undefined
+    const suggestionSuppressed =
+      Boolean(seedSource) &&
+      templateForDay?.seedReviewState === 'rejected' &&
+      templateForDay.seedSource === seedSource
+
+    if (suggestedSavedMeal && !suggestionSuppressed) {
+      return {
+        state: 'pending_review' as const,
+        templateLabel: buildDefaultPhaseTemplateLabel(selectedDateCutDayPlan.dayType),
+        dayTypeLabel: selectedDateCutDayPlan.macroIntentLabel,
+        mealCount: 1,
+        meals: [],
+        seedSource,
+        seedSuggestion: {
+          meal: addContext.meal,
+          savedMealId: suggestedSavedMeal.id,
+          savedMealName: suggestedSavedMeal.name,
+        },
+      }
+    }
+
+    return {
+      state: 'empty' as const,
+      templateLabel:
+        templateForDay?.label ?? buildDefaultPhaseTemplateLabel(selectedDateCutDayPlan.dayType),
+      dayTypeLabel: selectedDateCutDayPlan.macroIntentLabel,
+      mealCount: 0,
+      meals: [],
+      secondaryHint: suggestionSuppressed
+        ? 'That seed was dismissed. A new source will show here when your logging pattern changes.'
+        : 'Choose a saved meal to make this cut day faster to log.',
+    }
+  }, [
+    foodEntryController.foodSheetContext,
+    selectedDateCutDayPlan.macroIntentLabel,
+    selectedDateCutDayPlan.dayType,
+    settings.phaseMealTemplates,
+    visibleSavedMeals,
+  ])
+  const dashboardPhaseTemplateRecommendation = useMemo<RepeatLogRecommendation | null>(() => {
+    if (!FEATURE_FLAGS.phaseTemplatesV1 || !todayCutDayPlan.templateId) {
+      return null
+    }
+
+    const template =
+      settings.phaseMealTemplates?.find(
+        (entry) =>
+          entry.id === todayCutDayPlan.templateId &&
+          !entry.archivedAt &&
+          (entry.seedReviewState ?? 'accepted') === 'accepted',
+      ) ?? null
+    if (!template) {
+      return null
+    }
+
+    const mappedMeals = template.meals.filter((entry) => entry.savedMealId)
+    if (mappedMeals.length === 0) {
+      return null
+    }
+
+    const hasCurrentMealTemplate = mappedMeals.some((entry) => entry.meal === dashboardMeal)
+    return {
+      meal: dashboardMeal,
+      label: template.label,
+      count: mappedMeals.length,
+      source: 'saved_meal',
+      entryContext: 'meal_slot',
+      autocommitAction: 'saved_meal_review',
+      preserveQueryOnBatchAdd: true,
+      templateId: template.id,
+      templateLabel: template.label,
+      batchAction:
+        mappedMeals.length > 1
+          ? 'fill_day'
+          : hasCurrentMealTemplate
+            ? 'fill_meal'
+            : 'fill_day',
+    }
+  }, [dashboardMeal, settings.phaseMealTemplates, todayCutDayPlan.templateId])
+  const morningBodyProgress = useMemo<BodyProgressQuickCompare | undefined>(() => {
+    const latestSnapshot =
+      FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1
+        ? bodyProgress.snapshots[0] ?? null
+        : null
+    if (!latestSnapshot) {
+      return undefined
+    }
+
+    const preset =
+      settings.bodyProgressFocusState?.comparePreset === 'same_day' ||
+      settings.bodyProgressFocusState?.comparePreset === '7d' ||
+      settings.bodyProgressFocusState?.comparePreset === '30d'
+        ? settings.bodyProgressFocusState.comparePreset
+        : '7d'
+    const pose = settings.bodyProgressFocusState?.lastSelectedPose ?? 'front'
+    const compareSnapshot =
+      preset === 'same_day'
+        ? latestSnapshot
+        : bodyProgress.snapshots.find((snapshot) =>
+            snapshot.date <= addDays(latestSnapshot.date, preset === '7d' ? -7 : -30),
+          ) ?? null
+    const latestSnapshotCutDayPlan = buildCutDayPlan({
+      date: latestSnapshot.date,
+      phases: normalizedDietPhases,
+      phaseEvents: dietPhaseEvents,
+      phaseMealTemplates: settings.phaseMealTemplates,
+    })
+    return (
+      buildBodyProgressQuickCompare({
+        latestSnapshot,
+        compareSnapshot,
+        pose,
+        preset,
+        compareMode: settings.bodyProgressFocusState?.compareMode ?? 'side_by_side',
+        galleryMode: settings.bodyProgressFocusState?.galleryMode ?? 'latest_vs_compare',
+        focusedMetricKey: settings.bodyProgressFocusState?.focusedMetricKey,
+        scaleContext: buildScaleContextFromCutDayPlan(latestSnapshotCutDayPlan),
+        weights,
+      }) ?? undefined
+    )
+  }, [
+    bodyProgress.snapshots,
+    dietPhaseEvents,
+    normalizedDietPhases,
+    settings.bodyProgressFocusState,
+    settings.phaseMealTemplates,
+    weights,
+  ])
+  const morningPhoneSnapshot = useMemo<MorningPhoneSnapshot | null>(() => {
+    const repeatLog: RepeatLogRecommendation | null =
+      dashboardPhaseTemplateRecommendation
+        ? dashboardPhaseTemplateRecommendation
+        : savedMealsForDashboardMeal.length > 0
+        ? {
+            meal: dashboardMeal,
+            label: `Saved ${dashboardMeal} meals`,
+            count: savedMealsForDashboardMeal.length,
+            source: 'saved_meal',
+            entryContext: 'meal_slot',
+            autocommitAction: 'saved_meal_review',
+            preserveQueryOnBatchAdd: true,
+            batchAction: 'none',
+          }
+        : visibleFavorites.length > 0
+          ? {
+              meal: dashboardMeal,
+              label: 'Favorite foods',
+              count: visibleFavorites.length,
+              source: 'favorite',
+              entryContext: 'meal_slot',
+              autocommitAction: 'use_last_amount',
+              preserveQueryOnBatchAdd: true,
+              batchAction: 'none',
+            }
+          : null
+
+    return buildMorningPhoneSnapshot({
+      meal: dashboardMeal,
+      repeatLog,
+      workoutAction: effectiveWorkoutSnapshot.actionCard,
+      bodyProgress: morningBodyProgress,
+      cutDayPlan: todayCutDayPlan,
+      reviewBlockedCount: foodReviewQueue.filter((item) => item.status === 'pending').length,
+    })
+  }, [
+    dashboardPhaseTemplateRecommendation,
+    dashboardMeal,
+    effectiveWorkoutSnapshot.actionCard,
+    foodReviewQueue,
+    morningBodyProgress,
+    savedMealsForDashboardMeal,
+    todayCutDayPlan,
+    visibleFavorites.length,
+  ])
 
   const bulkApplyController = useBulkApplyController({
     selectedDate,
@@ -947,10 +1823,132 @@ function AppContent() {
     scrollEntryIntoView,
   })
 
+  useEffect(() => {
+    return subscribeToStorage(() => {
+      setLastStorageMutationAt(Date.now())
+    })
+  }, [])
+
+  useEffect(() => {
+    const markUserInteraction = () => {
+      setHasUserInteracted(true)
+    }
+
+    window.addEventListener('pointerdown', markUserInteraction, true)
+    window.addEventListener('keydown', markUserInteraction, true)
+    window.addEventListener('input', markUserInteraction, true)
+
+    return () => {
+      window.removeEventListener('pointerdown', markUserInteraction, true)
+      window.removeEventListener('keydown', markUserInteraction, true)
+      window.removeEventListener('input', markUserInteraction, true)
+    }
+  }, [])
+
+  const reloadSafetyBlocked = useMemo(
+    () =>
+      !bootHealthy ||
+      confirmState !== null ||
+      foodEntryController.foodSheetContext !== null ||
+      foodEntryController.editingEntry !== null ||
+      foodEntryController.quickAddOpen ||
+      foodEntryController.copyPreviousOpen ||
+      interventionController.interventionSheetOpen ||
+      foodEntryController.saveTemplateMeal !== null ||
+      foodEntryController.saveRecipeMeal !== null ||
+      bulkApplyController.bulkApplyState !== null ||
+      settingsEditorState?.open === true ||
+      foodEntryController.foodSheetDirty ||
+      foodEntryController.editSheetDirty ||
+      foodEntryController.quickAddDirty ||
+      foodEntryController.copyPreviousDirty ||
+      interventionController.interventionSheetDirty ||
+      foodEntryController.saveTemplateDirty ||
+      foodEntryController.saveRecipeDirty ||
+      settingsEditorState?.dirty === true ||
+      sync.syncState.status === 'authenticating' ||
+      sync.syncState.status === 'syncing' ||
+      sync.syncState.status === 'bootstrapRequired',
+    [
+      bootHealthy,
+      bulkApplyController.bulkApplyState,
+      confirmState,
+      foodEntryController.copyPreviousDirty,
+      foodEntryController.copyPreviousOpen,
+      foodEntryController.editSheetDirty,
+      foodEntryController.editingEntry,
+      foodEntryController.foodSheetContext,
+      foodEntryController.foodSheetDirty,
+      foodEntryController.quickAddDirty,
+      foodEntryController.quickAddOpen,
+      foodEntryController.saveRecipeDirty,
+      foodEntryController.saveRecipeMeal,
+      foodEntryController.saveTemplateDirty,
+      foodEntryController.saveTemplateMeal,
+      interventionController.interventionSheetDirty,
+      interventionController.interventionSheetOpen,
+      settingsEditorState?.dirty,
+      settingsEditorState?.open,
+      sync.syncState.status,
+    ],
+  )
+
+  const pwaShell = usePwaShell({
+    bootHealthy,
+    reloadSafetyBlocked,
+    lastStorageMutationAt,
+    hasUserInteracted,
+  })
+  const visibleTabItems = useMemo(
+    () =>
+      TAB_ITEMS.filter((item) => {
+        if (item.id === 'dashboard') {
+          return FEATURE_FLAGS.dashboardV1
+        }
+
+        if (item.id === 'workouts') {
+          return FEATURE_FLAGS.workoutsV1
+        }
+
+        return true
+      }),
+    [],
+  )
+
   function closeLogSheets(): void {
     foodEntryController.closeLogSheets()
     interventionController.closeInterventionSheet()
     bulkApplyController.closeBulkApply()
+  }
+
+  function openLogDate(date: string): void {
+    setSelectedDate(date)
+    setActiveTab('log')
+  }
+
+  function openDashboardQuickLog(meal: MealType): void {
+    setSelectedDate(getTodayDateKey())
+    setActiveTab('log')
+    foodEntryController.openAddFood(meal, { entryContext: 'meal_slot' })
+  }
+
+  function openDashboardCaptureConvenience(source: CaptureConvenienceSource): void {
+    setSelectedDate(getTodayDateKey())
+    setActiveTab('log')
+    foodEntryController.openAddFood(dashboardMeal, {
+      entryContext: 'global_add',
+      captureSource: source,
+    })
+  }
+
+  function handleDismissReviewItem(reviewItemId: string): void {
+    const result = dismissFoodReviewItem(reviewItemId)
+    if (!result.ok) {
+      reportError(result.error)
+      return
+    }
+
+    reportError(null)
   }
 
   function guardedTabChange(nextTab: TabId): void {
@@ -1320,6 +2318,44 @@ function AppContent() {
     reportError(null)
   }
 
+  function summarizeFastCheckInRecommendation(checkIn: NonNullable<typeof visibleCurrentCheckIn>): string {
+    if (typeof checkIn.recommendedCalorieDelta === 'number' && checkIn.recommendedCalorieDelta !== 0) {
+      return `${checkIn.recommendationReason} (${Math.round(checkIn.recommendedCalorieDelta)} kcal/day delta)`
+    }
+
+    if (typeof checkIn.recommendedCalorieTarget === 'number') {
+      return `${checkIn.recommendationReason} (${Math.round(checkIn.recommendedCalorieTarget)} kcal/day target)`
+    }
+
+    return checkIn.recommendationReason
+  }
+
+  function handleRunFastCheckIn(surface: 'dashboard' | 'coach'): void {
+    if (!FEATURE_FLAGS.fastCheckInV1 || !visibleCurrentCheckIn) {
+      return
+    }
+
+    const result = updateSettings({
+      ...settings,
+      lastFastCheckInRun: {
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        checkInId: visibleCurrentCheckIn.id,
+        surface,
+        decisionType: visibleCurrentCheckIn.decisionType ?? 'keep_targets',
+        recommendationSummary: summarizeFastCheckInRecommendation(visibleCurrentCheckIn),
+        unresolvedModules:
+          visibleCurrentCheckIn.weeklyCheckInPacket?.unresolvedModuleCandidates ?? [],
+      },
+    })
+    if (!result.ok) {
+      reportError(result.error)
+      return
+    }
+
+    reportError(null)
+  }
+
   function handleManualSettingsUpdate(
     nextSettings: typeof settings,
     options?: { reasonCode?: CoachingReasonCode | LegacyCoachingCode; effectiveDate?: string },
@@ -1347,6 +2383,15 @@ function AppContent() {
       if (!decisionResult.ok) {
         reportError(decisionResult.error)
         return decisionResult as ActionResult<void>
+      }
+
+      const overrideResult = markOverridden(
+        decisionRecord.id,
+        options?.effectiveDate ?? buildSelectedDateTimestamp(),
+      )
+      if (!overrideResult.ok) {
+        reportError(overrideResult.error)
+        return overrideResult as ActionResult<void>
       }
 
       void recordDiagnosticsEvent({
@@ -1405,6 +2450,16 @@ function AppContent() {
     return result
   }
 
+  function handleStartCarbCycle(
+    startDate: string,
+    plannedEndDate: string,
+    notes?: string,
+  ): ActionResult<DietPhase> {
+    const result = startCarbCycle(startDate, plannedEndDate, notes)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
   function handleScheduleRefeed(
     phaseId: string,
     date: string,
@@ -1412,6 +2467,17 @@ function AppContent() {
     notes?: string,
   ): ActionResult<DietPhaseEvent> {
     const result = scheduleRefeed(phaseId, date, calorieTargetOverride, notes)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleScheduleHighCarbDay(
+    phaseId: string,
+    date: string,
+    calorieTargetOverride: number,
+    notes?: string,
+  ): ActionResult<DietPhaseEvent> {
+    const result = scheduleHighCarbDay(phaseId, date, calorieTargetOverride, notes)
     reportError(result.ok ? null : result.error)
     return result
   }
@@ -1429,6 +2495,12 @@ function AppContent() {
 
   function handleDeleteRefeed(eventId: string): ActionResult<void> {
     const result = deleteRefeed(eventId)
+    reportError(result.ok ? null : result.error)
+    return result
+  }
+
+  function handleDeleteHighCarbDay(eventId: string): ActionResult<void> {
+    const result = deleteHighCarbDay(eventId)
     reportError(result.ok ? null : result.error)
     return result
   }
@@ -1644,6 +2716,222 @@ function AppContent() {
     return bulkApplyController.handleApplyTemplate(savedMealId, foodEntryController.foodSheetContext.meal)
   }
 
+  function applyPhaseMealTemplate(
+    template: PhaseMealTemplate,
+    batchAction: 'fill_meal' | 'fill_day',
+  ): ActionResult<unknown> {
+    if (!foodEntryController.foodSheetContext || foodEntryController.foodSheetContext.kind !== 'add') {
+      return {
+        ok: false,
+        error: {
+          code: 'templateUnavailable',
+          message: 'That phase template cannot be applied right now.',
+        },
+      }
+    }
+
+    const sheetMeal = foodEntryController.foodSheetContext.meal
+    const mappedSavedMeals = template.meals
+      .map((mapping) => {
+        if (!mapping.savedMealId) {
+          return null
+        }
+        const savedMeal =
+          visibleSavedMeals.find((candidate) => candidate.id === mapping.savedMealId) ?? null
+        if (!savedMeal) {
+          return null
+        }
+        return {
+          meal: mapping.meal,
+          savedMeal,
+        }
+      })
+      .filter((mapping): mapping is { meal: MealType; savedMeal: SavedMeal } => mapping !== null)
+
+    if (mappedSavedMeals.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'templateEmpty',
+          message: 'This phase template does not have any saved meals mapped yet.',
+        },
+      }
+    }
+
+    const targetSavedMeals =
+      batchAction === 'fill_meal'
+        ? mappedSavedMeals.filter((mapping) => mapping.meal === sheetMeal)
+        : mappedSavedMeals
+
+    if (targetSavedMeals.length === 0) {
+      return {
+        ok: false,
+        error: {
+          code: 'templateMealMissing',
+          message: `No saved meal is mapped for ${sheetMeal} in this phase template.`,
+        },
+      }
+    }
+
+    const appendedEntries = targetSavedMeals.flatMap(({ meal, savedMeal }) =>
+      buildFoodLogEntriesFromSavedMeal({
+        savedMeal,
+        date: selectedDate,
+        meal,
+      }),
+    )
+    const appendResult = appendEntries(appendedEntries)
+    if (!appendResult.ok) {
+      reportError(appendResult.error)
+      return appendResult
+    }
+
+    for (const { savedMeal } of targetSavedMeals) {
+      const usageResult = incrementTemplateUsage(savedMeal.id)
+      if (!usageResult.ok) {
+        reportError(usageResult.error)
+        return usageResult
+      }
+    }
+
+    reportError(null)
+    if (appendedEntries[0]) {
+      scrollEntryIntoView(appendedEntries[0].id, appendedEntries[0].meal)
+    }
+
+    return { ok: true, data: undefined }
+  }
+
+  function handleApplyPhaseTemplateMeal(templateId: string): ActionResult<unknown> {
+    const template =
+      settings.phaseMealTemplates?.find((entry) => entry.id === templateId && !entry.archivedAt) ??
+      null
+    if (!template) {
+      return {
+        ok: false,
+        error: {
+          code: 'templateMissing',
+          message: 'That phase template is no longer available.',
+        },
+      }
+    }
+
+    return applyPhaseMealTemplate(template, 'fill_meal')
+  }
+
+  function handleApplyPhaseTemplateDay(templateId: string): ActionResult<unknown> {
+    const template =
+      settings.phaseMealTemplates?.find((entry) => entry.id === templateId && !entry.archivedAt) ??
+      null
+    if (!template) {
+      return {
+        ok: false,
+        error: {
+          code: 'templateMissing',
+          message: 'That phase template is no longer available.',
+        },
+      }
+    }
+
+    return applyPhaseMealTemplate(template, 'fill_day')
+  }
+
+  function handleAcceptPhaseTemplateSeed(): ActionResult<unknown> {
+    if (
+      !selectedDatePhaseTemplateLane ||
+      selectedDatePhaseTemplateLane.state !== 'pending_review' ||
+      !selectedDatePhaseTemplateLane.seedSuggestion
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'templateSeedMissing',
+          message: 'No pending phase-template suggestion is available right now.',
+        },
+      }
+    }
+
+    const now = new Date().toISOString()
+    const existingTemplates = settings.phaseMealTemplates ?? []
+    const existing = existingTemplates.find(
+      (template) =>
+        template.dayType === selectedDateCutDayPlan.dayType && !template.archivedAt,
+    )
+    const nextMeals = [
+      ...(existing?.meals.filter(
+        (entry) => entry.meal !== selectedDatePhaseTemplateLane.seedSuggestion?.meal,
+      ) ?? []),
+      {
+        meal: selectedDatePhaseTemplateLane.seedSuggestion.meal,
+        savedMealId: selectedDatePhaseTemplateLane.seedSuggestion.savedMealId,
+      },
+    ]
+    const nextTemplate: PhaseMealTemplate = {
+      id: existing?.id ?? crypto.randomUUID(),
+      label: existing?.label ?? buildDefaultPhaseTemplateLabel(selectedDateCutDayPlan.dayType),
+      dayType: selectedDateCutDayPlan.dayType,
+      meals: nextMeals,
+      source: 'saved_meal_map',
+      seedSource: selectedDatePhaseTemplateLane.seedSource,
+      seedReviewState: 'accepted',
+      lastSeededAt: now,
+      lastAppliedAt: now,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    }
+
+    return handleManualSettingsUpdate({
+      ...settings,
+      phaseMealTemplates: [
+        ...existingTemplates.filter((template) => template.id !== existing?.id),
+        nextTemplate,
+      ].sort((left, right) => left.dayType.localeCompare(right.dayType)),
+    })
+  }
+
+  function handleRejectPhaseTemplateSeed(): ActionResult<unknown> {
+    if (
+      !selectedDatePhaseTemplateLane ||
+      selectedDatePhaseTemplateLane.state !== 'pending_review'
+    ) {
+      return {
+        ok: false,
+        error: {
+          code: 'templateSeedMissing',
+          message: 'No pending phase-template suggestion is available right now.',
+        },
+      }
+    }
+
+    const now = new Date().toISOString()
+    const existingTemplates = settings.phaseMealTemplates ?? []
+    const existing = existingTemplates.find(
+      (template) =>
+        template.dayType === selectedDateCutDayPlan.dayType && !template.archivedAt,
+    )
+    const nextTemplate: PhaseMealTemplate = {
+      id: existing?.id ?? crypto.randomUUID(),
+      label: existing?.label ?? buildDefaultPhaseTemplateLabel(selectedDateCutDayPlan.dayType),
+      dayType: selectedDateCutDayPlan.dayType,
+      meals: existing?.meals ?? [],
+      source: 'saved_meal_map',
+      seedSource: selectedDatePhaseTemplateLane.seedSource,
+      seedReviewState: 'rejected',
+      lastSeededAt: now,
+      lastAppliedAt: existing?.lastAppliedAt,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    }
+
+    return handleManualSettingsUpdate({
+      ...settings,
+      phaseMealTemplates: [
+        ...existingTemplates.filter((template) => template.id !== existing?.id),
+        nextTemplate,
+      ].sort((left, right) => left.dayType.localeCompare(right.dayType)),
+    })
+  }
+
   return (
     <div className="min-h-screen" style={appChromeStyles}>
       <div className="mx-auto flex min-h-screen w-full max-w-[480px] flex-col px-3 pb-[var(--app-bottom-clearance)] pt-[calc(env(safe-area-inset-top)+0.75rem)]">
@@ -1725,13 +3013,19 @@ function AppContent() {
           </div>
         ) : null}
 
-        {pwaShell.updateReady ? (
+        {pwaShell.updateStatus !== 'idle' && pwaShell.updateStatus !== 'applying' ? (
           <div className="mb-3 rounded-[24px] border border-slate-200 bg-white/90 px-4 py-4 text-sm text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-900/80 dark:text-white">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-semibold">Update ready</p>
+                <p className="font-semibold">
+                  {pwaShell.updateStatus === 'suppressed'
+                    ? 'Update paused'
+                    : pwaShell.updateStatus === 'deferred'
+                      ? 'Update downloaded'
+                      : 'Update ready'}
+                </p>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                  A fresher build is ready. Reload into the updated version now.
+                  {pwaShell.updateMessage}
                 </p>
               </div>
               <button
@@ -1747,6 +3041,18 @@ function AppContent() {
           </div>
         ) : null}
 
+        {pwaShell.updateStatus === 'applying' ? (
+          <div className="mb-3 rounded-[24px] border border-slate-200 bg-white/95 px-4 py-4 text-sm text-slate-900 shadow-sm dark:border-white/10 dark:bg-slate-900/90 dark:text-white">
+            <div className="flex items-center gap-3">
+              <LoaderCircle className="h-5 w-5 animate-spin text-slate-500 dark:text-slate-300" />
+              <div>
+                <p className="font-semibold">Updating MacroTracker</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{pwaShell.updateMessage}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {globalError ? (
           <div className="mb-3 flex items-start justify-between gap-3 rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800 shadow-sm dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
             <p>{globalError.message}</p>
@@ -1757,6 +3063,40 @@ function AppContent() {
         ) : null}
 
         <main className="min-h-0 flex-1 pb-4">
+          {FEATURE_FLAGS.dashboardV1 && activeTab === 'dashboard' ? (
+            <DashboardScreen
+              currentCheckIn={visibleCurrentCheckIn}
+              nutritionOverview={nutritionOverview}
+              foodReviewQueue={foodReviewQueue}
+              garminSurface={garminSurface}
+              workoutSnapshot={effectiveWorkoutSnapshot}
+              cutCockpit={cutCockpit}
+              settings={settings}
+              cutModeEnabled={FEATURE_FLAGS.cutModeV1}
+              morningSnapshot={morningPhoneSnapshot}
+              bodyProgressSnapshots={
+                FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1
+                  ? bodyProgress.snapshots
+                  : []
+              }
+              benchmarkReports={benchmarkReports}
+              claimSnapshot={claimSnapshot}
+              commandHomeEnabled={FEATURE_FLAGS.commandHomeV1}
+              onOpenCoach={() => setActiveTab('coach')}
+              onOpenWeight={() => setActiveTab('weight')}
+              onOpenWorkouts={() => setActiveTab('workouts')}
+              onOpenAddFood={openDashboardQuickLog}
+              onOpenCaptureConvenience={
+                FEATURE_FLAGS.captureConvenienceV1 ? openDashboardCaptureConvenience : undefined
+              }
+              onOpenLogDate={openLogDate}
+              onOpenSettings={() => setActiveTab('settings')}
+              onRunFastCheckIn={() => handleRunFastCheckIn('dashboard')}
+              onDismissReviewItem={handleDismissReviewItem}
+              onUpdateSettings={handleManualSettingsUpdate}
+            />
+          ) : null}
+
           {activeTab === 'log' ? (
             <LogScreen
               date={selectedDate}
@@ -1772,6 +3112,7 @@ function AppContent() {
               coachingInsight={coachingInsight}
               recommendationDismissed={recommendationDismissed}
               settings={settings}
+              cutDayPlan={selectedDateCutDayPlan}
               onChangeDate={setSelectedDate}
               onChangeDayStatus={handleChangeDayStatus}
               onToggleDayMarker={handleToggleDayMarker}
@@ -1808,6 +3149,14 @@ function AppContent() {
                 canApplyCheckInTargets={visibleCanApplyCheckInTargets}
                 checkInHistory={visibleCheckInHistory}
                 coachingDecisionHistory={visibleCoachingDecisionHistory}
+                nutritionOverview={nutritionOverview}
+                nutritionOverviewV2Enabled={FEATURE_FLAGS.nutritionOverviewV2}
+                bodyProgressSnapshots={
+                  FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1
+                    ? bodyProgress.snapshots
+                    : []
+                }
+                cutDayPlan={todayCutDayPlan}
                 previewPsmfGarminUiState={previewPsmfGarminUiState}
                 onSaveWeight={(date, weight, unit) => {
                   const result = saveWeight(date, weight, unit)
@@ -1824,6 +3173,17 @@ function AppContent() {
                 onKeepCurrentCheckIn={handleKeepCurrentCheckIn}
                 onManualOverrideTargets={(nextSettings, reasonCode) =>
                   handleManualSettingsUpdate(nextSettings, { reasonCode, effectiveDate: buildSelectedDateTimestamp() })
+                }
+                onUpdateSettings={handleManualSettingsUpdate}
+                onSaveBodyProgress={
+                  FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1
+                    ? bodyProgress.saveSnapshot
+                    : undefined
+                }
+                onDeleteBodyProgress={
+                  FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1
+                    ? bodyProgress.deleteSnapshot
+                    : undefined
                 }
                 onOpenCoach={() => setActiveTab('coach')}
               />
@@ -1870,6 +3230,31 @@ function AppContent() {
                 onChangePreferredMode={coachController.handleChangePreferredMode}
                 onToggleCitationsExpanded={coachController.handleToggleCitationsExpanded}
                 onSetProvider={coachController.handleSetProvider}
+                currentCheckIn={visibleCurrentCheckIn}
+                fastCheckInEnabled={settings.fastCheckInPreference?.enabled ?? true}
+                lastFastCheckInRun={settings.lastFastCheckInRun}
+                onRunFastCheckIn={() => handleRunFastCheckIn('coach')}
+                cutDayPlan={todayCutDayPlan}
+                workoutAction={effectiveWorkoutSnapshot.actionCard}
+                onOpenWorkouts={() => setActiveTab('workouts')}
+              />
+            </Suspense>
+          ) : null}
+
+          {FEATURE_FLAGS.workoutsV1 && activeTab === 'workouts' ? (
+            <Suspense fallback={renderLazyFallback('Loading workouts...')}>
+              <WorkoutsScreen
+                settings={settings}
+                programs={workouts.programs}
+                sessions={workouts.sessions}
+                decisions={workouts.decisions}
+                garminWorkoutSummaries={garminWorkoutSummaries}
+                snapshot={effectiveWorkoutSnapshot}
+                lastError={workouts.lastError}
+                onUpdateSettings={handleManualSettingsUpdate}
+                onCreateProgram={workouts.createProgram}
+                onUpdateProgramPreservationDefaults={workouts.updateProgramPreservationDefaults}
+                onLogSession={workouts.logSession}
               />
             </Suspense>
           ) : null}
@@ -1884,15 +3269,20 @@ function AppContent() {
                 syncAuthNotice={sync.authNotice}
                 syncAuthError={sync.authError}
                 bootstrapSummary={sync.bootstrapSummary}
+                bootstrapResolutionView={sync.bootstrapResolutionView}
                 mergePreview={sync.mergePreview}
                 bootstrapBusy={sync.bootstrapBusy}
                 diagnosticsSummary={diagnostics.summary}
                 foods={foods}
                 recipes={FEATURE_FLAGS.recipes ? allRecipes : []}
+                savedMeals={visibleSavedMeals}
+                foodReviewQueue={foodReviewQueue}
                 recoveryIssues={recoveryIssues}
                 previewPsmfGarminUiState={previewPsmfGarminUiState}
                 activePsmfPhase={activePsmfPhase}
                 activeDietBreakPhase={activeDietBreakPhase}
+                activeCarbCyclePhase={activeCarbCyclePhase}
+                activeCarbCycleHighCarbDays={activeCarbCycleHighCarbDays}
                 expiredPsmfPhase={expiredPsmfPhase}
                 plannedPhases={plannedPhases}
                 historicalPhases={historicalPhases}
@@ -1910,9 +3300,12 @@ function AppContent() {
                 onExtendDietPhase={handleExtendDietPhase}
                 onCompleteDietPhase={handleCompleteDietPhase}
                 onStartDietBreak={handleStartDietBreak}
+                onStartCarbCycle={handleStartCarbCycle}
                 onScheduleRefeed={handleScheduleRefeed}
+                onScheduleHighCarbDay={handleScheduleHighCarbDay}
                 onUpdateRefeed={handleUpdateRefeed}
                 onDeleteRefeed={handleDeleteRefeed}
+                onDeleteHighCarbDay={handleDeleteHighCarbDay}
                 onCancelPhase={handleCancelDietPhase}
                 onUpdatePhaseNotes={handleUpdateDietPhaseNotes}
                 onSelectPsmfPhase={setSelectedPsmfPhaseId}
@@ -1923,6 +3316,7 @@ function AppContent() {
                 onConnectGarmin={() => void handleGarminConnect()}
                 onSyncGarmin={() => void handleGarminSync()}
                 onDisconnectGarmin={() => void handleGarminDisconnect()}
+                onOpenLogDate={openLogDate}
                 onCreateFood={(draft) => {
                   const result = createFood(draft)
                   if (!result.ok) {
@@ -1995,6 +3389,7 @@ function AppContent() {
                   reportError(null)
                   return result
                 }}
+                onDismissFoodReviewItem={handleDismissReviewItem}
                 onReportGlobalError={reportError}
                 onFoodEditorStateChange={setSettingsEditorState}
                 onFindDuplicateFood={findDuplicateFood}
@@ -2011,7 +3406,7 @@ function AppContent() {
         </main>
       </div>
 
-      <AppBottomNav items={TAB_ITEMS} activeTab={activeTab} onSelect={guardedTabChange} />
+      <AppBottomNav items={visibleTabItems} activeTab={activeTab} onSelect={guardedTabChange} />
 
       <UndoToastStack undoQueue={undoQueue} onUndo={handleUndo} onDismiss={dismissUndoItem} />
 
@@ -2026,7 +3421,21 @@ function AppContent() {
                 : undefined
             }
             foods={foods}
+            loggingShortcutPreference={settings.loggingShortcutPreference}
+            loggingToolbarStyle={settings.loggingToolbarStyle}
+            loggingShortcuts={settings.loggingShortcuts}
+            entryContext={
+              foodEntryController.foodSheetContext.kind === 'add'
+                ? foodEntryController.foodSheetContext.entryContext
+                : 'meal_slot'
+            }
+            initialCaptureSource={
+              foodEntryController.foodSheetContext.kind === 'add'
+                ? foodEntryController.foodSheetContext.captureSource ?? null
+                : null
+            }
             isOnline={networkStatus === 'online'}
+            captureConvenienceEnabled={FEATURE_FLAGS.captureConvenienceV1}
             foodCatalogSearchEnabled={FEATURE_FLAGS.foodCatalogSearch}
             savedMeals={visibleSavedMeals}
             recipes={visibleRecipes}
@@ -2054,6 +3463,12 @@ function AppContent() {
             }
             onConfirmRecipe={FEATURE_FLAGS.recipes ? handleConfirmRecipe : undefined}
             onApplySavedMeal={FEATURE_FLAGS.savedMeals ? handleApplySavedMealFromSheet : undefined}
+            phaseTemplateLane={selectedDatePhaseTemplateLane}
+            onApplyPhaseTemplateMeal={handleApplyPhaseTemplateMeal}
+            onApplyPhaseTemplateDay={handleApplyPhaseTemplateDay}
+            onAcceptPhaseTemplateSeed={handleAcceptPhaseTemplateSeed}
+            onRejectPhaseTemplateSeed={handleRejectPhaseTemplateSeed}
+            onOpenPhaseTemplateSettings={() => setActiveTab('settings')}
             onFindDuplicateFood={findDuplicateFood}
             onResolveFoodMatch={resolveFoodMatch}
             onRestoreFood={handleRestoreFood}
@@ -2274,7 +3689,7 @@ function App() {
     )
   }
 
-  return <AppContent />
+  return <AppContent bootHealthy={storageReady && storageError === null} />
 }
 
 export default App

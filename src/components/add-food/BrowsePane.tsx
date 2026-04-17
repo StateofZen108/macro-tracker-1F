@@ -1,10 +1,13 @@
 import { Camera, Plus, Search, Star, Undo2, X } from 'lucide-react'
-import type { RefObject } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import type {
   BarcodeLookupResult,
+  CaptureConvenienceDraft,
   DescribeFoodDraftV1,
   Food,
+  ToolbarColorToken,
   UnifiedFoodSearchResult,
+  UserSettings,
 } from '../../types'
 import { ServingsInput } from '../ServingsInput'
 import {
@@ -27,6 +30,99 @@ type RepeatCandidateView = {
   servings: number
 }
 
+type QuickActionButton = {
+  key: 'scanner' | 'ocr' | 'custom'
+  label: string
+  icon: typeof Camera | typeof Plus
+  disabled: boolean
+  onClick: () => void
+  colorToken?: ToolbarColorToken
+}
+
+export function buildOrderedQuickActionButtons(
+  quickActionButtons: ReadonlyArray<QuickActionButton>,
+  loggingShortcutPreference?: UserSettings['loggingShortcutPreference'],
+  loggingShortcuts?: UserSettings['loggingShortcuts'],
+): QuickActionButton[] {
+  if (loggingShortcuts?.length) {
+    const byId = new Map(quickActionButtons.map((button) => [button.key, button] as const))
+    const orderedFromSettings = loggingShortcuts
+      .filter((entry) => entry.visible)
+      .sort((left, right) => left.order - right.order)
+      .reduce<QuickActionButton[]>((ordered, entry) => {
+        const button = byId.get(entry.id)
+        if (button) {
+          ordered.push({
+            ...button,
+            colorToken: entry.colorToken,
+          })
+        }
+        return ordered
+      }, [])
+
+    if (orderedFromSettings.length) {
+      return orderedFromSettings
+    }
+  }
+
+  const enabledShortcutIds = loggingShortcutPreference?.enabledShortcutIds
+  const enabledButtons =
+    enabledShortcutIds && enabledShortcutIds.length
+      ? quickActionButtons.filter((button) => enabledShortcutIds.includes(button.key))
+      : quickActionButtons
+
+  const orderedByPreference = (() => {
+    const shortcutOrder = loggingShortcutPreference?.shortcutOrder ?? []
+    if (!shortcutOrder.length) {
+      return [...enabledButtons]
+    }
+
+    const ordered = new Map<string, QuickActionButton>()
+    for (const shortcutId of shortcutOrder) {
+      const button = enabledButtons.find((entry) => entry.key === shortcutId)
+      if (button) {
+        ordered.set(button.key, button)
+      }
+    }
+    for (const button of enabledButtons) {
+      if (!ordered.has(button.key)) {
+        ordered.set(button.key, button)
+      }
+    }
+    return [...ordered.values()]
+  })()
+
+  const preferredShortcutId = loggingShortcutPreference?.topShortcutId ?? 'scanner'
+  const topButton = orderedByPreference.find((button) => button.key === preferredShortcutId)
+  const remainingButtons = orderedByPreference.filter((button) => button.key !== preferredShortcutId)
+  const orderedButtons = topButton ? [topButton, ...remainingButtons] : [...orderedByPreference]
+
+  if (loggingShortcutPreference?.barcodeFirst === false) {
+    const scannerButton = orderedButtons.find((button) => button.key === 'scanner')
+    return [
+      ...orderedButtons.filter((button) => button.key !== 'scanner'),
+      ...(scannerButton ? [scannerButton] : []),
+    ]
+  }
+
+  return orderedButtons
+}
+
+export function shouldCollapseLegacyAddFoodSections(params: {
+  mode: AddFoodPaneMode
+  mealAwareLaneVisible: boolean
+  phaseTemplateLaneVisible?: boolean
+  query: string
+  showMoreWaysToLog: boolean
+}): boolean {
+  return (
+    params.mode === 'add' &&
+    (params.mealAwareLaneVisible || params.phaseTemplateLaneVisible === true) &&
+    params.query.trim().length === 0 &&
+    !params.showMoreWaysToLog
+  )
+}
+
 type ArchivedImportCandidateView = {
   food: Food
 } | null
@@ -42,6 +138,10 @@ export interface BrowsePaneProps {
   onStartDescribeFood: () => void
   onApplyDescribeDraft: () => void
   onDismissDescribeDraft: () => void
+  captureConvenienceEnabled?: boolean
+  captureDraft?: CaptureConvenienceDraft | null
+  onApplyCaptureDraft: () => void
+  onDismissCaptureDraft: () => void
   selectedFood: Food | null
   selectedFoodId: string | null
   onSelectFood: (foodId: string) => void
@@ -58,10 +158,17 @@ export interface BrowsePaneProps {
   onOpenCustomFood: () => void
   onOpenScanner: () => void
   onOpenOcr: () => void
+  onOpenVoiceCapture: () => void
+  onOpenMealPhotoCapture: () => void
   lastLookupResult?: BarcodeLookupResult | null
   onReviewLastScan: () => void
   quickFoods: Food[]
   favoriteFoodIds: Set<string>
+  loggingShortcutPreference?: UserSettings['loggingShortcutPreference']
+  loggingToolbarStyle?: UserSettings['loggingToolbarStyle']
+  loggingShortcuts?: UserSettings['loggingShortcuts']
+  mealAwareLaneVisible?: boolean
+  phaseTemplateLaneVisible?: boolean
   onToggleFavoriteFood?: (foodId: string) => void
   savedMealSearchResults: UnifiedFoodSearchResult[]
   onApplySavedMealSelection: (savedMealId: string) => void
@@ -201,6 +308,10 @@ export function BrowsePane({
   onStartDescribeFood,
   onApplyDescribeDraft,
   onDismissDescribeDraft,
+  captureConvenienceEnabled = false,
+  captureDraft = null,
+  onApplyCaptureDraft,
+  onDismissCaptureDraft,
   selectedFood,
   selectedFoodId,
   onSelectFood,
@@ -217,10 +328,17 @@ export function BrowsePane({
   onOpenCustomFood,
   onOpenScanner,
   onOpenOcr,
+  onOpenVoiceCapture,
+  onOpenMealPhotoCapture,
   lastLookupResult,
   onReviewLastScan,
   quickFoods,
   favoriteFoodIds,
+  loggingShortcutPreference,
+  loggingToolbarStyle,
+  loggingShortcuts,
+  mealAwareLaneVisible = false,
+  phaseTemplateLaneVisible = false,
   onToggleFavoriteFood,
   savedMealSearchResults,
   onApplySavedMealSelection,
@@ -250,6 +368,7 @@ export function BrowsePane({
   discardMessage,
   onCancelDiscard,
 }: BrowsePaneProps) {
+  const [showMoreWaysToLog, setShowMoreWaysToLog] = useState(false)
   const shortQuery = debouncedQuery.trim().length < 3
   const selectedFoodPreview = selectedFood
     ? formatSelectedFoodServingPreview({
@@ -261,15 +380,64 @@ export function BrowsePane({
       })
     : null
   const selectedFoodMetricBasis = selectedFood
-    ? getSelectedFoodMetricBasis({
+      ? getSelectedFoodMetricBasis({
         servingSize: selectedFood.servingSize,
         servingUnit: selectedFood.servingUnit,
         labelNutrition: selectedFood.labelNutrition,
       })
     : null
+  const quickActionButtons: QuickActionButton[] = [
+    {
+      key: 'scanner',
+      label: 'Scan barcode',
+      icon: Camera,
+      disabled: !isOnline,
+      onClick: onOpenScanner,
+    },
+    {
+      key: 'ocr',
+      label: 'Scan nutrition label',
+      icon: Camera,
+      disabled: !isOnline,
+      onClick: onOpenOcr,
+    },
+    {
+      key: 'custom',
+      label: 'Create custom food',
+      icon: Plus,
+      disabled: false,
+      onClick: onOpenCustomFood,
+    },
+  ] as const
+  const orderedQuickActionButtons = buildOrderedQuickActionButtons(
+    quickActionButtons,
+    loggingShortcutPreference,
+    loggingShortcuts,
+  )
+  const toolbarStyle =
+    loggingToolbarStyle ?? loggingShortcutPreference?.toolbarStyle ?? 'search_barcode'
+  const fastPathVisible = mealAwareLaneVisible || phaseTemplateLaneVisible
+  const primaryQuickAction = orderedQuickActionButtons[0]
+  const secondaryQuickActions = orderedQuickActionButtons.slice(1)
+  const focusedFastPathMode = mode === 'add' && fastPathVisible && debouncedQuery.trim().length === 0
+  const collapseLegacyFastPath = shouldCollapseLegacyAddFoodSections({
+    mode,
+    mealAwareLaneVisible,
+    phaseTemplateLaneVisible,
+    query: debouncedQuery,
+    showMoreWaysToLog,
+  })
+  const showLegacyFastPathSections =
+    !focusedFastPathMode || showMoreWaysToLog || debouncedQuery.length > 0
 
-  return (
-    <div ref={contentRef} className="space-y-4" data-add-food-pane="browse">
+  useEffect(() => {
+    if (debouncedQuery.trim().length > 0) {
+      setShowMoreWaysToLog(true)
+    }
+  }, [debouncedQuery])
+
+  function renderSearchInput(): React.ReactNode {
+    return (
       <div className="relative">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <input
@@ -280,6 +448,143 @@ export function BrowsePane({
           onChange={(event) => onQueryChange(event.target.value)}
         />
       </div>
+    )
+  }
+
+  function renderQuickActionButton(
+    action: (typeof quickActionButtons)[number],
+    emphasis: 'primary' | 'secondary' = 'secondary',
+  ): React.ReactNode {
+    const Icon = action.icon
+    const colorClass =
+      action.colorToken === 'amber'
+        ? 'bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-100'
+        : action.colorToken === 'rose'
+          ? 'bg-rose-100 text-rose-900 dark:bg-rose-500/15 dark:text-rose-100'
+          : action.colorToken === 'slate'
+            ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
+            : 'bg-teal-700 text-white'
+    return (
+      <button
+        key={action.key}
+        type="button"
+        className={`${
+          emphasis === 'primary'
+            ? 'action-button'
+            : `rounded-2xl px-3 py-3 text-sm font-semibold transition ${colorClass}`
+        } gap-2`}
+        onClick={action.onClick}
+        disabled={action.disabled}
+      >
+        <Icon className="h-4 w-4" />
+        {action.label}
+      </button>
+    )
+  }
+
+  function renderSearchShortcutTile(): React.ReactNode {
+    return (
+      <button
+        key="search-tile"
+        type="button"
+        className="rounded-2xl bg-slate-100 px-3 py-3 text-sm font-semibold text-slate-900 transition dark:bg-slate-800 dark:text-slate-100"
+        onClick={() => searchInputRef?.current?.focus()}
+      >
+        <span className="inline-flex items-center gap-2">
+          <Search className="h-4 w-4" />
+          Search
+        </span>
+      </button>
+    )
+  }
+
+  return (
+    <div ref={contentRef} className="space-y-4" data-add-food-pane="browse">
+      {focusedFastPathMode ? (
+        <div className="space-y-3">
+          {toolbarStyle !== 'none' ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {orderedQuickActionButtons.map((action) => renderQuickActionButton(action))}
+            </div>
+          ) : renderSearchInput()}
+          {collapseLegacyFastPath ? (
+            <button
+              type="button"
+              className="action-button-secondary w-full"
+              onClick={() => setShowMoreWaysToLog(true)}
+            >
+              More ways to log
+            </button>
+          ) : null}
+        </div>
+      ) : toolbarStyle === 'four_custom' ? (
+        <div className="space-y-3">
+          {renderSearchInput()}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {renderSearchShortcutTile()}
+            {orderedQuickActionButtons.map((action) => renderQuickActionButton(action))}
+          </div>
+        </div>
+      ) : toolbarStyle === 'search_barcode_custom' ? (
+        <div className="space-y-3">
+          {renderSearchInput()}
+          {primaryQuickAction ? renderQuickActionButton(primaryQuickAction, 'primary') : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {secondaryQuickActions.map((action) => renderQuickActionButton(action))}
+          </div>
+        </div>
+      ) : toolbarStyle === 'none' ? (
+        <div className="space-y-3">{renderSearchInput()}</div>
+      ) : (
+        <div className="space-y-3">
+          {renderSearchInput()}
+          {primaryQuickAction ? renderQuickActionButton(primaryQuickAction, 'primary') : null}
+        </div>
+      )}
+
+      {!collapseLegacyFastPath && fastPathVisible && debouncedQuery.length === 0 && showMoreWaysToLog ? (
+        <div className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
+                More ways to log
+              </p>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-200">
+                Search your library or open the broader browse path.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="action-button-secondary"
+              onClick={() => setShowMoreWaysToLog(false)}
+            >
+              Collapse
+            </button>
+          </div>
+          {renderSearchInput()}
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {orderedQuickActionButtons.map((action) => renderQuickActionButton(action))}
+          </div>
+          {captureConvenienceEnabled ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                className="action-button-secondary w-full"
+                onClick={onOpenVoiceCapture}
+              >
+                Voice capture
+              </button>
+              <button
+                type="button"
+                className="action-button-secondary w-full"
+                onClick={onOpenMealPhotoCapture}
+              >
+                Meal photo
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {describeFoodEnabled && query.trim() ? (
         <button
@@ -330,6 +635,51 @@ export function BrowsePane({
               : describeDraft.reviewMode === 'remote_match'
                 ? 'Review remote match'
                 : 'Review manual entry'}
+          </button>
+        </div>
+      ) : null}
+
+      {captureDraft ? (
+        <div className="space-y-3 rounded-[28px] border border-slate-200 bg-slate-50/90 p-4 dark:border-white/10 dark:bg-slate-900/70">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                {captureDraft.source === 'meal_photo' ? 'Meal photo draft' : 'Capture draft'}
+              </p>
+              <p className="mt-1 font-semibold text-slate-900 dark:text-white">{captureDraft.suggestedName}</p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                Source: {captureDraft.rawLabel}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="icon-button"
+              onClick={onDismissCaptureDraft}
+              aria-label="Dismiss capture draft"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {captureDraft.photoPreviewUrl ? (
+            <img
+              src={captureDraft.photoPreviewUrl}
+              alt="Meal photo draft"
+              className="h-40 w-full rounded-[20px] object-cover"
+            />
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {captureDraft.source === 'meal_photo' ? 'meal photo' : 'voice'}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {captureDraft.confidence} confidence
+            </span>
+          </div>
+
+          <button type="button" className="action-button w-full" onClick={onApplyCaptureDraft}>
+            Review manual entry
           </button>
         </div>
       ) : null}
@@ -478,31 +828,6 @@ export function BrowsePane({
         </div>
       ) : null}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <button type="button" className="action-button-secondary gap-2" onClick={onOpenCustomFood}>
-          <Plus className="h-4 w-4" />
-          Create custom food
-        </button>
-        <button
-          type="button"
-          className="action-button-secondary gap-2"
-          onClick={onOpenScanner}
-          disabled={!isOnline}
-        >
-          <Camera className="h-4 w-4" />
-          Scan barcode
-        </button>
-        <button
-          type="button"
-          className="action-button-secondary gap-2"
-          onClick={onOpenOcr}
-          disabled={!isOnline}
-        >
-          <Camera className="h-4 w-4" />
-          Scan nutrition label
-        </button>
-      </div>
-
       {lastLookupResult ? (
         <button
           type="button"
@@ -514,9 +839,12 @@ export function BrowsePane({
         </button>
       ) : null}
 
-      {!personalLibraryEnabled && quickFoods.length ? (
+      {showLegacyFastPathSections && quickFoods.length ? (
         <section className="space-y-3">
-          <SectionHeader title="Quick add" detail="Sorted by recent use" />
+          <SectionHeader
+            title={personalLibraryEnabled ? 'Rapid log' : 'Quick add'}
+            detail={personalLibraryEnabled ? 'Barcode, recents, favorites, and repeats first' : 'Sorted by recent use'}
+          />
           <div className="grid gap-3">
             {quickFoods.map((food) => (
               <LocalFoodCard
@@ -535,7 +863,7 @@ export function BrowsePane({
         </section>
       ) : null}
 
-      {personalLibraryEnabled && shortQuery && repeatCandidates.length ? (
+      {showLegacyFastPathSections && personalLibraryEnabled && shortQuery && repeatCandidates.length ? (
         <section className="space-y-3">
           <SectionHeader title="Repeat this meal" detail="From the last 30 days" />
           <div className="grid gap-3">
@@ -594,7 +922,7 @@ export function BrowsePane({
         </section>
       ) : null}
 
-      {savedMealSearchResults.length ? (
+      {showLegacyFastPathSections && savedMealSearchResults.length ? (
         <section className="space-y-3">
           <SectionHeader title="Saved meals" detail="Replay frozen snapshots" />
           <div className="grid gap-3">
@@ -631,7 +959,7 @@ export function BrowsePane({
         </section>
       ) : null}
 
-      {recipeSearchResults.length ? (
+      {showLegacyFastPathSections && recipeSearchResults.length ? (
         <section className="space-y-3">
           <SectionHeader title="Recipes" detail="Log as one recipe entry" />
           <div className="grid gap-3">
@@ -668,13 +996,14 @@ export function BrowsePane({
         </section>
       ) : null}
 
+      {showLegacyFastPathSections ? (
       <section className="space-y-3">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
               {personalLibraryEnabled ? 'Your library' : debouncedQuery ? 'Search results' : 'All foods'}
             </h3>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-200">
               Showing {Math.min(displayedSearchResults.length, visibleSearchResults.length)} of {visibleSearchResults.length}{' '}
               {debouncedQuery ? 'matches' : 'foods'}
             </p>
@@ -716,8 +1045,9 @@ export function BrowsePane({
           </button>
         ) : null}
       </section>
+      ) : null}
 
-      {foodCatalogSearchEnabled && (catalogSearchResults.length || catalogCollapsed) ? (
+      {showLegacyFastPathSections && foodCatalogSearchEnabled && (catalogSearchResults.length || catalogCollapsed) ? (
         <section className="space-y-3">
           <SectionHeader title="Catalog" detail={getRemoteCatalogStatusLabel(remoteStatus, remoteLoadingMore)} />
           {catalogCollapsed ? (
@@ -807,7 +1137,7 @@ export function BrowsePane({
             </button>
           ) : null}
         </section>
-      ) : debouncedQuery && foodCatalogSearchEnabled && isOnline && remoteStatus === 'unavailable' ? (
+      ) : showLegacyFastPathSections && debouncedQuery && foodCatalogSearchEnabled && isOnline && remoteStatus === 'unavailable' ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
           Remote catalog search is temporarily unavailable. Local foods, saved meals, and recipes still work.
         </div>

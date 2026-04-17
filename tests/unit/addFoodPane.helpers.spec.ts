@@ -8,6 +8,13 @@ import {
   formatServingsLabel,
   getRemoteCatalogStatusLabel,
 } from '../../src/components/add-food/helpers'
+import {
+  buildMealAwareQuickLogItems,
+} from '../../src/components/AddFoodSheet'
+import {
+  buildOrderedQuickActionButtons,
+  shouldCollapseLegacyAddFoodSections,
+} from '../../src/components/add-food/BrowsePane'
 import type { BarcodeLookupResult, Food } from '../../src/types'
 
 function buildLookupResult(overrides: Partial<BarcodeLookupResult> = {}): BarcodeLookupResult {
@@ -32,6 +39,129 @@ function buildLookupResult(overrides: Partial<BarcodeLookupResult> = {}): Barcod
 }
 
 describe('add-food pane helpers', () => {
+  it('orders quick actions by enabled ids, shortcut order, and top shortcut preference', () => {
+    const actions = buildOrderedQuickActionButtons(
+      [
+        {
+          key: 'scanner',
+          label: 'Scan barcode',
+          icon: null as never,
+          disabled: false,
+          onClick: () => {},
+        },
+        {
+          key: 'ocr',
+          label: 'Scan nutrition label',
+          icon: null as never,
+          disabled: false,
+          onClick: () => {},
+        },
+        {
+          key: 'custom',
+          label: 'Create custom food',
+          icon: null as never,
+          disabled: false,
+          onClick: () => {},
+        },
+      ],
+      {
+        enabledShortcutIds: ['scanner', 'custom'],
+        shortcutOrder: ['custom', 'scanner'],
+        topShortcutId: 'scanner',
+        barcodeFirst: false,
+      } as never,
+    )
+
+    expect(actions.map((action) => action.key)).toEqual(['custom', 'scanner'])
+  })
+
+  it('builds a meal-aware lane that keeps saved meals ahead of repeats and recents', () => {
+    const lane = buildMealAwareQuickLogItems({
+      mealAwareLaneEnabled: true,
+      savedMealSearchResults: [
+        {
+          id: 'saved-meal-1',
+          name: 'Breakfast bowl',
+          score: 0,
+          source: 'saved_meal',
+          matchKind: 'prefix',
+          record: {
+            id: 'saved-meal-1',
+            name: 'Breakfast bowl',
+            entries: [],
+            usageCount: 4,
+            createdAt: '2026-04-15T00:00:00.000Z',
+            updatedAt: '2026-04-15T00:00:00.000Z',
+          },
+        } as never,
+      ],
+      repeatFoodResults: [
+        {
+          food: {
+            id: 'banana',
+            name: 'Banana',
+            servingSize: 1,
+            servingUnit: 'medium',
+            calories: 105,
+            protein: 1,
+            carbs: 27,
+            fat: 0,
+            source: 'seed',
+          },
+          servings: 1.5,
+        },
+      ],
+      quickFoods: [
+        {
+          id: 'banana',
+          name: 'Banana',
+          servingSize: 1,
+          servingUnit: 'medium',
+          calories: 105,
+          protein: 1,
+          carbs: 27,
+          fat: 0,
+          source: 'seed',
+        },
+        {
+          id: 'apple',
+          name: 'Apple',
+          servingSize: 1,
+          servingUnit: 'medium',
+          calories: 95,
+          protein: 0,
+          carbs: 25,
+          fat: 0,
+          source: 'seed',
+        },
+      ],
+    })
+
+    expect(lane.map((item) => item.kind)).toEqual(['saved_meal', 'repeat', 'food'])
+    expect(lane[1]).toMatchObject({ kind: 'repeat', key: 'repeat-banana' })
+    expect(lane[2]).toMatchObject({ kind: 'food', key: 'food-apple' })
+  })
+
+  it('collapses legacy fast-path sections when the meal-aware lane is visible and no query is active', () => {
+    expect(
+      shouldCollapseLegacyAddFoodSections({
+        mode: 'add',
+        mealAwareLaneVisible: true,
+        query: '',
+        showMoreWaysToLog: false,
+      }),
+    ).toBe(true)
+
+    expect(
+      shouldCollapseLegacyAddFoodSections({
+        mode: 'add',
+        mealAwareLaneVisible: true,
+        query: 'yogurt',
+        showMoreWaysToLog: false,
+      }),
+    ).toBe(false)
+  })
+
   it('formats serving labels with compact precision', () => {
     expect(formatServingsLabel(2)).toBe('2')
     expect(formatServingsLabel(1.255)).toBe('1.25')

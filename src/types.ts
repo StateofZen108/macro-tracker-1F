@@ -3,12 +3,14 @@ export type FoodSource = 'seed' | 'custom' | 'api' | 'recipe'
 export type CatalogProvider = 'open_food_facts' | 'usda_fdc' | 'fatsecret'
 export type FoodImportConfidence = 'direct_match' | 'weak_match' | 'manual_review_required'
 export type FoodSourceQuality = 'high' | 'medium' | 'low'
-export type TabId = 'log' | 'weight' | 'coach' | 'settings'
+export type TabId = 'dashboard' | 'log' | 'weight' | 'workouts' | 'coach' | 'settings'
 export type WeightRange = '30' | '90' | 'all'
 export type WeightUnit = 'lb' | 'kg'
 export type BarcodeVerification = 'verified' | 'needsConfirmation'
 export type NutritionBasis = 'serving' | '100g' | '100ml' | 'unknown'
 export type ImportTrustLevel = 'exact_autolog' | 'exact_review' | 'blocked'
+export type FoodReviewStatus = 'pending' | 'resolved' | 'dismissed'
+export type FoodReviewSource = 'barcode' | 'ocr' | 'catalog_import' | 'orphaned_log_entry'
 export type ServingBasisSource =
   | 'provider_serving'
   | 'provider_quantity'
@@ -60,6 +62,11 @@ export type RecoverableIssueScope =
   | 'activity'
   | 'checkins'
 export type ImportMode = 'replace' | 'merge'
+export type HistoryImportProvider = 'macrofactor' | 'renpho'
+export type HistoryImportFileKind =
+  | 'macrofactor_food_rows'
+  | 'macrofactor_weights'
+  | 'renpho_weights'
 export type BulkApplyMode = 'append' | 'replaceTarget' | 'cancel'
 export type NetworkStatus = 'online' | 'offline'
 export type SyncScope =
@@ -92,7 +99,7 @@ export type SyncStatus =
   | 'error'
   | 'reauthRequired'
 export type GoalMode = 'lose' | 'maintain' | 'gain'
-export type FatLossMode = 'standard_cut' | 'psmf'
+export type FatLossMode = 'standard_cut' | 'psmf' | 'carb_cycle'
 export type CoachingConfidence = 'none' | 'low' | 'medium' | 'high'
 export type CoachingTone = 'neutral' | 'under' | 'over' | 'onTrack'
 export type DayStatus = 'unmarked' | 'complete' | 'partial' | 'fasting'
@@ -101,10 +108,54 @@ export type InterventionCategory = 'supplement' | 'medication' | 'stimulant' | '
 export type InterventionRoute = 'oral' | 'subcutaneous' | 'intramuscular' | 'topical' | 'other'
 export type CardioType = 'walk' | 'incline_treadmill' | 'bike' | 'run' | 'other'
 export type WellnessProvider = 'garmin'
-export type DietPhaseType = 'psmf' | 'diet_break'
+export type ProgressPhotoPose = 'front' | 'side' | 'back'
+export type GarminImportedWeightState = 'imported' | 'ignored_conflict'
+export type DietPhaseType = 'psmf' | 'diet_break' | 'carb_cycle'
 export type DietPhaseStatus = 'planned' | 'active' | 'expired' | 'completed' | 'cancelled'
-export type DietPhaseEventType = 'refeed_day'
+export type DietPhaseEventType = 'refeed_day' | 'high_carb_day'
 export type RecoverySeverity = 'green' | 'yellow' | 'red'
+export type ComplianceRiskLevel = 'low' | 'medium' | 'high'
+export type MicronutrientStatus = 'low' | 'adequate' | 'high' | 'limited'
+export type NutrientGoalMode = 'auto' | 'custom' | 'none'
+export type GarminHistoryWindow = '7d' | '30d' | '90d'
+export type CommandSurfaceDensity = 'tight' | 'balanced'
+export type LoggingToolbarStyle =
+  | 'search_barcode'
+  | 'search_barcode_custom'
+  | 'four_custom'
+  | 'none'
+export type LoggingShortcutId = 'scanner' | 'ocr' | 'custom'
+export type ToolbarColorToken = 'teal' | 'slate' | 'amber' | 'rose'
+export type WorkoutAnalyticsRange = '7d' | '30d' | '90d' | '365d' | 'all'
+export type WorkoutRecordMetric = 'volume' | 'reps' | 'estimated_1rm'
+export type WorkoutAction = 'push' | 'hold' | 'back_off' | 'neutral'
+export type CutDayType =
+  | 'standard_cut_day'
+  | 'psmf_day'
+  | 'refeed_day'
+  | 'diet_break_day'
+  | 'high_carb_day'
+export type BodyProgressCompareMode = 'side_by_side' | 'overlay'
+export type BodyProgressScaleContext =
+  | 'neutral'
+  | 'expected_refeed_spike'
+  | 'expected_diet_break_spike'
+export type CaptureConsistency = 'tight' | 'mixed' | 'loose'
+export type TemplateSeedReviewState = 'pending_review' | 'accepted' | 'rejected'
+export type WorkoutEvidenceReason =
+  | 'readiness_freshness'
+  | 'anchor_lift_trend'
+  | 'recent_records'
+  | 'volume_floor'
+  | 'completion_adherence'
+export type CaptureChecklistItemId =
+  | 'pose_match'
+  | 'crop_match'
+  | 'distance_match'
+  | 'lighting_match'
+export type CaptureChecklistStatus = 'pass' | 'watch' | 'missing'
+export type BodyProgressGalleryMode = 'latest_vs_compare' | 'before_after'
+export type WorkoutRestTimerSound = 'soft' | 'beep' | 'silent'
 export type GarminConnectionStatus =
   | 'not_connected'
   | 'connected'
@@ -116,6 +167,13 @@ export type CalibrationPhase = 'none' | 'collecting' | 'provisional' | 'calibrat
 export type CoachMode = 'standard' | 'deep'
 export type CoachProvider = 'none' | 'gemini' | 'openai' | 'anthropic'
 export type CoachState = 'ready' | 'offline' | 'queued' | 'sending' | 'failed' | 'notConfigured'
+export type CoachModuleKind = 'partial_logging' | 'fasting' | 'logging_break' | 'program_update'
+export type CoachInterventionKind =
+  | 'logging_cleanup'
+  | 'hold_target'
+  | 'diet_break_prompt'
+  | 'deload_prompt'
+  | 'stay_the_course'
 export type CoachAnswerType =
   | 'data-aware'
   | 'general-evidence'
@@ -125,6 +183,29 @@ export type CoachAnswerType =
 export type CoachClaimSource = 'Your data' | 'App inference' | 'Evidence'
 export type CoachFeedbackRating = 'up' | 'down'
 export type RepoWriteSource = 'ui' | 'sync' | 'bootstrap' | 'migration' | 'import' | 'system'
+export type WorkoutGoal = 'strength_preservation' | 'hypertrophy' | 'general_strength'
+export type WorkoutMuscleGroup =
+  | 'chest'
+  | 'back'
+  | 'legs'
+  | 'shoulders'
+  | 'arms'
+  | 'glutes'
+  | 'core'
+  | 'full_body'
+  | 'cardio'
+export type ProgressionDecisionType = 'increase_load' | 'increase_reps' | 'hold' | 'decrease_load'
+export type EncryptedSyncEnvelopeStatus = 'queued' | 'replicated' | 'failed'
+export type EncryptedSyncRecordKind =
+  | 'food_review_queue'
+  | 'garmin_imported_weights'
+  | 'garmin_modifier_records'
+  | 'garmin_workout_summaries'
+  | 'workout_programs'
+  | 'workout_sessions'
+  | 'progression_decisions'
+  | 'body_progress'
+  | 'coaching_history'
 export type RepoErrorCode =
   | 'validation'
   | 'notFound'
@@ -159,6 +240,23 @@ export type DiagnosticsEventType =
   | 'garmin_sync_rate_limited'
   | 'garmin_reconnect_required'
   | 'garmin_sync_succeeded'
+  | 'food_truth_v2_review_item_created'
+  | 'food_truth_v2_review_item_creation_failed'
+  | 'food_truth_v2_orphaned_entry_queued'
+  | 'food_truth_v2_resolve_preempted_dismiss'
+  | 'garmin_v2_sync_failed'
+  | 'garmin_v2_sync_succeeded'
+  | 'garmin_v2_local_weight_wins'
+  | 'garmin_v2_activity_modifier_attached'
+  | 'garmin_v2_activity_modifier_deferred'
+  | 'workouts_v1_progression_applied'
+  | 'workouts_v1_progression_failed'
+  | 'sync_v2_replication_succeeded'
+  | 'sync_v2_replication_failed'
+  | 'sync_v2_replication_paused_flag_off'
+  | 'benchmark_v1_suite_passed'
+  | 'benchmark_v1_suite_failed'
+  | 'benchmark_v1_claim_blocked'
   | 'barcode_lookup_completed'
   | 'barcode_lookup_downgraded'
   | 'barcode_lookup_blocked'
@@ -169,6 +267,19 @@ export type DiagnosticsEventType =
   | 'serving_basis_conflict_detected'
   | 'barcode_provider_failed'
   | 'food_truth_rollout_alert'
+  | 'pwa_update_waiting_detected'
+  | 'pwa_update_waiting_cleared'
+  | 'pwa_update_auto_apply_deferred'
+  | 'pwa_update_auto_apply_cancelled'
+  | 'pwa_update_auto_apply_started'
+  | 'pwa_update_auto_apply_suppressed'
+  | 'pwa_update_auto_apply_confirmed'
+  | 'pwa_update_manual_apply_started'
+  | 'pwa_update_apply_failed'
+  | 'coach_v3_packet_generated'
+  | 'body_progress_snapshot_saved'
+  | 'body_progress_snapshot_deleted'
+  | 'body_progress_snapshot_failed'
 export type CoachProposalType =
   | 'applyCalorieTarget'
   | 'applyMacroTargets'
@@ -176,7 +287,13 @@ export type CoachProposalType =
   | 'dismissCoachingSuggestion'
   | 'openCopyPrevious'
   | 'openInterventionLog'
-export type CheckInStatus = 'ready' | 'applied' | 'kept' | 'deferred' | 'insufficientData'
+export type CheckInStatus =
+  | 'ready'
+  | 'applied'
+  | 'kept'
+  | 'overridden'
+  | 'deferred'
+  | 'insufficientData'
 
 export const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
 
@@ -241,6 +358,7 @@ export interface Food {
   archivedAt?: string
   lastUsedAt?: string
   lastServings?: number
+  lastMealType?: MealType
   updatedAt?: string
 }
 
@@ -334,6 +452,25 @@ export interface FoodLogEntry {
   updatedAt?: string
   deletedAt?: string
   needsReview?: boolean
+  reviewItemId?: string
+}
+
+export interface FoodReviewItem {
+  id: string
+  status: FoodReviewStatus
+  source: FoodReviewSource
+  title: string
+  reason: string
+  createdAt: string
+  updatedAt: string
+  linkedFoodId?: string
+  linkedEntryId?: string
+  linkedEntryDate?: string
+  resolvedFoodId?: string
+  barcode?: string
+  trustLevel?: ImportTrustLevel
+  resolvedAt?: string
+  dismissedAt?: string
 }
 
 export interface WeightEntry {
@@ -344,6 +481,74 @@ export interface WeightEntry {
   createdAt: string
   updatedAt?: string
   deletedAt?: string
+}
+
+export interface NutrientGoalSetting {
+  mode: NutrientGoalMode
+  floor?: number
+  target?: number
+  ceiling?: number
+}
+
+export interface PinnedNutrientPreference {
+  key: CanonicalNutrientKey
+  order: number
+}
+
+export interface CoachModuleSetting {
+  enabled: boolean
+}
+
+export interface FastCheckInPreference {
+  enabled: boolean
+  skipModuleDetails: boolean
+  surfaceEntryPoint?: 'dashboard' | 'coach'
+  postResultModuleSummary?: boolean
+}
+
+export interface LoggingShortcutPreference {
+  barcodeFirst: boolean
+  autologExactBarcodeHits: boolean
+  prioritizeRecents: boolean
+  prioritizeFavorites: boolean
+  prioritizeSavedMeals: boolean
+  enabledShortcutIds: LoggingShortcutId[]
+  shortcutOrder: LoggingShortcutId[]
+  mealAwareLane: boolean
+  toolbarStyle?: LoggingToolbarStyle
+  topShortcutId?: LoggingShortcutId
+}
+
+export interface ToolbarShortcutConfig {
+  id: LoggingShortcutId
+  order: number
+  colorToken: ToolbarColorToken
+  visible: boolean
+}
+
+export interface WorkoutActionOverride {
+  date: string
+  action: WorkoutAction
+  updatedAt: string
+}
+
+export interface CustomExerciseDefinition {
+  id: string
+  name: string
+  muscleGroup: WorkoutMuscleGroup
+  equipment: string[]
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GymProfile {
+  id: string
+  name: string
+  availableEquipment: string[]
+  isDefault?: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 export interface UserSettings {
@@ -370,6 +575,28 @@ export interface UserSettings {
   shareInterventionsWithCoach?: boolean
   coachCitationsExpanded?: boolean
   coachConsentAt?: string
+  nutrientGoals?: Partial<Record<CanonicalNutrientKey, NutrientGoalSetting>>
+  pinnedNutrients?: PinnedNutrientPreference[]
+  focusedNutrientKey?: CanonicalNutrientKey
+  coachModuleSettings?: Partial<Record<CoachModuleKind, CoachModuleSetting>>
+  fastCheckInPreference?: FastCheckInPreference
+  lastFastCheckInRun?: FastCheckInRun
+  loggingShortcutPreference?: LoggingShortcutPreference
+  customExercises?: CustomExerciseDefinition[]
+  gymProfiles?: GymProfile[]
+  activeGymProfileId?: string
+  dashboardLayout?: DashboardSectionLayout
+  dashboardInsights?: DashboardInsightSetting[]
+  dashboardDefaultsVersionApplied?: number
+  bodyMetricVisibility?: BodyMetricVisibilitySetting[]
+  progressPhotoVisibility?: Partial<Record<ProgressPhotoPose, boolean>>
+  bodyProgressFocusState?: BodyProgressFocusState
+  workoutActionOverrides?: WorkoutActionOverride[]
+  garminHistoryWindow?: GarminHistoryWindow
+  phaseMealTemplates?: PhaseMealTemplate[]
+  loggingToolbarStyle?: LoggingToolbarStyle
+  loggingShortcuts?: ToolbarShortcutConfig[]
+  featureSettingsVersionApplied?: number
 }
 
 export interface UiPrefs {
@@ -515,6 +742,37 @@ export interface DietPhaseEventDraft {
   notes?: string
 }
 
+export interface CutDayPlan {
+  date: string
+  dayType: CutDayType
+  phaseId?: string
+  eventId?: string
+  macroIntentLabel: string
+  trainingIntentLabel: string
+  templateId?: string
+  whyToday: string
+}
+
+export interface PhaseMealTemplateMeal {
+  meal: MealType
+  savedMealId?: string
+}
+
+export interface PhaseMealTemplate {
+  id: string
+  label: string
+  dayType: CutDayType
+  meals: PhaseMealTemplateMeal[]
+  source: 'manual' | 'saved_meal_map'
+  seedSource?: string
+  seedReviewState?: TemplateSeedReviewState
+  lastSeededAt?: string
+  lastAppliedAt?: string
+  createdAt: string
+  updatedAt: string
+  archivedAt?: string
+}
+
 export interface RecoveryAssessment {
   date: string
   score: number
@@ -530,6 +788,44 @@ export interface GarminConnectionInfo {
   staleData: boolean
 }
 
+export interface GarminImportedWeight {
+  id: string
+  provider: WellnessProvider
+  date: string
+  weight: number
+  unit: WeightUnit
+  sourceUpdatedAt: string
+  importedAt: string
+  state: GarminImportedWeightState
+  conflictLocalWeightId?: string
+}
+
+export interface GarminModifierRecord {
+  id: string
+  provider: WellnessProvider
+  date: string
+  steps?: number
+  sleepMinutes?: number
+  restingHeartRate?: number
+  activeCalories?: number
+  derivedCardioMinutes?: number
+  sourceUpdatedAt: string
+  importedAt: string
+}
+
+export interface GarminWorkoutSummary {
+  id: string
+  provider: WellnessProvider
+  date: string
+  workoutName?: string
+  startedAt?: string
+  durationMinutes?: number
+  activeCalories?: number
+  averageHeartRate?: number
+  sourceUpdatedAt: string
+  importedAt: string
+}
+
 export interface CheckInMacroTargets {
   protein: number
   carbs: number
@@ -540,6 +836,7 @@ export interface CheckInRecord {
   id: string
   weekEndDate: string
   weekStartDate: string
+  nextCheckInDate?: string
   priorWeekStartDate: string
   priorWeekEndDate: string
   goalMode: GoalMode
@@ -567,10 +864,647 @@ export interface CheckInRecord {
   adherence?: AdherenceScore
   confounders?: ConfounderSet
   decisionRecordId?: string
+  weeklyCheckInPacket?: WeeklyCheckInPacket
   status: CheckInStatus
+  supersededByDecisionRecordId?: string
   createdAt: string
   appliedAt?: string
   updatedAt?: string
+}
+
+export interface NutritionOverviewMetric {
+  key: CanonicalNutrientKey
+  label: string
+  unit: NutrientAmountV1['unit']
+  value: number
+  target: number
+  status: MicronutrientStatus
+  coveragePercent: number
+  goalMode?: NutrientGoalMode
+  floor?: number
+  ceiling?: number
+}
+
+export type NutritionOverviewWindow = 'day' | '7d' | '30d' | '90d' | '365d'
+
+export type DashboardSectionId =
+  | 'coach'
+  | 'nutrition'
+  | 'garmin'
+  | 'workouts'
+  | 'body_progress'
+  | 'food_review'
+  | 'benchmark'
+
+export interface FoodContributionRecord {
+  id: string
+  foodId?: string
+  name: string
+  brand?: string
+  calories: number
+  sharePercent: number
+  nutrientLabels: string[]
+}
+
+export interface DeficiencyAlert {
+  id: string
+  window: NutritionOverviewWindow
+  nutrientKey: CanonicalNutrientKey
+  severity: 'info' | 'warning'
+  title: string
+  message: string
+}
+
+export interface NutritionOverviewDay {
+  window: NutritionOverviewWindow
+  label: string
+  startDate: string
+  endDate: string
+  trackedDays: number
+  totalCalories: number
+  completenessPercent: number
+  metrics: NutritionOverviewMetric[]
+  contributors: FoodContributionRecord[]
+  deficiencyAlerts: DeficiencyAlert[]
+}
+
+export interface SupportedNutrientCatalogEntry {
+  key: CanonicalNutrientKey
+  label: string
+  unit: NutrientAmountV1['unit']
+  category: 'macro' | 'label'
+}
+
+export interface NutritionDrilldownPoint {
+  window: NutritionOverviewWindow
+  label: string
+  value: number
+  target: number
+  coveragePercent: number
+  status: MicronutrientStatus
+  contributors: FoodContributionRecord[]
+}
+
+export interface NutritionDrilldownSnapshot {
+  key: CanonicalNutrientKey
+  label: string
+  unit: NutrientAmountV1['unit']
+  goalMode: NutrientGoalMode
+  points: NutritionDrilldownPoint[]
+}
+
+export interface NutritionFocusState {
+  key: CanonicalNutrientKey
+  range: NutritionOverviewWindow
+}
+
+export interface NutritionOverviewBundle {
+  today: NutritionOverviewDay
+  trailingWeek: NutritionOverviewDay
+  trailingMonth?: NutritionOverviewDay
+  trailingQuarter?: NutritionOverviewDay
+  trailingYear?: NutritionOverviewDay
+  pinnedMetrics: NutritionOverviewMetric[]
+  supportedNutrients: SupportedNutrientCatalogEntry[]
+  focusedNutrientKey?: CanonicalNutrientKey
+  drilldowns: NutritionDrilldownSnapshot[]
+}
+
+export interface BodyMetricValue {
+  key: string
+  label: string
+  unit: string
+  value: number
+}
+
+export interface ProgressPhotoEntry {
+  id: string
+  pose: ProgressPhotoPose
+  fileName: string
+  contentType: string
+  dataUrl: string
+  width?: number
+  height?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BodyProgressSnapshot {
+  id: string
+  date: string
+  metrics: BodyMetricValue[]
+  photos: ProgressPhotoEntry[]
+  note?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BodyProgressSaveRequest {
+  date: string
+  metrics: BodyMetricValue[]
+  note?: string
+  clearedPoses?: ProgressPhotoPose[]
+  photosByPose?: Partial<Record<ProgressPhotoPose, File>>
+}
+
+export interface WorkoutTemplate {
+  id: string
+  programId: string
+  name: string
+  slotKey: string
+  exercises: Array<{
+    id: string
+    name: string
+    muscleGroup?: WorkoutMuscleGroup
+    equipment?: string[]
+    customExerciseId?: string
+    targetSets: number
+    targetReps: number
+    targetLoad?: number
+    targetSeconds?: number
+    rir?: number
+    restSeconds?: number
+  }>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkoutProgram {
+  id: string
+  name: string
+  goal: WorkoutGoal
+  gymProfileId?: string
+  preservationDefaults?: WorkoutPreservationDefaults
+  templates: WorkoutTemplate[]
+  createdAt: string
+  updatedAt: string
+  archivedAt?: string
+}
+
+export interface WorkoutPreservationDefaults {
+  defaultRestSeconds?: number
+  defaultTargetRir?: number
+  backOffCapPercent?: number
+  restTimerSound?: WorkoutRestTimerSound
+  smartWarmupsEnabled?: boolean
+}
+
+export interface WorkoutSession {
+  id: string
+  programId: string
+  templateId: string
+  slotKey: string
+  date: string
+  createdAt: string
+  updatedAt: string
+  completedAt: string
+  notes?: string
+  exercises: Array<{
+    templateExerciseId: string
+    name: string
+    notes?: string
+    sets: Array<{
+      reps?: number
+      load?: number
+      seconds?: number
+      rir?: number
+    }>
+  }>
+}
+
+export interface ProgressionDecision {
+  id: string
+  programId: string
+  templateId: string
+  slotKey: string
+  decisionType: ProgressionDecisionType
+  reason: string
+  basedOnSessionIds: string[]
+  createdAt: string
+  adjustments: Array<{
+    templateExerciseId: string
+    loadDelta?: number
+    repDelta?: number
+  }>
+}
+
+export interface WorkoutHabitSnapshot {
+  id: string
+  label: string
+  current: number
+  target: number
+  status: 'met' | 'at_risk' | 'missed'
+}
+
+export interface WorkoutExerciseTrend {
+  id: string
+  name: string
+  muscleGroup: WorkoutMuscleGroup
+  sessionCount: number
+  totalVolume: number
+  totalReps: number
+  heaviestLoad: number
+  lastCompletedAt?: string
+}
+
+export interface WorkoutRecordSnapshot {
+  id: string
+  label: string
+  metric: WorkoutRecordMetric
+  value: number
+  unit: 'kg' | 'lb' | 'reps' | 'volume'
+  achievedAt: string
+  exerciseId?: string
+}
+
+export interface WorkoutExerciseDrilldown {
+  exerciseId: string
+  name: string
+  range: WorkoutAnalyticsRange
+  totalVolume: number
+  totalReps: number
+  totalSets: number
+  heaviestLoad: number
+  sessionCount: number
+}
+
+export interface WorkoutDashboardSnapshot {
+  activeProgramCount: number
+  completedSessionCount: number
+  completedSessionCount7d: number
+  totalSets7d: number
+  volumeLoad7d: number
+  pendingDecisionCount: number
+  latestCompletedAt?: string
+  strengthRetention: StrengthRetentionSnapshot
+  muscleGroupSetCounts: Array<{
+    muscleGroup: WorkoutMuscleGroup
+    setCount7d: number
+  }>
+  exerciseTrends: WorkoutExerciseTrend[]
+  habits: WorkoutHabitSnapshot[]
+  weeklyTargetsProgress: WorkoutHabitSnapshot[]
+  recentRecords: WorkoutRecordSnapshot[]
+  range: WorkoutAnalyticsRange
+  exerciseDrilldown?: WorkoutExerciseDrilldown
+  actionCard?: WorkoutActionCard
+  steps7d?: number
+  activeGymProfileId?: string
+}
+
+export interface DashboardSectionLayout {
+  order: DashboardSectionId[]
+  hiddenSectionIds: DashboardSectionId[]
+  updatedAt: string
+}
+
+export interface DashboardInsightSetting {
+  id: string
+  sectionId: DashboardSectionId
+  label: string
+  visible: boolean
+  required?: boolean
+  order: number
+  updatedAt: string
+}
+
+export interface GarminSurfaceSnapshot {
+  importedWeightCount: number
+  ignoredConflictCount: number
+  modifierDayCount7d: number
+  workoutSummaryCount7d: number
+  latestImportedWeightDate?: string
+  averageSleepMinutes7d?: number
+  averageRestingHeartRate7d?: number
+  totalSteps7d?: number
+  totalActiveCalories7d?: number
+  readiness: RecoveryReadiness
+  historyWindow: GarminHistoryWindow
+  history: Array<{
+    window: GarminHistoryWindow
+    modifierDayCount: number
+    workoutSummaryCount: number
+    averageSleepMinutes?: number
+    averageRestingHeartRate?: number
+    totalSteps?: number
+    totalActiveCalories?: number
+  }>
+  visibleConflictDates: string[]
+  syncStatus?: GarminConnectionStatus
+}
+
+export interface RapidLogPreset {
+  id: string
+  label: string
+  source: 'barcode' | 'recent' | 'favorite' | 'saved_meal'
+  foodId?: string
+  servings?: number
+}
+
+export interface CoachModuleCandidate {
+  kind: CoachModuleKind
+  title: string
+  unresolved: boolean
+  reason: string
+}
+
+export interface CoachInterventionCard {
+  id: string
+  kind: CoachInterventionKind
+  title: string
+  summary: string
+  severity: ComplianceRiskLevel
+  reasons: string[]
+}
+
+export interface RecoveryReadinessSignal {
+  id: 'sleep' | 'resting_heart_rate' | 'step_load' | 'workout_load'
+  label: string
+  status: 'baseline' | 'degraded'
+  detail: string
+}
+
+export interface RecoveryReadiness {
+  state: RecoverySeverity
+  evaluatedDate: string
+  reasons: string[]
+  signals: RecoveryReadinessSignal[]
+}
+
+export type BodyProgressComparePreset = 'same_day' | '7d' | '30d' | 'custom'
+
+export interface BodyProgressGalleryItem {
+  snapshotId: string
+  photoId: string
+  pose: ProgressPhotoPose
+  date: string
+  fileName: string
+  dataUrl: string
+  metricCount: number
+  note?: string
+}
+
+export interface BodyMetricVisibilitySetting {
+  key: string
+  visible: boolean
+  updatedAt: string
+}
+
+export interface BodyProgressFocusState {
+  focusedMetricKey?: string
+  comparePreset: BodyProgressComparePreset
+  lastSelectedPose?: ProgressPhotoPose
+  compareMode?: BodyProgressCompareMode
+  galleryMode?: BodyProgressGalleryMode
+}
+
+export type MorningCommandTarget = 'log' | 'train' | 'progress' | 'review_queue'
+
+export type CommandConfidence = 'high' | 'medium' | 'low'
+
+export type CaptureConvenienceSource = 'voice' | 'meal_photo'
+
+export interface MorningStatusItem {
+  id:
+    | 'manual_override_active'
+    | 'garmin_readiness_stale'
+    | 'review_required_logging_blocked'
+    | 'compare_photo_missing'
+  label: string
+  detail: string
+  tone: 'neutral' | 'warning'
+}
+
+export interface RepeatLogRecommendation {
+  meal: MealType
+  label: string
+  count: number
+  source: 'saved_meal' | 'favorite' | 'shortcut'
+  entryContext: 'meal_slot' | 'global_add'
+  autocommitAction: 'none' | 'use_last_amount' | 'saved_meal_review'
+  preserveQueryOnBatchAdd: boolean
+  templateId?: string
+  templateLabel?: string
+  batchAction: 'none' | 'fill_meal' | 'fill_day'
+}
+
+export type ProgressStoryTone = 'on_track' | 'watch' | 'stalled'
+
+export interface WorkoutActionCard {
+  action: WorkoutAction
+  title: string
+  summary: string
+  reasons: string[]
+  reasonOrder: Array<'readiness' | 'anchor_lift' | 'records' | 'completion'>
+  source: 'computed' | 'manual_override'
+  evaluatedAt: string
+  readinessFresh: boolean
+  confidence: CommandConfidence
+  stalenessReason?: string
+  primaryCta: string
+  mode: 'directive' | 'review_first'
+  secondaryNote?: string
+  fuelDirective: string
+  volumeDirective: string
+  preservationRisk: 'low' | 'medium' | 'high'
+  evidenceReasons: WorkoutEvidenceReason[]
+  confidenceReason: string
+  freshnessLabel: 'Fresh readiness' | 'Stale readiness' | 'No readiness'
+}
+
+export interface CaptureChecklistItem {
+  id: CaptureChecklistItemId
+  label: string
+  status: CaptureChecklistStatus
+  detail: string
+}
+
+export interface BodyProgressQuickCompare {
+  preset: BodyProgressComparePreset
+  pose: ProgressPhotoPose
+  compareMode: BodyProgressCompareMode
+  galleryMode: BodyProgressGalleryMode
+  latestDate?: string
+  compareDate?: string
+  metricKey?: string
+  metricLabel?: string
+  metricUnit?: string
+  metricCurrentValue?: number
+  metricCompareValue?: number
+  metricDeltaLabel?: string
+  latestPhotoDataUrl?: string
+  comparePhotoDataUrl?: string
+  missingPhoto: boolean
+  storyTone: ProgressStoryTone
+  waistTrendLabel?: string
+  storySummary: string
+  nextActionPrompt?: string
+  missingSignals: Array<'compare_photo' | 'waist_metric' | 'weight_compare'>
+  scaleContext: BodyProgressScaleContext
+  captureConsistency: CaptureConsistency
+  captureChecklist: CaptureChecklistItem[]
+  shareEnabled: boolean
+}
+
+export interface CaptureConvenienceDraft {
+  id: string
+  source: CaptureConvenienceSource
+  confidence: CommandConfidence
+  rawLabel: string
+  suggestedName: string
+  suggestedAmount?: number
+  suggestedUnit?: string
+  photoPreviewUrl?: string
+  createdAt: string
+}
+
+export interface MorningPhoneSnapshot {
+  meal?: MealType
+  laneLabel: string
+  laneCount: number
+  repeatLog?: RepeatLogRecommendation
+  workoutAction?: WorkoutActionCard
+  bodyProgress?: BodyProgressQuickCompare
+  cutDayPlan?: CutDayPlan
+  primaryTarget: MorningCommandTarget
+  primaryLabel: string
+  secondaryTarget?: MorningCommandTarget
+  secondaryLabel?: string
+  secondaryReason?: string
+  whyNow: string
+  blockingStatusIds: string[]
+  confidence: CommandConfidence
+  statusItems: MorningStatusItem[]
+  deepLinkTarget: MorningCommandTarget
+  reasonStack: string[]
+  surfaceDensity: CommandSurfaceDensity
+}
+
+export interface StrengthRetentionSnapshot {
+  anchorLiftName?: string
+  anchorLiftTrend: 'up' | 'flat' | 'down'
+  volumeFloorStatus: 'met' | 'missed' | 'at_risk'
+  sessionCompletionRate7d: number
+  strengthRetentionScore: number
+}
+
+export interface CutCockpitTargetCard {
+  key: 'calories' | 'protein' | 'fiber' | 'sodium' | 'potassium'
+  label: string
+  consumed: number
+  target: number
+  remaining: number
+  unit: string
+}
+
+export interface CutCockpitSnapshot {
+  dailyQuestion: string
+  remainingTargets: CutCockpitTargetCard[]
+  readiness: RecoveryReadiness
+  weeklyIntervention?: CoachInterventionCard
+  strengthRetention: StrengthRetentionSnapshot
+  latestBodyProgressDate?: string
+  compareBodyProgressDate?: string
+  comparedMetricCount: number
+  comparedPhotoCount: number
+}
+
+export interface FastCheckInRun {
+  id: string
+  createdAt: string
+  checkInId: string
+  surface: 'dashboard' | 'coach'
+  decisionType: CoachingDecisionType
+  recommendationSummary: string
+  unresolvedModules: CoachModuleCandidate[]
+}
+
+export interface EncryptedSyncEnvelope {
+  id: string
+  recordKind: EncryptedSyncRecordKind
+  recordId: string
+  updatedAt: string
+  createdAt: string
+  status: EncryptedSyncEnvelopeStatus
+  ivBase64: string
+  cipherTextBase64: string
+  errorMessage?: string
+}
+
+export interface BenchmarkScenario {
+  id: string
+  name: string
+  flowKey?: string
+  required: boolean
+  baselineActionCount: number
+  baselineElapsedMs: number
+  actualActionCount: number
+  actualElapsedMs: number
+  correctnessPassed: boolean
+  createdAt: string
+}
+
+export interface BenchmarkReport {
+  id: string
+  createdAt: string
+  passed: boolean
+  blockedReason?: string
+  scenarios: BenchmarkScenario[]
+}
+
+export interface CoreClaimSnapshot {
+  evaluatedAt: string
+  passed: boolean
+  blockedReason?: string
+  reportId?: string
+  latestBenchmarkCreatedAt?: string
+  scenarioCount: number
+  readiness: {
+    fastCheckInSurfaceReady: boolean
+    nutritionDepthReady: boolean
+    loggingSurfaceReady: boolean
+    workoutsAnalyticsDepthReady: boolean
+    bodyProgressSurfaceReady: boolean
+    dashboardClaimReady: boolean
+    recoverableGapClosureData: boolean
+  }
+}
+
+export interface RecoveryExportPackManifest {
+  id: string
+  exportedAt: string
+  schemaVersion: number
+  recordCounts: {
+    foods: number
+    weights: number
+    logDays: number
+    logEntries: number
+    foodReviewQueue: number
+    garminImportedWeights: number
+    garminModifierRecords: number
+    garminWorkoutSummaries: number
+    bodyProgressSnapshots: number
+    workoutPrograms: number
+    workoutSessions: number
+    progressionDecisions: number
+    benchmarkReports: number
+  }
+  media: {
+    photoCount: number
+    totalBytes: number
+    hashes: Array<{
+      snapshotId: string
+      photoId: string
+      hash: string
+    }>
+  }
+}
+
+export interface RecoveryExportAudit {
+  restoredAt: string
+  sourceExportedAt: string
+  restoredCounts: RecoveryExportPackManifest['recordCounts']
+  mediaHashesVerified: boolean
 }
 
 export interface NutritionTotals {
@@ -669,6 +1603,7 @@ export interface RepoError {
 export interface BackupFile {
   schemaVersion: number
   exportedAt: string
+  recoveryManifest?: RecoveryExportPackManifest
   settings: UserSettings
   uiPrefs?: UiPrefs
   foods: Food[]
@@ -693,6 +1628,16 @@ export interface BackupFile {
   coachFeedback?: CoachFeedback[]
   coachQueue?: CoachQueuedQuestion[]
   coachConfig?: CoachProviderConfig
+  foodReviewQueue?: FoodReviewItem[]
+  garminImportedWeights?: GarminImportedWeight[]
+  garminModifierRecords?: GarminModifierRecord[]
+  garminWorkoutSummaries?: GarminWorkoutSummary[]
+  bodyProgressSnapshots?: BodyProgressSnapshot[]
+  workoutPrograms?: WorkoutProgram[]
+  workoutSessions?: WorkoutSession[]
+  progressionDecisions?: ProgressionDecision[]
+  encryptedSyncQueue?: EncryptedSyncEnvelope[]
+  benchmarkReports?: BenchmarkReport[]
 }
 
 export interface BackupPreview {
@@ -702,11 +1647,51 @@ export interface BackupPreview {
     weights: number
     logDays: number
     logEntries: number
+    foodReviewQueue: number
     wellness: number
     recoveryCheckIns: number
     dietPhases: number
     dietPhaseEvents: number
+    garminImportedWeights: number
+    garminModifierRecords: number
+    garminWorkoutSummaries: number
+    bodyProgressSnapshots: number
+    workoutPrograms: number
+    workoutSessions: number
+    progressionDecisions: number
+    benchmarkReports: number
   }
+}
+
+export interface HistoryImportWarning {
+  code: string
+  message: string
+  fileName?: string
+}
+
+export interface ParsedHistoryPayload {
+  provider: HistoryImportProvider
+  foodLogEntries: FoodLogEntry[]
+  weights: WeightEntry[]
+}
+
+export interface HistoryImportPreview {
+  provider: HistoryImportProvider
+  fileKinds: HistoryImportFileKind[]
+  counts: {
+    logEntries: number
+    logDays: number
+    weights: number
+    skippedRows: number
+    supportedFiles: number
+    unsupportedFiles: number
+  }
+  dateRange?: {
+    start: string
+    end: string
+  }
+  warnings: HistoryImportWarning[]
+  payload: ParsedHistoryPayload
 }
 
 export interface UndoQueueItem {
@@ -1009,7 +1994,7 @@ export interface SyncState {
   deadLetterCount: number
   consecutiveFailures: number
   highWatermark: number
-  bootstrapCompletedForUserId?: string
+  bootstrapResolvedForUserId?: string
   currentUserId?: string
   lastSyncedAt?: string
   lastSyncError?: string
@@ -1157,9 +2142,43 @@ export type CanonicalNutrientKey =
   | 'cholesterol'
   | 'potassium'
   | 'calcium'
+  | 'magnesium'
   | 'iron'
+  | 'vitaminC'
   | 'vitaminD'
+  | 'vitaminB12'
   | 'caffeine'
+  | 'monounsaturatedFat'
+  | 'polyunsaturatedFat'
+  | 'transFat'
+  | 'omega3'
+  | 'omega6'
+  | 'folate'
+  | 'vitaminA'
+  | 'vitaminE'
+  | 'vitaminK'
+  | 'thiamin'
+  | 'riboflavin'
+  | 'niacin'
+  | 'vitaminB6'
+  | 'biotin'
+  | 'pantothenicAcid'
+  | 'phosphorus'
+  | 'zinc'
+  | 'selenium'
+  | 'copper'
+  | 'manganese'
+  | 'iodine'
+  | 'chromium'
+  | 'molybdenum'
+  | 'choline'
+  | 'chloride'
+  | 'fluoride'
+  | 'boron'
+  | 'betaCarotene'
+  | 'lutein'
+  | 'lycopene'
+  | 'alcohol'
 
 export interface NutrientAmountV1 {
   key: CanonicalNutrientKey
@@ -1336,6 +2355,65 @@ export interface CoachingTargetSet {
   fatTarget: number
 }
 
+export interface EnergyModelSnapshot {
+  estimatedTdee: number | null
+  averageLoggedCalories: number
+  currentCalorieTarget: number
+  proposedCalorieTarget?: number
+  calorieDelta?: number
+  targetWeeklyRatePercent: number
+  observedWeeklyRatePercent: number
+  averageSteps: number
+  weeklyCardioMinutes: number
+}
+
+export type CoachingEvidenceTone = 'positive' | 'neutral' | 'caution'
+
+export interface CoachingEvidenceCard {
+  id: string
+  title: string
+  summary: string
+  tone: CoachingEvidenceTone
+  details: string[]
+}
+
+export interface GarminModifierWindow {
+  windowStart: string
+  windowEnd: string
+  importedDays: number
+  averageSleepMinutes: number | null
+  averageRestingHeartRate: number | null
+  averageSteps: number | null
+  totalDerivedCardioMinutes: number
+  nextWindowOnly: true
+}
+
+export interface WeeklyCheckInPacket {
+  id: string
+  source: CoachingDecisionSource
+  generatedAt: string
+  recommendationReason: string
+  recommendationExplanation?: string
+  confidenceBand: CoachingConfidence
+  confidenceScore: number | null
+  decisionType: CoachingDecisionType
+  nextCheckInDate: string
+  targetDelta?: number
+  previousTargets: CoachingTargetSet
+  proposedTargets?: CoachingTargetSet
+  energyModel: EnergyModelSnapshot
+  garminModifierWindow?: GarminModifierWindow
+  evidenceCards: CoachingEvidenceCard[]
+  interventions?: CoachInterventionCard[]
+  moduleOutputs?: Array<{
+    kind: CoachModuleKind
+    enabled: boolean
+    summary: string
+  }>
+  unresolvedModuleCandidates?: CoachModuleCandidate[]
+  fastCheckInEquivalent?: boolean
+}
+
 export interface CoachingDecisionRecord {
   id: string
   source: CoachingDecisionSource
@@ -1351,6 +2429,7 @@ export interface CoachingDecisionRecord {
   explanation: string
   previousTargets: CoachingTargetSet
   proposedTargets?: CoachingTargetSet
+  weeklyCheckInPacket?: WeeklyCheckInPacket
   createdAt: string
   appliedAt?: string
   overriddenAt?: string

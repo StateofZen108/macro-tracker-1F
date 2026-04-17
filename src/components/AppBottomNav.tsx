@@ -10,7 +10,10 @@ interface AppBottomNavProps {
 function AppBottomNav({ items, activeTab, onSelect }: AppBottomNavProps) {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
-      <div className="mx-auto grid max-w-[480px] grid-cols-4 gap-2 rounded-[30px] border border-black/5 bg-white/80 p-2 shadow-glow backdrop-blur dark:border-white/10 dark:bg-slate-950/80">
+      <div
+        className="mx-auto grid max-w-[560px] gap-2 rounded-[30px] border border-black/5 bg-white/80 p-2 shadow-glow backdrop-blur dark:border-white/10 dark:bg-slate-950/80"
+        style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
+      >
         {items.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.id

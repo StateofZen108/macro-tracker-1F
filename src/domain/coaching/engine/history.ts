@@ -5,6 +5,7 @@ import type {
   CoachingExplanationV1,
   LegacyCoachingCode,
   CoachingRecommendationV1,
+  WeeklyCheckInPacket,
   UserSettings,
 } from '../../../types'
 import type { CoachingEngineEvaluation, CoachingHistoryEntry } from './_types'
@@ -34,6 +35,7 @@ export function buildCoachingDecisionRecord(params: {
   windowEnd: string
   recommendation: CoachingRecommendationV1
   explanation: CoachingExplanationV1
+  weeklyCheckInPacket?: WeeklyCheckInPacket
   createdAt?: string
 }): CoachingDecisionRecord {
   const timestamp = params.createdAt ?? new Date().toISOString()
@@ -53,6 +55,7 @@ export function buildCoachingDecisionRecord(params: {
     explanation: params.explanation.explanation,
     previousTargets: params.recommendation.previousTargets,
     proposedTargets: params.recommendation.proposedTargets,
+    weeklyCheckInPacket: params.weeklyCheckInPacket,
     createdAt: timestamp,
     updatedAt: timestamp,
   }
@@ -125,6 +128,7 @@ export function buildManualOverrideDecisionRecord(
   effectiveDate: string,
   reasonCode: CoachingReasonCode | LegacyCoachingCode = 'manual_override',
 ): CoachingDecisionRecord {
+  const effectiveDateKey = effectiveDate.slice(0, 10)
   const previousTargets = buildTargetSet(previousSettings)
   const proposedTargets = buildTargetSet(nextSettings)
   const calorieDelta = proposedTargets.calorieTarget - previousTargets.calorieTarget
@@ -137,13 +141,13 @@ export function buildManualOverrideDecisionRecord(
   const timestamp = new Date().toISOString()
 
   return {
-    id: `manual_override:${effectiveDate}:${timestamp}`,
+    id: `manual_override:${effectiveDateKey}:${timestamp}`,
     source: 'manual_override',
     status: 'overridden',
     decisionType,
-    windowStart: effectiveDate,
-    windowEnd: effectiveDate,
-    effectiveDate,
+    windowStart: effectiveDateKey,
+    windowEnd: effectiveDateKey,
+    effectiveDate: effectiveDateKey,
     confidenceBand: 'high',
     confidenceScore: null,
     reasonCodes: [reasonCode, 'manual_override'],

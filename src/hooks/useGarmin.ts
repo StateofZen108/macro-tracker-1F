@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ActionResult, AppActionError, GarminConnectionInfo } from '../types'
 import { FEATURE_FLAGS } from '../config/featureFlags'
+import { recordDiagnosticsEvent } from '../utils/diagnostics'
 import {
   requestGarminConnect,
   requestGarminDisconnect,
   requestGarminStatus,
   requestGarminSync,
 } from '../utils/garmin'
+import { loadWeights } from '../utils/storage/weights'
+import { mergeGarminImportedData } from '../utils/storage/garminImports'
 import { getSessionAccessToken } from '../utils/supabase'
 import { useWellness } from './useWellness'
 
@@ -97,6 +100,47 @@ export function useGarmin(session: SyncSessionLike | null) {
         return mergeResult as ActionResult<GarminConnectionInfo>
       }
 
+      if (FEATURE_FLAGS.garminIntelligenceV2) {
+        const typedImportResult = mergeGarminImportedData({
+          importedWeights: response.importedWeights,
+          modifierRecords:
+            response.modifierRecords ??
+            response.records.map((record) => ({
+              date: record.date,
+              steps: record.steps,
+              sleepMinutes: record.sleepMinutes,
+              restingHeartRate: record.restingHeartRate,
+              derivedCardioMinutes: record.derivedCardioMinutes,
+              sourceUpdatedAt: record.sourceUpdatedAt,
+            })),
+          workoutSummaries: response.workoutSummaries,
+          localWeights: loadWeights(),
+        })
+        if (!typedImportResult.ok) {
+          setLastError(typedImportResult.error)
+          return typedImportResult as ActionResult<GarminConnectionInfo>
+        }
+
+        void recordDiagnosticsEvent({
+          eventType:
+            typedImportResult.data.localWeightConflictCount > 0
+              ? 'garmin_v2_local_weight_wins'
+              : 'garmin_v2_sync_succeeded',
+          severity: 'info',
+          scope: 'diagnostics',
+          message:
+            typedImportResult.data.localWeightConflictCount > 0
+              ? 'Garmin sync completed and local manual weight remained authoritative for same-date conflicts.'
+              : 'Garmin sync completed and typed Garmin import records were stored.',
+          payload: {
+            importedWeights: typedImportResult.data.weights.length,
+            modifierRecords: typedImportResult.data.modifiers.length,
+            workoutSummaries: typedImportResult.data.workouts.length,
+            localWeightConflictCount: typedImportResult.data.localWeightConflictCount,
+          },
+        })
+      }
+
       setConnection(response.connection)
       setLastError(null)
       return ok(response.connection)
@@ -105,6 +149,12 @@ export function useGarmin(session: SyncSessionLike | null) {
         code: 'garminSync',
         message: error instanceof Error ? error.message : 'Unable to sync Garmin right now.',
       } satisfies AppActionError
+      void recordDiagnosticsEvent({
+        eventType: 'garmin_v2_sync_failed',
+        severity: 'error',
+        scope: 'diagnostics',
+        message: nextError.message,
+      })
       setLastError(nextError)
       return { ok: false, error: nextError }
     } finally {

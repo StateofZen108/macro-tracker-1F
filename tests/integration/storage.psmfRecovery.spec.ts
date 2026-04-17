@@ -87,7 +87,7 @@ describe('storage psmf and recovery round trips', () => {
 
     window.localStorage.clear()
 
-    const restoreResult = applyBackupImport(exported.data, 'replace')
+    const restoreResult = await applyBackupImport(exported.data, 'replace')
     expect(restoreResult.ok).toBe(true)
 
     expect(loadWellnessEntries()).toEqual([wellnessEntry])
@@ -148,7 +148,7 @@ describe('storage psmf and recovery round trips', () => {
       }
 
       window.localStorage.clear()
-      const restoreResult = applyBackupImport(exported.data, 'replace')
+      const restoreResult = await applyBackupImport(exported.data, 'replace')
       expect(restoreResult.ok).toBe(true)
 
       expect(loadDietPhaseEvents()).toEqual([

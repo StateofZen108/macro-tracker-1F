@@ -84,6 +84,7 @@ export function DateNavigator({ date, onChange }: DateNavigatorProps) {
           type="date"
           className="sr-only"
           value={date}
+          aria-label="Select date"
           onChange={(event) => onChange(event.target.value)}
         />
       </label>

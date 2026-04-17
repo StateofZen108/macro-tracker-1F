@@ -102,7 +102,7 @@ export function useSafetySnapshots() {
         return fail('snapshotMissing', 'No safety snapshot is available to restore.')
       }
 
-      const result = applyBackupImport(snapshot.backup, 'replace')
+      const result = await applyBackupImport(snapshot.backup, 'replace')
       await refresh()
       return result
     } catch (error) {

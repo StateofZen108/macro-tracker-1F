@@ -61,6 +61,8 @@ export function LabelCaptureSheet({
         capture="environment"
         className="hidden"
         data-testid="ocr-camera-input"
+        aria-label="Take nutrition label photo"
+        tabIndex={-1}
         onChange={(event) => onTakePhotoSelect(event.target.files?.[0] ?? null)}
       />
       <input
@@ -69,6 +71,8 @@ export function LabelCaptureSheet({
         accept="image/*"
         className="hidden"
         data-testid="ocr-gallery-input"
+        aria-label="Choose nutrition label photo"
+        tabIndex={-1}
         onChange={(event) => onChoosePhotoSelect(event.target.files?.[0] ?? null)}
       />
 

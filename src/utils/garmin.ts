@@ -1,4 +1,10 @@
-import type { GarminConnectionInfo, WellnessEntry } from '../types'
+import type {
+  GarminConnectionInfo,
+  GarminImportedWeight,
+  GarminModifierRecord,
+  GarminWorkoutSummary,
+  WellnessEntry,
+} from '../types'
 
 export interface GarminConnectResponse {
   authorizationUrl: string
@@ -14,6 +20,19 @@ export interface GarminStatusResponse {
 
 export interface GarminSyncResult {
   records: WellnessEntry[]
+  importedWeights?: Array<Pick<GarminImportedWeight, 'date' | 'weight' | 'unit' | 'sourceUpdatedAt'>>
+  modifierRecords?: Array<
+    Pick<
+      GarminModifierRecord,
+      'date' | 'steps' | 'sleepMinutes' | 'restingHeartRate' | 'activeCalories' | 'derivedCardioMinutes' | 'sourceUpdatedAt'
+    >
+  >
+  workoutSummaries?: Array<
+    Pick<
+      GarminWorkoutSummary,
+      'date' | 'workoutName' | 'startedAt' | 'durationMinutes' | 'activeCalories' | 'averageHeartRate' | 'sourceUpdatedAt'
+    >
+  >
   connection: GarminConnectionInfo
   window: {
     startDate: string

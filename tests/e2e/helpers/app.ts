@@ -19,7 +19,10 @@ async function resetApp(page: Page) {
     await deleteDatabase('macrotracker-storage')
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('button', { name: /^log$/i })).toBeVisible()
+  const logButton = page.getByRole('button', { name: /^log$/i }).first()
+  await expect(logButton).toBeVisible()
+  await logButton.click()
+  await expect(page.locator('[data-meal-section="breakfast"]').first()).toBeVisible()
 }
 
 async function expectCenterHittable(locator: Locator) {
@@ -57,8 +60,20 @@ function getAddFoodDialog(page: Page) {
   return page.getByRole('dialog', { name: /add food/i })
 }
 
-function getAddFoodSearchInput(page: Page) {
-  return getAddFoodDialog(page).getByPlaceholder(/Search your (saved foods|library first)/i)
+async function getAddFoodSearchInput(page: Page): Promise<Locator> {
+  const addFoodDialog = getAddFoodDialog(page)
+  const searchInput = addFoodDialog.getByPlaceholder(/Search your (saved foods|library first)/i)
+  if (await searchInput.isVisible().catch(() => false)) {
+    return searchInput
+  }
+
+  const expandButton = addFoodDialog.getByRole('button', { name: /more ways to log/i })
+  if (await expandButton.isVisible().catch(() => false)) {
+    await expandButton.click()
+  }
+
+  await expect(searchInput).toBeVisible()
+  return searchInput
 }
 
 function getSettingsTargetsForm(page: Page) {
@@ -171,7 +186,7 @@ async function addFoodToMeal(
 ) {
   await openMealSheet(page, meal)
   const addFoodDialog = getAddFoodDialog(page)
-  await getAddFoodSearchInput(page).fill(query)
+  await (await getAddFoodSearchInput(page)).fill(query)
   await page.getByRole('button', { name: new RegExp(query, 'i') }).first().click()
   await page.getByRole('button', { name: /add to meal/i }).click()
 

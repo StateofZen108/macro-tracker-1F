@@ -34,7 +34,41 @@ export interface LegacyNutritionSourceV1 {
   cholesterol?: number
   potassium?: number
   calcium?: number
+  magnesium?: number
   iron?: number
+  vitaminC?: number
   vitaminD?: number
+  vitaminB12?: number
   caffeine?: number
+  monounsaturatedFat?: number
+  polyunsaturatedFat?: number
+  transFat?: number
+  omega3?: number
+  omega6?: number
+  folate?: number
+  vitaminA?: number
+  vitaminE?: number
+  vitaminK?: number
+  thiamin?: number
+  riboflavin?: number
+  niacin?: number
+  vitaminB6?: number
+  biotin?: number
+  pantothenicAcid?: number
+  phosphorus?: number
+  zinc?: number
+  selenium?: number
+  copper?: number
+  manganese?: number
+  iodine?: number
+  chromium?: number
+  molybdenum?: number
+  choline?: number
+  chloride?: number
+  fluoride?: number
+  boron?: number
+  betaCarotene?: number
+  lutein?: number
+  lycopene?: number
+  alcohol?: number
 }

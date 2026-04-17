@@ -1,24 +1,66 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import type { BootstrapResolution, BootstrapStatusSummary, SyncMutation, SyncStatus } from '../types'
+import type {
+  BootstrapResolution,
+  BootstrapStatusSummary,
+  SyncCounts,
+  SyncMutation,
+  SyncStatus,
+} from '../types'
 import {
   applyPulledSyncRecords,
   buildBootstrapSummary,
   captureLocalSyncedDataset,
   createLocalSyncRollbackSnapshot,
+  isSyncedDatasetEffectivelyEmpty,
   mergeLocalAndCloudDatasets,
   replaceLocalSyncedDataset,
   restoreLocalSyncRollbackSnapshot,
 } from '../utils/sync/localState'
-import { clearSyncDeadLetters, getDeviceId, loadSyncQueue, loadSyncState, markBootstrapCompletedForUser, markQueuedMutationAttempts, moveMutationsToDeadLetter, removeQueuedMutations, resetSyncRuntimeForAccountSwitch, setSyncRuntimeStatus, setSyncUser, subscribeToSyncStore, applySyncWatermark } from '../utils/sync/core'
+import {
+  applySyncWatermark,
+  clearSyncDeadLetters,
+  getDeviceId,
+  loadSyncQueue,
+  loadSyncState,
+  markBootstrapResolvedForUser,
+  markQueuedMutationAttempts,
+  moveMutationsToDeadLetter,
+  removeQueuedMutations,
+  resetSyncRuntimeForAccountSwitch,
+  setSyncRuntimeStatus,
+  setSyncUser,
+  subscribeToSyncStore,
+} from '../utils/sync/core'
 import { buildSyncCountsFromDataset, datasetToSyncRecordDrafts, recordsToDataset } from '../utils/sync/shared'
-import { buildMagicLinkRedirectUrl, clearAuthCallbackQuery, getSessionAccessToken, getSupabaseBrowserClient, hasAuthCallbackQuery, isSupabaseConfigured } from '../utils/supabase'
-import { fetchBootstrapStatus, pullSyncRecords, pushSyncMutations, submitBootstrapResolution } from '../utils/sync/api'
+import {
+  buildMagicLinkRedirectUrl,
+  clearAuthCallbackQuery,
+  getSessionAccessToken,
+  getSupabaseBrowserClient,
+  hasAuthCallbackQuery,
+  isSupabaseConfigured,
+} from '../utils/supabase'
+import {
+  fetchBootstrapStatus,
+  pullSyncRecords,
+  pushSyncMutations,
+  submitBootstrapResolution,
+} from '../utils/sync/api'
 import { recordDiagnosticsEvent } from '../utils/diagnostics'
-import { loadSettings } from '../utils/storage/settings'
-import type { SyncCounts } from '../types'
+import { DEFAULT_SETTINGS } from '../utils/storage/settings'
 
 const RETRY_DELAYS_MS = [5_000, 30_000, 120_000, 600_000]
+const MISSING_LOCAL_BASE_STATE_MESSAGE =
+  'Local sync state is missing on this device. Review the dead-letter queue before continuing.'
+
+export interface BootstrapResolutionView {
+  requiresResolution: boolean
+  reason: 'first_device_resolution' | 'post_sign_in_conflict' | null
+  localEffectivelyEmpty: boolean
+  cloudEffectivelyEmpty: boolean | null
+  defaultResolution: BootstrapResolution | null
+}
 
 function chunkMutations(mutations: SyncMutation[]): SyncMutation[] {
   const batch: SyncMutation[] = []
@@ -45,6 +87,28 @@ function deriveOnlineStatus(pendingCount: number): SyncStatus {
   return pendingCount > 0 ? 'offlineChangesPending' : 'upToDate'
 }
 
+function buildFirstDeviceDefaultResolution(
+  bootstrapSummary: BootstrapStatusSummary,
+): BootstrapResolution | null {
+  if (bootstrapSummary.cloudEmpty && !bootstrapSummary.localEmpty) {
+    return 'replaceCloudWithThisDevice'
+  }
+
+  if (!bootstrapSummary.cloudEmpty && bootstrapSummary.localEmpty) {
+    return 'useCloudOnThisDevice'
+  }
+
+  if (!bootstrapSummary.cloudEmpty && !bootstrapSummary.localEmpty) {
+    return 'mergeThisDeviceIntoCloud'
+  }
+
+  return null
+}
+
+function getSessionKey(session: Session, accessToken: string): string {
+  return `${session.user.id}:${accessToken}`
+}
+
 export function useSync() {
   const configured = isSupabaseConfigured()
   const syncStore = useSyncExternalStore(subscribeToSyncStore, loadSyncState, loadSyncState)
@@ -52,9 +116,14 @@ export function useSync() {
   const [authNotice, setAuthNotice] = useState<string | null>(null)
   const [authError, setAuthError] = useState<string | null>(null)
   const [bootstrapSummary, setBootstrapSummary] = useState<BootstrapStatusSummary | null>(null)
+  const [bootstrapResolutionView, setBootstrapResolutionView] =
+    useState<BootstrapResolutionView | null>(null)
   const [mergePreview, setMergePreview] = useState<SyncCounts | null>(null)
   const [bootstrapBusy, setBootstrapBusy] = useState(false)
+  const authLifecycleCancelledRef = useRef(false)
   const syncInFlightRef = useRef(false)
+  const reconcileInFlightRef = useRef<{ key: string; promise: Promise<boolean> } | null>(null)
+  const lastSuccessfulReconcileSessionKeyRef = useRef<string | null>(null)
   const retryTimeoutRef = useRef<number | null>(null)
 
   const supabase = useMemo(() => getSupabaseBrowserClient(), [])
@@ -66,143 +135,370 @@ export function useSync() {
     }
   }, [])
 
-  const refreshBootstrapSummary = useCallback(
-    async (activeSession: Session | null) => {
-      if (!activeSession) {
-        return
+  const resetBootstrapResolutionState = useCallback(() => {
+    setBootstrapResolutionView(null)
+    setMergePreview(null)
+  }, [])
+
+  const setReadyRuntimeStatus = useCallback(
+    (options?: { lastSyncedAt?: string; preserveBlockingMessage?: boolean }) => {
+      const currentState = loadSyncState()
+      setSyncRuntimeStatus(deriveOnlineStatus(loadSyncQueue().length), {
+        lastSyncedAt: options?.lastSyncedAt,
+        lastSyncError: undefined,
+        blockingMessage: options?.preserveBlockingMessage ? currentState.blockingMessage : undefined,
+        consecutiveFailures: 0,
+      })
+    },
+    [],
+  )
+
+  const deadLetterMissingLocalBaseState = useCallback(() => {
+    const mutationIds = loadSyncQueue().map((mutation) => mutation.mutationId)
+    if (!mutationIds.length) {
+      return false
+    }
+
+    moveMutationsToDeadLetter(
+      mutationIds,
+      'missingLocalBaseState',
+      MISSING_LOCAL_BASE_STATE_MESSAGE,
+    )
+    return true
+  }, [])
+
+  const loadFullCloudDataset = useCallback(async (accessToken: string) => {
+    const pullResponse = await pullSyncRecords(accessToken, 0)
+    const cloudDataset = recordsToDataset(pullResponse.records, DEFAULT_SETTINGS)
+    return {
+      pullResponse,
+      cloudDataset,
+      cloudEffectivelyEmpty: isSyncedDatasetEffectivelyEmpty(cloudDataset),
+    }
+  }, [])
+
+  const applyFullCloudDataset = useCallback(
+    (cloudDataset: ReturnType<typeof captureLocalSyncedDataset>, pullResponse: Awaited<ReturnType<typeof pullSyncRecords>>) => {
+      const replaceResult = replaceLocalSyncedDataset(cloudDataset)
+      if (!replaceResult.ok) {
+        throw new Error(replaceResult.error.message)
+      }
+
+      applySyncWatermark(
+        pullResponse.highWatermark,
+        pullResponse.records.map((record) => ({
+          scope: record.scope,
+          recordId: record.recordId,
+          serverVersion: record.serverVersion,
+        })),
+      )
+      setBootstrapSummary(buildBootstrapSummary(buildSyncCountsFromDataset(cloudDataset), true))
+    },
+    [],
+  )
+
+  const runIncrementalSync = useCallback(
+    async (activeSession: Session): Promise<boolean> => {
+      if (authLifecycleCancelledRef.current) {
+        return false
+      }
+
+      if (!configured || !supabase) {
+        return false
+      }
+
+      if (syncInFlightRef.current) {
+        return true
       }
 
       const accessToken = getSessionAccessToken(activeSession)
       if (!accessToken) {
-        return
+        const message = 'Your session expired. Sign in again to resume sync.'
+        setAuthError(message)
+        setSyncRuntimeStatus('reauthRequired', {
+          lastSyncError: message,
+        })
+        return false
       }
 
-      const serverSummary = await fetchBootstrapStatus(accessToken)
-      const localSummary = buildBootstrapSummary(serverSummary.cloudCounts, serverSummary.bootstrapCompleted)
-      setBootstrapSummary(localSummary)
+      clearRetryTimeout()
+      syncInFlightRef.current = true
+      setSyncRuntimeStatus('syncing')
 
-      if (serverSummary.bootstrapCompleted || syncStore.bootstrapCompletedForUserId === activeSession.user.id) {
-        markBootstrapCompletedForUser(activeSession.user.id)
-        setSyncRuntimeStatus(deriveOnlineStatus(loadSyncQueue().length), {
-          consecutiveFailures: 0,
-          lastSyncError: undefined,
-          blockingMessage: undefined,
+      try {
+        let queue = loadSyncQueue()
+        while (queue.length > 0) {
+          const batch = chunkMutations(queue)
+          const batchIds = batch.map((mutation) => mutation.mutationId)
+          markQueuedMutationAttempts(batchIds)
+          const pushResponse = await pushSyncMutations(accessToken, getDeviceId(), batch)
+
+          removeQueuedMutations(pushResponse.applied.map((item) => item.mutationId))
+          for (const deadLetter of pushResponse.deadLetters) {
+            moveMutationsToDeadLetter([deadLetter.mutationId], deadLetter.code, deadLetter.message)
+          }
+          applySyncWatermark(
+            pushResponse.highWatermark,
+            pushResponse.applied.map((item) => ({
+              scope: item.scope,
+              recordId: item.recordId,
+              serverVersion: item.serverVersion,
+            })),
+          )
+
+          queue = loadSyncQueue()
+        }
+
+        const pullResponse = await pullSyncRecords(accessToken, loadSyncState().highWatermark)
+        if (pullResponse.records.length > 0) {
+          const applyResult = applyPulledSyncRecords(pullResponse.records)
+          if (!applyResult.ok) {
+            throw new Error(applyResult.error.message)
+          }
+
+          applySyncWatermark(
+            pullResponse.highWatermark,
+            pullResponse.records.map((record) => ({
+              scope: record.scope,
+              recordId: record.recordId,
+              serverVersion: record.serverVersion,
+            })),
+          )
+        }
+
+        setReadyRuntimeStatus({
+          lastSyncedAt: new Date().toISOString(),
         })
-      } else {
-        setSyncRuntimeStatus('bootstrapRequired')
+        setAuthError(null)
+        return true
+      } catch (error) {
+        const nextFailures = loadSyncState().consecutiveFailures + 1
+        const message = error instanceof Error ? error.message : 'Unable to sync your data right now.'
+        const reauthRequired = /auth|session|token|unauthor/i.test(message)
+        void recordDiagnosticsEvent({
+          eventType: 'sync_push_failed',
+          severity: 'error',
+          scope: 'diagnostics',
+          message,
+          payload: {
+            consecutiveFailures: nextFailures,
+            reauthRequired,
+          },
+        })
+        setSyncRuntimeStatus(reauthRequired ? 'reauthRequired' : 'error', {
+          lastSyncError: message,
+          consecutiveFailures: nextFailures,
+        })
+        setAuthError(message)
+
+        if (!reauthRequired && nextFailures <= RETRY_DELAYS_MS.length) {
+          const retryDelay = RETRY_DELAYS_MS[nextFailures - 1]
+          retryTimeoutRef.current = window.setTimeout(() => {
+            void runIncrementalSync(activeSession)
+          }, retryDelay)
+        }
+
+        return false
+      } finally {
+        syncInFlightRef.current = false
       }
     },
-    [syncStore.bootstrapCompletedForUserId],
+    [clearRetryTimeout, configured, setReadyRuntimeStatus, supabase],
+  )
+
+  const showBootstrapRequired = useCallback(
+    (summary: BootstrapStatusSummary, view: BootstrapResolutionView) => {
+      setBootstrapSummary(summary)
+      setBootstrapResolutionView(view)
+      setMergePreview(null)
+      setSyncRuntimeStatus('bootstrapRequired')
+    },
+    [],
+  )
+
+  const reconcileSignedInSession = useCallback(
+    async (activeSession: Session): Promise<boolean> => {
+      if (authLifecycleCancelledRef.current) {
+        return false
+      }
+
+      const accessToken = getSessionAccessToken(activeSession)
+      if (!accessToken) {
+        const message = 'Your session expired. Sign in again to continue.'
+        setAuthError(message)
+        setSyncRuntimeStatus('reauthRequired', {
+          lastSyncError: message,
+        })
+        return false
+      }
+
+      const key = getSessionKey(activeSession, accessToken)
+      const localEffectivelyEmpty = isSyncedDatasetEffectivelyEmpty(captureLocalSyncedDataset())
+      const currentState = loadSyncState()
+      const resolvedForUser = currentState.bootstrapResolvedForUserId === activeSession.user.id
+
+      if (reconcileInFlightRef.current?.key === key) {
+        return reconcileInFlightRef.current.promise
+      }
+
+      if (
+        lastSuccessfulReconcileSessionKeyRef.current === key &&
+        (!localEffectivelyEmpty || !resolvedForUser)
+      ) {
+        return true
+      }
+
+      const executeReconcile = async (): Promise<boolean> => {
+        if (authLifecycleCancelledRef.current) {
+          return false
+        }
+
+        clearRetryTimeout()
+        setAuthError(null)
+
+        if (resolvedForUser) {
+          if (!localEffectivelyEmpty) {
+            resetBootstrapResolutionState()
+            return runIncrementalSync(activeSession)
+          }
+
+          const queueMovedToDeadLetter =
+            loadSyncState().pendingMutationCount > 0 && deadLetterMissingLocalBaseState()
+          setSyncRuntimeStatus('syncing')
+
+          const { pullResponse, cloudDataset, cloudEffectivelyEmpty } =
+            await loadFullCloudDataset(accessToken)
+          if (!cloudEffectivelyEmpty) {
+            applyFullCloudDataset(cloudDataset, pullResponse)
+          } else {
+            setBootstrapSummary(buildBootstrapSummary(buildSyncCountsFromDataset(cloudDataset), true))
+          }
+
+          markBootstrapResolvedForUser(activeSession.user.id)
+          resetBootstrapResolutionState()
+          setReadyRuntimeStatus({
+            lastSyncedAt: new Date().toISOString(),
+            preserveBlockingMessage: queueMovedToDeadLetter,
+          })
+          return true
+        }
+
+        const serverSummary = await fetchBootstrapStatus(accessToken)
+        const localSummary = buildBootstrapSummary(
+          serverSummary.cloudCounts,
+          serverSummary.bootstrapCompleted,
+        )
+        setBootstrapSummary(localSummary)
+
+        if (!serverSummary.bootstrapCompleted) {
+          showBootstrapRequired(localSummary, {
+            requiresResolution: true,
+            reason: 'first_device_resolution',
+            localEffectivelyEmpty,
+            cloudEffectivelyEmpty: null,
+            defaultResolution: buildFirstDeviceDefaultResolution(localSummary),
+          })
+          return true
+        }
+
+        const queueMovedToDeadLetter =
+          localEffectivelyEmpty && loadSyncState().pendingMutationCount > 0
+            ? deadLetterMissingLocalBaseState()
+            : false
+
+        setSyncRuntimeStatus('syncing')
+        const { pullResponse, cloudDataset, cloudEffectivelyEmpty } =
+          await loadFullCloudDataset(accessToken)
+
+        if (localEffectivelyEmpty) {
+          if (!cloudEffectivelyEmpty) {
+            applyFullCloudDataset(cloudDataset, pullResponse)
+          } else {
+            setBootstrapSummary(buildBootstrapSummary(buildSyncCountsFromDataset(cloudDataset), true))
+          }
+
+          markBootstrapResolvedForUser(activeSession.user.id)
+          resetBootstrapResolutionState()
+          setReadyRuntimeStatus({
+            lastSyncedAt: new Date().toISOString(),
+            preserveBlockingMessage: queueMovedToDeadLetter,
+          })
+          return true
+        }
+
+        showBootstrapRequired(localSummary, {
+          requiresResolution: true,
+          reason: 'post_sign_in_conflict',
+          localEffectivelyEmpty: false,
+          cloudEffectivelyEmpty,
+          defaultResolution: cloudEffectivelyEmpty ? 'replaceCloudWithThisDevice' : null,
+        })
+        return true
+      }
+
+      const reconcilePromise = Promise.resolve().then(executeReconcile)
+
+      reconcileInFlightRef.current = {
+        key,
+        promise: reconcilePromise,
+      }
+
+      try {
+        const succeeded = await reconcilePromise
+        if (succeeded) {
+          lastSuccessfulReconcileSessionKeyRef.current = key
+        }
+        return succeeded
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Unable to reconcile your synced data right now.'
+        const reauthRequired = /auth|session|token|unauthor/i.test(message)
+        setAuthError(message)
+        setSyncRuntimeStatus(reauthRequired ? 'reauthRequired' : 'error', {
+          lastSyncError: message,
+        })
+        return false
+      } finally {
+        if (reconcileInFlightRef.current?.key === key) {
+          reconcileInFlightRef.current = null
+        }
+      }
+    },
+    [
+      applyFullCloudDataset,
+      clearRetryTimeout,
+      deadLetterMissingLocalBaseState,
+      loadFullCloudDataset,
+      resetBootstrapResolutionState,
+      runIncrementalSync,
+      setReadyRuntimeStatus,
+      showBootstrapRequired,
+    ],
   )
 
   const syncNow = useCallback(async () => {
-    if (!configured || !supabase || !session || syncInFlightRef.current) {
+    if (!configured || !supabase || !session) {
       return
     }
 
-    if (syncStore.bootstrapCompletedForUserId !== session.user.id) {
-      await refreshBootstrapSummary(session)
+    if (syncInFlightRef.current) {
       return
     }
 
     const accessToken = getSessionAccessToken(session)
-    if (!accessToken) {
-      setSyncRuntimeStatus('reauthRequired', {
-        lastSyncError: 'Your session expired. Sign in again to resume sync.',
-      })
+    if (accessToken && reconcileInFlightRef.current?.key === getSessionKey(session, accessToken)) {
+      await reconcileInFlightRef.current.promise
       return
     }
 
-    clearRetryTimeout()
-    syncInFlightRef.current = true
-    setSyncRuntimeStatus('syncing')
-
-    try {
-      let queue = loadSyncQueue()
-      while (queue.length > 0) {
-        const batch = chunkMutations(queue)
-        const batchIds = batch.map((mutation) => mutation.mutationId)
-        markQueuedMutationAttempts(batchIds)
-        const pushResponse = await pushSyncMutations(accessToken, getDeviceId(), batch)
-
-        removeQueuedMutations(pushResponse.applied.map((item) => item.mutationId))
-        for (const deadLetter of pushResponse.deadLetters) {
-          moveMutationsToDeadLetter([deadLetter.mutationId], deadLetter.code, deadLetter.message)
-        }
-        applySyncWatermark(
-          pushResponse.highWatermark,
-          pushResponse.applied.map((item) => ({
-            scope: item.scope,
-            recordId: item.recordId,
-            serverVersion: item.serverVersion,
-          })),
-        )
-
-        queue = loadSyncQueue()
-      }
-
-      const pullResponse = await pullSyncRecords(accessToken, loadSyncState().highWatermark)
-      if (pullResponse.records.length > 0) {
-        const applyResult = applyPulledSyncRecords(pullResponse.records)
-        if (!applyResult.ok) {
-          throw new Error(applyResult.error.message)
-        }
-
-        applySyncWatermark(
-          pullResponse.highWatermark,
-          pullResponse.records.map((record) => ({
-            scope: record.scope,
-            recordId: record.recordId,
-            serverVersion: record.serverVersion,
-          })),
-        )
-      }
-
-      setSyncRuntimeStatus(deriveOnlineStatus(loadSyncQueue().length), {
-        lastSyncedAt: new Date().toISOString(),
-        lastSyncError: undefined,
-        blockingMessage: undefined,
-        consecutiveFailures: 0,
-      })
-      setAuthError(null)
-    } catch (error) {
-      const nextFailures = syncStore.consecutiveFailures + 1
-      const message = error instanceof Error ? error.message : 'Unable to sync your data right now.'
-      const reauthRequired = /auth|session|token|unauthor/i.test(message)
-      void recordDiagnosticsEvent({
-        eventType: 'sync_push_failed',
-        severity: 'error',
-        scope: 'diagnostics',
-        message,
-        payload: {
-          consecutiveFailures: nextFailures,
-          reauthRequired,
-        },
-      })
-      setSyncRuntimeStatus(reauthRequired ? 'reauthRequired' : 'error', {
-        lastSyncError: message,
-        consecutiveFailures: nextFailures,
-      })
-      setAuthError(message)
-
-      if (!reauthRequired && nextFailures <= RETRY_DELAYS_MS.length) {
-        const retryDelay = RETRY_DELAYS_MS[nextFailures - 1]
-        retryTimeoutRef.current = window.setTimeout(() => {
-          void syncNow()
-        }, retryDelay)
-      }
-    } finally {
-      syncInFlightRef.current = false
+    const localEffectivelyEmpty = isSyncedDatasetEffectivelyEmpty(captureLocalSyncedDataset())
+    if (loadSyncState().bootstrapResolvedForUserId !== session.user.id || localEffectivelyEmpty) {
+      await reconcileSignedInSession(session)
+      return
     }
-  }, [
-    clearRetryTimeout,
-    configured,
-    refreshBootstrapSummary,
-    session,
-    supabase,
-    syncStore.bootstrapCompletedForUserId,
-    syncStore.consecutiveFailures,
-  ])
+
+    await runIncrementalSync(session)
+  }, [configured, reconcileSignedInSession, runIncrementalSync, session, supabase])
 
   const sendMagicLink = useCallback(
     async (email: string) => {
@@ -231,21 +527,30 @@ export function useSync() {
     [configured, supabase],
   )
 
-  const signOut = useCallback(async () => {
+  const handleSignedOutState = useCallback(() => {
     clearRetryTimeout()
-    if (supabase) {
-      await supabase.auth.signOut()
-    }
+    lastSuccessfulReconcileSessionKeyRef.current = null
+    reconcileInFlightRef.current = null
     setSession(null)
     setBootstrapSummary(null)
-    setMergePreview(null)
+    resetBootstrapResolutionState()
     setSyncUser(undefined)
     setSyncRuntimeStatus('signedOut', {
       lastSyncError: undefined,
       blockingMessage: undefined,
       consecutiveFailures: 0,
     })
-  }, [clearRetryTimeout, supabase])
+  }, [clearRetryTimeout, resetBootstrapResolutionState])
+
+  const signOut = useCallback(async () => {
+    clearRetryTimeout()
+    lastSuccessfulReconcileSessionKeyRef.current = null
+    reconcileInFlightRef.current = null
+    if (supabase) {
+      await supabase.auth.signOut()
+    }
+    handleSignedOutState()
+  }, [clearRetryTimeout, handleSignedOutState, supabase])
 
   const previewMerge = useCallback(async () => {
     if (!session) {
@@ -257,8 +562,8 @@ export function useSync() {
       return
     }
 
-    const pullResponse = await pullSyncRecords(accessToken, 0)
-    const cloudDataset = recordsToDataset(pullResponse.records, loadSettings())
+    const cloudPull = await pullSyncRecords(accessToken, 0)
+    const cloudDataset = recordsToDataset(cloudPull.records, DEFAULT_SETTINGS)
     const mergedDataset = mergeLocalAndCloudDatasets(cloudDataset)
     setMergePreview(buildSyncCountsFromDataset(mergedDataset))
   }, [session])
@@ -271,8 +576,10 @@ export function useSync() {
 
       const accessToken = getSessionAccessToken(session)
       if (!accessToken) {
+        const message = 'Your session expired. Sign in again to continue.'
+        setAuthError(message)
         setSyncRuntimeStatus('reauthRequired', {
-          lastSyncError: 'Your session expired. Sign in again to continue.',
+          lastSyncError: message,
         })
         return
       }
@@ -292,7 +599,7 @@ export function useSync() {
           )
         } else if (resolution === 'mergeThisDeviceIntoCloud') {
           const cloudPull = await pullSyncRecords(accessToken, 0)
-          const cloudDataset = recordsToDataset(cloudPull.records, loadSettings())
+          const cloudDataset = recordsToDataset(cloudPull.records, DEFAULT_SETTINGS)
           const mergedDataset = mergeLocalAndCloudDatasets(cloudDataset)
           setMergePreview(buildSyncCountsFromDataset(mergedDataset))
           response = await submitBootstrapResolution(
@@ -307,7 +614,7 @@ export function useSync() {
           }
         } else {
           response = await submitBootstrapResolution(accessToken, resolution, [])
-          const cloudDataset = recordsToDataset(response.records, loadSettings())
+          const cloudDataset = recordsToDataset(response.records, DEFAULT_SETTINGS)
           const replaceResult = replaceLocalSyncedDataset(cloudDataset)
           if (!replaceResult.ok) {
             void restoreLocalSyncRollbackSnapshot(rollbackSnapshot)
@@ -315,7 +622,7 @@ export function useSync() {
           }
         }
 
-        markBootstrapCompletedForUser(session.user.id)
+        markBootstrapResolvedForUser(session.user.id)
         applySyncWatermark(
           response.highWatermark,
           response.records.map((record) => ({
@@ -324,13 +631,11 @@ export function useSync() {
             serverVersion: record.serverVersion,
           })),
         )
-        setBootstrapSummary(buildBootstrapSummary(buildSyncCountsFromDataset(captureLocalSyncedDataset()), true))
-        setMergePreview(null)
-        setSyncRuntimeStatus(deriveOnlineStatus(loadSyncQueue().length), {
-          consecutiveFailures: 0,
-          lastSyncError: undefined,
-          blockingMessage: undefined,
-        })
+        setBootstrapSummary(
+          buildBootstrapSummary(buildSyncCountsFromDataset(captureLocalSyncedDataset()), true),
+        )
+        resetBootstrapResolutionState()
+        setReadyRuntimeStatus()
         await syncNow()
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to complete sync bootstrap.'
@@ -349,7 +654,7 @@ export function useSync() {
         setBootstrapBusy(false)
       }
     },
-    [session, syncNow],
+    [resetBootstrapResolutionState, session, setReadyRuntimeStatus, syncNow],
   )
 
   useEffect(() => {
@@ -359,6 +664,7 @@ export function useSync() {
     }
 
     let cancelled = false
+    authLifecycleCancelledRef.current = false
     const authCallback = hasAuthCallbackQuery()
 
     const initializeAuth = async () => {
@@ -376,8 +682,17 @@ export function useSync() {
         setSyncRuntimeStatus('error', { lastSyncError: error.message })
       }
 
+      if (cancelled) {
+        return
+      }
+
+      const nextUserId = initialSession?.user.id
+      if (loadSyncState().currentUserId && nextUserId && loadSyncState().currentUserId !== nextUserId) {
+        resetSyncRuntimeForAccountSwitch()
+      }
+
       setSession(initialSession)
-      setSyncUser(initialSession?.user.id, initialSession?.user.email ?? undefined)
+      setSyncUser(nextUserId, initialSession?.user.email ?? undefined)
 
       if (authCallback) {
         setAuthNotice(
@@ -390,51 +705,70 @@ export function useSync() {
         clearAuthCallbackQuery()
       }
 
+      if (cancelled) {
+        return
+      }
+
       if (initialSession) {
-        await refreshBootstrapSummary(initialSession)
+        await reconcileSignedInSession(initialSession)
       } else {
-        setSyncRuntimeStatus('signedOut')
+        handleSignedOutState()
       }
     }
 
     void initializeAuth()
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession)
-      const nextUserId = nextSession?.user.id
-      if (syncStore.currentUserId && nextUserId && syncStore.currentUserId !== nextUserId) {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (cancelled) {
+        return
+      }
+
+      if (event === 'SIGNED_OUT' || !nextSession) {
+        handleSignedOutState()
+        return
+      }
+
+      const nextUserId = nextSession.user.id
+      if (loadSyncState().currentUserId && loadSyncState().currentUserId !== nextUserId) {
         resetSyncRuntimeForAccountSwitch()
       }
-      setSyncUser(nextUserId, nextSession?.user.email ?? undefined)
-      if (nextSession) {
-        void refreshBootstrapSummary(nextSession)
-      } else {
-        setBootstrapSummary(null)
-        setMergePreview(null)
-        setSyncRuntimeStatus('signedOut')
+
+      setSession(nextSession)
+      setSyncUser(nextUserId, nextSession.user.email ?? undefined)
+
+      if (event === 'SIGNED_IN') {
+        void reconcileSignedInSession(nextSession)
       }
     })
 
     return () => {
       cancelled = true
+      authLifecycleCancelledRef.current = true
       subscription.unsubscribe()
     }
-  }, [configured, refreshBootstrapSummary, supabase, syncStore.currentUserId])
+  }, [configured, handleSignedOutState, reconcileSignedInSession, supabase])
 
   useEffect(() => {
     if (!configured || !session || syncStore.status === 'reauthRequired') {
       return
     }
 
-    if (syncStore.bootstrapCompletedForUserId === session.user.id && syncStore.pendingMutationCount > 0) {
+    if (syncStore.bootstrapResolvedForUserId === session.user.id && syncStore.pendingMutationCount > 0) {
       const timeout = window.setTimeout(() => {
         void syncNow()
       }, 300)
 
       return () => window.clearTimeout(timeout)
     }
-  }, [configured, session, syncNow, syncStore.bootstrapCompletedForUserId, syncStore.pendingMutationCount, syncStore.status])
+  }, [
+    configured,
+    session,
+    syncNow,
+    syncStore.bootstrapResolvedForUserId,
+    syncStore.pendingMutationCount,
+    syncStore.status,
+  ])
 
   useEffect(() => {
     if (!configured) {
@@ -442,7 +776,7 @@ export function useSync() {
     }
 
     const handleResume = () => {
-      if (session && syncStore.bootstrapCompletedForUserId === session.user.id) {
+      if (session && loadSyncState().bootstrapResolvedForUserId === session.user.id) {
         void syncNow()
       }
     }
@@ -462,7 +796,7 @@ export function useSync() {
       window.removeEventListener('online', handleResume)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [configured, session, syncNow, syncStore.bootstrapCompletedForUserId])
+  }, [configured, session, syncNow])
 
   return {
     configured,
@@ -471,6 +805,7 @@ export function useSync() {
     authNotice,
     authError,
     bootstrapSummary,
+    bootstrapResolutionView,
     mergePreview,
     bootstrapBusy,
     deadLetterCount: syncStore.deadLetterCount,

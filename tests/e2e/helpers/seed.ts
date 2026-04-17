@@ -44,6 +44,12 @@ type PsmfGarminFeatureSeedOptions = {
   todayFoodLog?: boolean
 }
 
+async function restoreLogLanding(page: Page): Promise<void> {
+  const logButton = page.getByRole('button', { name: /^log$/i }).first()
+  await logButton.waitFor({ state: 'visible' })
+  await logButton.click()
+}
+
 async function seedCoachingWindow(
   page: Page,
   options: {
@@ -145,6 +151,7 @@ async function seedCoachingWindow(
     })
   })
   await page.reload()
+  await restoreLogLanding(page)
 }
 
 async function seedWeeklyCheckInWindow(page: Page) {
@@ -271,6 +278,7 @@ async function seedWeeklyCheckInWindow(page: Page) {
     })
   })
   await page.reload()
+  await restoreLogLanding(page)
 }
 
 async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) {
@@ -549,6 +557,7 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
     })
   })
   await page.reload()
+  await restoreLogLanding(page)
 }
 
 async function seedPersonalLibraryScenario(page: Page, scenario: PersonalLibraryScenario) {
@@ -661,6 +670,7 @@ async function seedPersonalLibraryScenario(page: Page, scenario: PersonalLibrary
     })
   })
   await page.reload()
+  await restoreLogLanding(page)
 }
 
 async function seedPsmfGarminFeatureState(
@@ -750,6 +760,7 @@ async function seedPsmfGarminFeatureState(
   )
 
   await page.reload()
+  await restoreLogLanding(page)
 }
 
 export {
