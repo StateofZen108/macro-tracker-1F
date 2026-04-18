@@ -421,6 +421,8 @@ export function BrowsePane({
   const fastPathVisible = mealAwareLaneVisible || phaseTemplateLaneVisible
   const primaryQuickAction = orderedQuickActionButtons[0]
   const secondaryQuickActions = orderedQuickActionButtons.slice(1)
+  const hasSecondaryQuickActions =
+    secondaryQuickActions.length > 0 || captureConvenienceEnabled
   const focusedFastPathMode = mode === 'add' && fastPathVisible && debouncedQuery.trim().length === 0
   const collapseLegacyFastPath = shouldCollapseLegacyAddFoodSections({
     mode,
@@ -429,6 +431,12 @@ export function BrowsePane({
     query: debouncedQuery,
     showMoreWaysToLog,
   })
+  const canRevealMoreWaysToLog =
+    mode === 'add' &&
+    !focusedFastPathMode &&
+    toolbarStyle === 'search_barcode' &&
+    debouncedQuery.length === 0 &&
+    hasSecondaryQuickActions
   const showLegacyFastPathSections =
     !focusedFastPathMode || showMoreWaysToLog || debouncedQuery.length > 0
 
@@ -542,6 +550,15 @@ export function BrowsePane({
         <div className="space-y-3">
           {renderSearchInput()}
           {primaryQuickAction ? renderQuickActionButton(primaryQuickAction, 'primary') : null}
+          {canRevealMoreWaysToLog && !showMoreWaysToLog ? (
+            <button
+              type="button"
+              className="action-button-secondary w-full"
+              onClick={() => setShowMoreWaysToLog(true)}
+            >
+              More ways to log
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -568,6 +585,51 @@ export function BrowsePane({
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {orderedQuickActionButtons.map((action) => renderQuickActionButton(action))}
           </div>
+          {captureConvenienceEnabled ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                className="action-button-secondary w-full"
+                onClick={onOpenVoiceCapture}
+              >
+                Voice capture
+              </button>
+              <button
+                type="button"
+                className="action-button-secondary w-full"
+                onClick={onOpenMealPhotoCapture}
+              >
+                Meal photo
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {canRevealMoreWaysToLog && showMoreWaysToLog ? (
+        <div className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
+                More ways to log
+              </p>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-200">
+                Reach OCR, custom foods, and other logging inputs without leaving the add-food flow.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="action-button-secondary"
+              onClick={() => setShowMoreWaysToLog(false)}
+            >
+              Collapse
+            </button>
+          </div>
+          {secondaryQuickActions.length ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {secondaryQuickActions.map((action) => renderQuickActionButton(action))}
+            </div>
+          ) : null}
           {captureConvenienceEnabled ? (
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <button
