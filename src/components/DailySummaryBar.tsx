@@ -73,7 +73,45 @@ export function DailySummaryBar({ totals, settings }: DailySummaryBarProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
+      <div
+        className="flex gap-1.5 overflow-x-auto pb-0.5 sm:hidden"
+        tabIndex={0}
+        aria-label="Daily summary metrics"
+      >
+        {SUMMARY_ITEMS.map((item) => {
+          const value = item.getValue(totals)
+          const target = item.getTarget(settings)
+          const progress = calculateMacroProgress(value, target)
+
+          return (
+            <div
+              key={item.label}
+              className="min-w-[132px] shrink-0 rounded-[18px] border border-black/5 bg-white/60 px-2.5 py-1.5 dark:border-white/10 dark:bg-slate-900/60"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <p className={`text-xs font-semibold ${item.textClassName}`}>{item.label}</p>
+                  <p className="text-xs font-semibold text-slate-900 dark:text-white">
+                    {formatValue(value)}
+                    {item.unit}
+                  </p>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-300">
+                  {formatRemaining(progress.remaining)}
+                </p>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                <div
+                  className={`h-full rounded-full ${item.colorClassName}`}
+                  style={{ width: `${progress.percent}%` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="hidden grid-cols-2 gap-1.5 sm:grid">
         {SUMMARY_ITEMS.map((item) => {
           const value = item.getValue(totals)
           const target = item.getTarget(settings)

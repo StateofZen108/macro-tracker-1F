@@ -1,4 +1,4 @@
-import { Dumbbell, FileText, House, LoaderCircle, MessageSquare, Scale, Settings2, TriangleAlert, Wifi, WifiOff, X } from 'lucide-react'
+import { Dumbbell, FileText, House, LoaderCircle, MessageSquare, Scale, TriangleAlert, Wifi, WifiOff, X } from 'lucide-react'
 import {
   lazy,
   Suspense,
@@ -77,6 +77,7 @@ import type {
   MorningPhoneSnapshot,
   RepeatLogRecommendation,
   SavedMeal,
+  PrimaryTabId,
   TabId,
   UserSettings,
   WorkoutActionCard,
@@ -142,7 +143,7 @@ const WorkoutsScreen = lazy(async () => {
   return { default: module.WorkoutsScreen }
 })
 const TAB_ITEMS: Array<{
-  id: TabId
+  id: PrimaryTabId
   label: string
   icon: typeof FileText
 }> = [
@@ -151,7 +152,6 @@ const TAB_ITEMS: Array<{
   { id: 'weight', label: 'Weight', icon: Scale },
   { id: 'workouts', label: 'Workouts', icon: Dumbbell },
   { id: 'coach', label: 'Coach', icon: MessageSquare },
-  { id: 'settings', label: 'Settings', icon: Settings2 },
 ]
 
 interface PreviewPsmfGarminUiState {
@@ -1997,6 +1997,10 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     })
   }
 
+  function openSettingsTab(): void {
+    guardedTabChange('settings')
+  }
+
   function handleChangeDayStatus(nextStatus: DayStatus): void {
     if (nextStatus === selectedDayStatus) {
       return
@@ -2958,7 +2962,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
           <button
             type="button"
             className="mb-3 flex items-start gap-3 rounded-[24px] border border-amber-200 bg-amber-50/90 px-4 py-3 text-left text-sm text-amber-900 shadow-sm dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100"
-            onClick={() => setActiveTab('settings')}
+            onClick={openSettingsTab}
           >
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
@@ -3090,7 +3094,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 FEATURE_FLAGS.captureConvenienceV1 ? openDashboardCaptureConvenience : undefined
               }
               onOpenLogDate={openLogDate}
-              onOpenSettings={() => setActiveTab('settings')}
+              onOpenSettings={openSettingsTab}
               onRunFastCheckIn={() => handleRunFastCheckIn('dashboard')}
               onDismissReviewItem={handleDismissReviewItem}
               onUpdateSettings={handleManualSettingsUpdate}
@@ -3137,6 +3141,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
               onEditEntry={foodEntryController.openEditSheet}
               onAdjustEntryServings={foodEntryController.handleAdjustEntryServings}
               onDeleteEntry={foodEntryController.handleDeleteEntry}
+              onOpenSettings={openSettingsTab}
             />
           ) : null}
 
@@ -3186,6 +3191,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                     : undefined
                 }
                 onOpenCoach={() => setActiveTab('coach')}
+                onOpenSettings={openSettingsTab}
               />
             </Suspense>
           ) : null}
@@ -3237,6 +3243,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 cutDayPlan={todayCutDayPlan}
                 workoutAction={effectiveWorkoutSnapshot.actionCard}
                 onOpenWorkouts={() => setActiveTab('workouts')}
+                onOpenSettings={openSettingsTab}
               />
             </Suspense>
           ) : null}
@@ -3255,6 +3262,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 onCreateProgram={workouts.createProgram}
                 onUpdateProgramPreservationDefaults={workouts.updateProgramPreservationDefaults}
                 onLogSession={workouts.logSession}
+                onOpenSettings={openSettingsTab}
               />
             </Suspense>
           ) : null}
@@ -3468,7 +3476,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
             onApplyPhaseTemplateDay={handleApplyPhaseTemplateDay}
             onAcceptPhaseTemplateSeed={handleAcceptPhaseTemplateSeed}
             onRejectPhaseTemplateSeed={handleRejectPhaseTemplateSeed}
-            onOpenPhaseTemplateSettings={() => setActiveTab('settings')}
+            onOpenPhaseTemplateSettings={openSettingsTab}
             onFindDuplicateFood={findDuplicateFood}
             onResolveFoodMatch={resolveFoodMatch}
             onRestoreFood={handleRestoreFood}

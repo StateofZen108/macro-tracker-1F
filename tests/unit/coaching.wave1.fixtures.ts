@@ -1,3 +1,5 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { UserSettings } from '../../src/types'
 import type { CoachingReplayFixture } from '../../src/domain/coaching/validation'
 import type { CoachRuntimeState } from '../../src/domain/coaching/runtime'
@@ -586,5 +588,10 @@ export const WAVE1_REPLAY_FIXTURES: Wave1ReplayFixture[] = [
   ),
 ]
 
-export const WAVE1_BASELINE_PATH =
-  'C:\\Users\\deepp\\Downloads\\MF\\tests\\fixtures\\coaching-replay-baseline.json'
+const fixturesDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'fixtures',
+)
+
+export const WAVE1_BASELINE_PATH = path.join(fixturesDir, 'coaching-replay-baseline.json')

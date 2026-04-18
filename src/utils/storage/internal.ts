@@ -432,6 +432,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   loggingToolbarStyle: 'search_barcode',
   loggingShortcuts: buildDefaultLoggingShortcuts(),
   featureSettingsVersionApplied: 1,
+  settingsHubVersionApplied: 1,
 }
 
 export const DEFAULT_UI_PREFS: UiPrefs = {
@@ -2063,6 +2064,11 @@ function normalizeSettings(settings: Partial<UserSettings> | null): UserSettings
       Number.isFinite(settings.featureSettingsVersionApplied)
         ? settings.featureSettingsVersionApplied
         : DEFAULT_SETTINGS.featureSettingsVersionApplied,
+    settingsHubVersionApplied:
+      typeof settings?.settingsHubVersionApplied === 'number' &&
+      Number.isFinite(settings.settingsHubVersionApplied)
+        ? settings.settingsHubVersionApplied
+        : DEFAULT_SETTINGS.settingsHubVersionApplied,
     garminHistoryWindow:
       settings?.garminHistoryWindow === '30d' || settings?.garminHistoryWindow === '90d'
         ? settings.garminHistoryWindow
@@ -3896,6 +3902,11 @@ function parseSettings(rawSettings: unknown): UserSettings {
       phaseMealTemplates: Array.isArray(rawSettings.phaseMealTemplates)
         ? (rawSettings.phaseMealTemplates as UserSettings['phaseMealTemplates'])
         : undefined,
+      settingsHubVersionApplied:
+        typeof rawSettings.settingsHubVersionApplied === 'number' &&
+        Number.isFinite(rawSettings.settingsHubVersionApplied)
+          ? rawSettings.settingsHubVersionApplied
+          : undefined,
       garminHistoryWindow:
         rawSettings.garminHistoryWindow === '7d' ||
         rawSettings.garminHistoryWindow === '30d' ||

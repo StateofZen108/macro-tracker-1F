@@ -1,11 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { createPreviewEnv } from './preview-env.mjs'
 
 const port = process.argv[2] ?? process.env.PERSONAL_LIBRARY_PREVIEW_PORT ?? '4175'
-const previewEnv = {
-  ...process.env,
-  VITE_FF_FOOD_CATALOG_SEARCH: 'true',
+const previewEnv = createPreviewEnv('personal-library-preview', {
   VITE_FF_PERSONAL_LIBRARY_V1: 'true',
-}
+})
 
 function getNpmInvocation(args) {
   return process.platform === 'win32'

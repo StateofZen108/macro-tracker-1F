@@ -1,13 +1,14 @@
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
-import { useRef } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { addDays, formatDisplayDate, getRelativeDateLabel } from '../utils/dates'
 
 interface DateNavigatorProps {
   date: string
   onChange: (date: string) => void
+  trailingAction?: ReactNode
 }
 
-export function DateNavigator({ date, onChange }: DateNavigatorProps) {
+export function DateNavigator({ date, onChange, trailingAction }: DateNavigatorProps) {
   const touchState = useRef<{
     startX: number
     startY: number
@@ -74,10 +75,11 @@ export function DateNavigator({ date, onChange }: DateNavigatorProps) {
         <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
           {getRelativeDateLabel(date)}
         </p>
-        <p className="font-display text-lg text-slate-900 dark:text-white sm:text-xl">
+        <p className="text-lg font-semibold text-slate-950 dark:text-white sm:text-xl">
           {formatDisplayDate(date)}
         </p>
       </div>
+      {trailingAction}
       <label className="icon-button h-10 w-10 cursor-pointer rounded-xl sm:h-11 sm:w-11 sm:rounded-2xl">
         <CalendarDays className="h-5 w-5" />
         <input

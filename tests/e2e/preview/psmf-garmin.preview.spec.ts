@@ -110,7 +110,9 @@ test('manual red recovery on two of the last three days forces a coaching hold',
 
   await expect(page.getByText('Hold for more data').first()).toBeVisible()
   await expect(
-    page.getByText('Recovery strain has stayed high on most recent days. Hold targets until recovery improves.'),
+    page
+      .getByText('Recovery strain has stayed high on most recent days. Hold targets until recovery improves.')
+      .first(),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toHaveCount(0)
   await expect(page.getByTestId('weight-preview-supplemental')).toContainText('Recovery hold')

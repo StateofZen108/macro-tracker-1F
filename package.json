@@ -75,6 +75,8 @@
     "test:qa:release-gate": "node scripts/qa-release-gate.mjs"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource/ibm-plex-sans": "^5.2.8",
     "@supabase/supabase-js": "^2.103.0",
     "@zxing/browser": "^0.1.5",
     "fake-indexeddb": "^6.2.4",

@@ -1,8 +1,24 @@
-import { Archive, Download, Lock, PencilLine, Plus, RotateCcw, ShieldAlert, Trash2, Upload } from 'lucide-react'
+import {
+  Activity,
+  Archive,
+  Camera,
+  Database,
+  Download,
+  LayoutDashboard,
+  Lock,
+  PencilLine,
+  Plus,
+  RotateCcw,
+  ShieldAlert,
+  Trash2,
+  Upload,
+  type LucideIcon,
+} from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BottomSheet } from '../components/BottomSheet'
 import { FoodForm } from '../components/FoodForm'
 import { NotesEditorSheet } from '../components/NotesEditorSheet'
+import { ScreenHeader } from '../components/ScreenHeader'
 import { TemplateSummaryCard } from '../components/TemplateSummaryCard'
 import { NUTRIENT_DEFINITION_LIST_V1 } from '../domain/nutrition'
 import { useHistoryImport } from '../hooks/useHistoryImport'
@@ -34,6 +50,7 @@ import type {
   Recipe,
   RecoverableDataIssue,
   RecoveryCheckIn,
+  SettingsHubSectionId,
   SyncCounts,
   SyncState,
   ToolbarColorToken,
@@ -276,6 +293,50 @@ const DEFAULT_PHASE_TEMPLATE_LABELS: Record<CutDayType, string> = {
   high_carb_day: 'High-carb day',
   standard_cut_day: 'Standard cut day',
 }
+
+const SETTINGS_HUB_SECTIONS: Array<{
+  id: SettingsHubSectionId
+  label: string
+  description: string
+  icon: LucideIcon
+  actionLabel: string
+}> = [
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    description: 'Daily targets, check-in defaults, nutrients, and execution preferences.',
+    icon: LayoutDashboard,
+    actionLabel: 'Open dashboard settings',
+  },
+  {
+    id: 'logging',
+    label: 'Logging',
+    description: 'Shortcut order, toolbar style, food review flow, and phase templates.',
+    icon: PencilLine,
+    actionLabel: 'Open logging settings',
+  },
+  {
+    id: 'workouts',
+    label: 'Workouts',
+    description: 'Diet-phase timing, recovery inputs, and Garmin-linked training signals.',
+    icon: Activity,
+    actionLabel: 'Open workout inputs',
+  },
+  {
+    id: 'body_progress',
+    label: 'Body Progress',
+    description: 'Compare defaults, gallery resets, and progress-proof preferences.',
+    icon: Camera,
+    actionLabel: 'Open body-progress settings',
+  },
+  {
+    id: 'data_sync',
+    label: 'Data & Sync',
+    description: 'Cross-device sync, diagnostics, backups, and import/export controls.',
+    icon: Database,
+    actionLabel: 'Open data and sync settings',
+  },
+]
 
 function normalizeLoggingShortcutIds(
   ids: readonly LoggingShortcutId[] | undefined,
@@ -645,6 +706,14 @@ function SettingsScreen({
   )
   const [recoveryActionError, setRecoveryActionError] = useState<string | null>(null)
   const [showAdvancedLoggingShortcuts, setShowAdvancedLoggingShortcuts] = useState(false)
+  const [activeHubSection, setActiveHubSection] = useState<SettingsHubSectionId>('dashboard')
+  const settingsHubSectionRefs = useRef<Record<SettingsHubSectionId, HTMLDivElement | null>>({
+    dashboard: null,
+    logging: null,
+    workouts: null,
+    body_progress: null,
+    data_sync: null,
+  })
   const toolbarShortcutConfigs = useMemo(
     () => normalizeToolbarShortcutConfigs(settings.loggingShortcuts),
     [settings.loggingShortcuts],
@@ -1784,15 +1853,105 @@ function SettingsScreen({
   const scheduledRefeedFieldsLocked = editingRefeed ? isRefeedLocked(editingRefeed) : false
   const showPsmfPhaseSelector = selectablePsmfPhases.length > 1
 
+  function setSettingsHubSectionRef(sectionId: SettingsHubSectionId) {
+    return (node: HTMLDivElement | null): void => {
+      settingsHubSectionRefs.current[sectionId] = node
+    }
+  }
+
+  function openSettingsHubSection(sectionId: SettingsHubSectionId): void {
+    setActiveHubSection(sectionId)
+    const target = settingsHubSectionRefs.current[sectionId]
+    if (!target) {
+      return
+    }
+
+    target.scrollIntoView({
+      behavior: FEATURE_FLAGS.motionSystemV1 ? 'smooth' : 'auto',
+      block: 'start',
+    })
+  }
+
   return (
     <div className="space-y-4 pb-6">
+      <ScreenHeader
+        eyebrow="Feature settings"
+        title="Tune the app around daily execution"
+        description="Keep the first view calm: pick the area you want to tune, then drill into detailed controls only when you need them."
+      />
+
+      {FEATURE_FLAGS.settingsHubV1 ? (
+        <section className="app-card space-y-4 px-4 py-4">
+          <div className="space-y-1">
+            <p className="text-xs uppercase tracking-[0.24em] text-[color:var(--text-muted)]">
+              Settings hub
+            </p>
+            <p className="text-sm text-[color:var(--text-secondary)]">
+              One entry point for dashboard, logging, workouts, body progress, and data safety.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {SETTINGS_HUB_SECTIONS.map((section) => {
+              const Icon = section.icon
+              const isActive = activeHubSection === section.id
+              return (
+                <button
+                  key={section.id}
+                  type="button"
+                  className={`settings-hub-card text-left transition ${
+                    isActive
+                      ? 'border-transparent bg-[color:var(--action-primary-bg)] text-[color:var(--action-primary-text)] shadow-[var(--shadow-raised)]'
+                      : ''
+                  }`}
+                  onClick={() => openSettingsHubSection(section.id)}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${
+                        isActive
+                          ? 'bg-white/15 text-white'
+                          : 'bg-[color:var(--surface-floating)] text-[color:var(--text-primary)]'
+                      }`}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{section.label}</p>
+                      <p
+                        className={`mt-1 text-xs ${
+                          isActive
+                            ? 'text-white/80'
+                            : 'text-[color:var(--text-secondary)]'
+                        }`}
+                      >
+                        {section.description}
+                      </p>
+                      <p
+                        className={`mt-3 text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                          isActive
+                            ? 'text-white/75'
+                            : 'text-[color:var(--text-muted)]'
+                        }`}
+                      >
+                        {section.actionLabel}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      <div ref={setSettingsHubSectionRef('logging')} />
       {(initializationError || recoveryIssues.length) ? (
         <section className="app-card space-y-3 border-amber-200 bg-amber-50/90 px-4 py-4 dark:border-amber-500/30 dark:bg-amber-500/10">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.24em] text-amber-700 dark:text-amber-300">
               Data health
             </p>
-            <p className="font-display text-2xl text-slate-900 dark:text-white">
+            <p className="text-2xl font-semibold text-slate-900 dark:text-white">
               Review recoverable data issues
             </p>
           </div>
@@ -1823,7 +1982,7 @@ function SettingsScreen({
             <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
               Food review queue
             </p>
-            <p className="font-display text-2xl text-slate-900 dark:text-white">
+            <p className="text-2xl font-semibold text-slate-900 dark:text-white">
               {pendingFoodReviewItems.length} pending review item{pendingFoodReviewItems.length === 1 ? '' : 's'}
             </p>
             <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -1879,11 +2038,12 @@ function SettingsScreen({
         </section>
       ) : null}
 
+      <div ref={setSettingsHubSectionRef('workouts')} />
       {previewPsmfGarminUiState ? (
         <section className="app-card space-y-4 px-4 py-4" data-testid="psmf-diet-phase-section">
           <div className="space-y-1">
             <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">Diet phase</p>
-            <p className="font-display text-2xl text-slate-900 dark:text-white">Manage PSMF timing</p>
+            <p className="text-2xl font-semibold text-slate-900 dark:text-white">Manage PSMF timing</p>
           </div>
           <p className="text-sm text-slate-600 dark:text-slate-300">
             PSMF requires an active phase with an end date. Refeed days and diet breaks are scheduled here.
@@ -2586,6 +2746,7 @@ function SettingsScreen({
       ) : null}
 
       <section className="app-card space-y-4 px-4 py-4">
+        <div ref={setSettingsHubSectionRef('data_sync')} />
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
             Cross-device sync
@@ -2847,6 +3008,7 @@ function SettingsScreen({
         </div>
       </section>
 
+      <div ref={setSettingsHubSectionRef('dashboard')} />
       <section className="app-card px-4 py-4">
         <form
           className="space-y-4"
@@ -3281,13 +3443,16 @@ function SettingsScreen({
           ) : null}
 
           {FEATURE_FLAGS.cohesionFinishV1 ? (
-            <div className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+            <div
+              ref={setSettingsHubSectionRef('body_progress')}
+              className="space-y-3 rounded-[26px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70"
+            >
               <div className="space-y-1">
                 <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
-                  Feature settings
+                  Reset controls
                 </p>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                  One hub for the dashboard, shortcuts, workouts, and body-progress controls that affect daily execution.
+                  Restore the default dashboard, shortcut, and body-progress behaviors without digging through the whole screen.
                 </p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

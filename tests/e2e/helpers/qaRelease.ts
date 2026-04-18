@@ -14,7 +14,6 @@ import {
   getAddFoodDialog,
   goToLog,
   goToSettings,
-  goToWeight,
 } from './app'
 
 const QA_LANE_ID = process.env.QA_RELEASE_LANE_ID ?? 'dev_smoke'

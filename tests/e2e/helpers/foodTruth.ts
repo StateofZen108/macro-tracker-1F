@@ -308,20 +308,38 @@ async function seedFoodTruthState(
 
 async function openBarcodeScanner(page: Page) {
   await openMealSheet(page)
-  await page.getByRole('button', { name: /scan barcode/i }).click()
-  await expect(page.getByText(/manual barcode entry/i)).toBeVisible()
+  const addFoodDialog = getAddFoodDialog(page)
+  const scannerButton = addFoodDialog.getByRole('button', { name: /scan barcode/i })
+  if (!(await scannerButton.isVisible().catch(() => false))) {
+    const expandButton = addFoodDialog.getByRole('button', { name: /more ways to log/i })
+    if (await expandButton.isVisible().catch(() => false)) {
+      await expandButton.click()
+    }
+  }
+  await scannerButton.click()
+  await expect(addFoodDialog.getByText(/manual barcode entry/i)).toBeVisible()
 }
 
 async function runManualBarcodeLookup(page: Page, barcode: string) {
-  const input = page.getByLabel(/manual barcode entry/i)
-  await input.fill(barcode)
+  const input = getAddFoodDialog(page).getByPlaceholder('0123456789012')
+  await expect(input).toBeVisible()
+  await input.click()
+  await page.keyboard.type(barcode)
   await page.getByRole('button', { name: /lookup barcode/i }).click()
 }
 
 async function openOcrCapture(page: Page) {
   await openMealSheet(page)
-  await page.getByRole('button', { name: /scan nutrition label/i }).click()
-  await expect(getAddFoodDialog(page).getByRole('button', { name: /review nutrition label/i })).toBeVisible()
+  const addFoodDialog = getAddFoodDialog(page)
+  const ocrButton = addFoodDialog.getByRole('button', { name: /scan nutrition label/i })
+  if (!(await ocrButton.isVisible().catch(() => false))) {
+    const expandButton = addFoodDialog.getByRole('button', { name: /more ways to log/i })
+    if (await expandButton.isVisible().catch(() => false)) {
+      await expandButton.click()
+    }
+  }
+  await ocrButton.click()
+  await expect(addFoodDialog.getByRole('button', { name: /review nutrition label/i })).toBeVisible()
 }
 
 async function closeAddFoodSheet(page: Page) {
@@ -377,7 +395,7 @@ async function performExplicitOcrFlow(page: Page) {
   try {
     await openOcrCapture(page)
     const addFoodSheet = getAddFoodDialog(page)
-    await addFoodSheet.locator('input[type="file"]').setInputFiles(getOcrImagePath(fixture))
+    await addFoodSheet.getByTestId('ocr-gallery-input').setInputFiles(getOcrImagePath(fixture))
     await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
     await expect(addFoodSheet.getByText(/review extracted label/i)).toBeVisible()
     await expect(addFoodSheet.getByLabel('Food name')).toHaveValue(fixture.expectedName)
@@ -404,7 +422,7 @@ async function performAmbiguousOcrFlow(page: Page) {
   try {
     await openOcrCapture(page)
     const addFoodSheet = getAddFoodDialog(page)
-    await addFoodSheet.locator('input[type="file"]').setInputFiles(getOcrImagePath(fixture))
+    await addFoodSheet.getByTestId('ocr-gallery-input').setInputFiles(getOcrImagePath(fixture))
     await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
     await expect(addFoodSheet.getByText(/review extracted label/i)).toBeVisible()
     await expect(addFoodSheet.getByText(/choose the correct serving basis before saving/i)).toBeVisible()
@@ -469,7 +487,10 @@ export async function runDiagnosticsReviewScenario(page: Page) {
   await closeAddFoodSheet(page)
   await performAmbiguousOcrFlow(page)
   await closeAddFoodSheet(page)
-  const settingsButton = page.getByRole('button', { name: /^settings$/i }).first()
+  const settingsButton = page
+    .getByRole('button', { name: /^settings$/i })
+    .filter({ hasNot: page.getByRole('dialog') })
+    .first()
   await settingsButton.scrollIntoViewIfNeeded()
   await settingsButton.click({ force: true })
   await expect(page.getByText(/^diagnostics$/i)).toBeVisible()

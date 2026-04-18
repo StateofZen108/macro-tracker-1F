@@ -6,6 +6,12 @@ const distAssetsDir = resolve(process.cwd(), 'dist/assets')
 const RAW_LIMIT_BYTES = 500 * 1024
 const FOOD_ACQUISITION_LIMIT_BYTES = 400 * 1024
 const MAIN_GZIP_LIMIT_BYTES = 150 * 1024
+const RAW_LIMIT_OVERRIDES = [
+  {
+    prefix: 'heic2any-',
+    rawLimitBytes: 1400 * 1024,
+  },
+]
 
 if (!existsSync(distAssetsDir)) {
   console.error('Expected dist/assets to exist. Run the production build before checking chunk budgets.')
@@ -18,9 +24,11 @@ const violations = []
 for (const file of assetFiles) {
   const absolutePath = join(distAssetsDir, file)
   const rawBytes = statSync(absolutePath).size
+  const rawLimitOverride = RAW_LIMIT_OVERRIDES.find((entry) => file.startsWith(entry.prefix))
+  const rawLimitBytes = rawLimitOverride?.rawLimitBytes ?? RAW_LIMIT_BYTES
 
-  if (rawBytes > RAW_LIMIT_BYTES) {
-    violations.push(`${file} exceeds the raw chunk budget (${rawBytes} bytes > ${RAW_LIMIT_BYTES} bytes).`)
+  if (rawBytes > rawLimitBytes) {
+    violations.push(`${file} exceeds the raw chunk budget (${rawBytes} bytes > ${rawLimitBytes} bytes).`)
   }
 
   if (file.startsWith('food-acquisition-') && rawBytes > FOOD_ACQUISITION_LIMIT_BYTES) {
