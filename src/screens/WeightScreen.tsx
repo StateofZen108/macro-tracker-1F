@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ScreenHeader } from '../components/ScreenHeader'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import { buildBodyProgressQuickCompare } from '../domain/personalCut'
 import { WeightChart } from '../components/WeightChart'
@@ -52,6 +53,7 @@ interface WeightScreenProps {
   onSaveBodyProgress?: (input: BodyProgressSaveRequest) => Promise<ActionResult<BodyProgressSnapshot>>
   onDeleteBodyProgress?: (snapshotId: string) => Promise<ActionResult<void>>
   onOpenCoach?: () => void
+  onOpenSettings?: () => void
 }
 
 const RANGE_OPTIONS: WeightRange[] = ['30', '90', 'all']
@@ -516,6 +518,7 @@ export function WeightScreen({
   onSaveBodyProgress,
   onDeleteBodyProgress,
   onOpenCoach,
+  onOpenSettings,
 }: WeightScreenProps) {
   const today = getTodayDateKey()
   const todayEntry = weights.find((entry) => entry.date === today) ?? null
@@ -2275,6 +2278,13 @@ export function WeightScreen({
 
   return (
     <div className="space-y-4 pb-6">
+      <ScreenHeader
+        eyebrow="Weight"
+        title="Progress proof"
+        description="Keep the first view anchored on whether the cut is still working, then drop into weigh-ins and longer history only after that."
+        onOpenSettings={onOpenSettings}
+      />
+      {renderBodyProgressSection()}
       {!currentCheckIn ? renderTodayWeighInSection() : null}
       <section className="app-card space-y-3 px-4 py-4">
         <div className="flex items-start justify-between gap-4">
@@ -2749,8 +2759,6 @@ export function WeightScreen({
           ) : null}
         </section>
       ) : null}
-
-      {renderBodyProgressSection()}
 
       {currentCheckIn ? (
         <section

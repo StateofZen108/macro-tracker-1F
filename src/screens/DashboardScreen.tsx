@@ -1,5 +1,7 @@
 import { ArrowDown, ArrowUp, EyeOff, Settings2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { ScreenHeader } from '../components/ScreenHeader'
+import { FEATURE_FLAGS } from '../config/featureFlags'
 import type {
   ActionResult,
   BenchmarkReport,
@@ -89,6 +91,18 @@ export function DashboardScreen({
   const latestBenchmark = benchmarkReports[0] ?? null
   const latestFastCheckInRun = settings.lastFastCheckInRun ?? null
   const pendingReviewItems = foodReviewQueue.filter((item) => item.status === 'pending')
+  const effectiveCommandDensity = useMemo(() => {
+    if (!morningSnapshot) {
+      return 'balanced'
+    }
+    if (!FEATURE_FLAGS.commandSurfacePolishV1) {
+      return morningSnapshot.surfaceDensity
+    }
+    if (morningSnapshot.statusItems.length > 3 || morningSnapshot.reasonStack.length > 2) {
+      return 'fallback_stack'
+    }
+    return morningSnapshot.surfaceDensity
+  }, [morningSnapshot])
   const dashboardInsights = settings.dashboardInsights ?? []
   const insightMap = useMemo(() => {
     const map = new Map<DashboardSectionId, DashboardInsightSetting[]>()
@@ -297,18 +311,25 @@ export function DashboardScreen({
 
   return (
     <div className="space-y-4 pb-6">
-      <section className="app-card space-y-3 px-4 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">Dashboard</p>
-            <p className="font-display text-3xl text-slate-900 dark:text-white">{cutModeEnabled ? 'Your cut cockpit' : 'One place for the whole system'}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {manageMode ? <button type="button" className="action-button-secondary" onClick={resetDashboard}>Reset</button> : null}
-            <button type="button" className="action-button-secondary" onClick={() => setManageMode((current) => !current)}><Settings2 className="mr-2 inline h-4 w-4" />{manageMode ? 'Done' : 'Arrange'}</button>
-          </div>
-        </div>
-      </section>
+      <ScreenHeader
+        eyebrow="Dashboard"
+        title={cutModeEnabled ? 'Your cut cockpit' : 'One place for the whole system'}
+        description="The paid feel here comes from decisiveness: one command surface, one trust strip, and everything else supporting that first call."
+        onOpenSettings={onOpenSettings}
+        actions={
+          <>
+            {manageMode ? (
+              <button type="button" className="action-button-secondary" onClick={resetDashboard}>
+                Reset
+              </button>
+            ) : null}
+            <button type="button" className="action-button-secondary" onClick={() => setManageMode((current) => !current)}>
+              <Settings2 className="mr-2 inline h-4 w-4" />
+              {manageMode ? 'Done' : 'Arrange'}
+            </button>
+          </>
+        }
+      />
 
       {morningSnapshot && commandHomeEnabled ? (
         <section className="app-card space-y-4 px-4 py-4">
@@ -317,21 +338,13 @@ export function DashboardScreen({
               <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
                 Command home
               </p>
-              <p className="font-display text-2xl text-slate-900 dark:text-white">
+              <p className="text-2xl font-semibold text-slate-950 dark:text-white">
                 Do this now
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                {morningSnapshot.meal ?? 'today'}
-              </span>
-              <span className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] ${confidenceBadgeTone(morningSnapshot.confidence)}`}>
-                {morningSnapshot.confidence} confidence
-              </span>
-            </div>
           </div>
 
-          <div className={`rounded-[24px] bg-slate-100/80 px-4 ${morningSnapshot.surfaceDensity === 'tight' ? 'py-3' : 'py-4'} dark:bg-slate-900/70`}>
+          <div className={`command-panel ${effectiveCommandDensity === 'tight' ? 'py-3' : ''}`}>
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
               {getMorningActionEyebrow(morningSnapshot.primaryTarget)}
             </p>
@@ -339,16 +352,29 @@ export function DashboardScreen({
               {morningSnapshot.primaryLabel}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {morningSnapshot.reasonStack.slice(0, 3).map((reason) => (
+              <span className="status-chip">{morningSnapshot.meal ?? 'today'}</span>
+              <span className={`status-chip ${confidenceBadgeTone(morningSnapshot.confidence)}`}>
+                {morningSnapshot.confidence} confidence
+              </span>
+              {morningSnapshot.cutDayPlan ? (
+                <span className="status-chip">
+                  {morningSnapshot.cutDayPlan.dayType.replaceAll('_', ' ')}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {morningSnapshot.reasonStack
+                .slice(0, effectiveCommandDensity === 'fallback_stack' ? 2 : 3)
+                .map((reason) => (
                 <span
                   key={reason}
                   className="rounded-full bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-950/70 dark:text-slate-200"
                 >
                   {reason}
                 </span>
-              ))}
+                ))}
             </div>
-            {morningSnapshot.secondaryReason ? (
+            {morningSnapshot.secondaryReason && effectiveCommandDensity === 'balanced' ? (
               <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{morningSnapshot.secondaryReason}</p>
             ) : null}
             <button
@@ -358,32 +384,24 @@ export function DashboardScreen({
             >
               {getMorningActionButtonLabel(morningSnapshot.deepLinkTarget)}
             </button>
-            {morningSnapshot.secondaryTarget && morningSnapshot.secondaryLabel ? (
-              <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <div className="mt-2 flex flex-wrap gap-2">
+              {morningSnapshot.secondaryTarget && morningSnapshot.secondaryLabel ? (
                 <button
                   type="button"
-                  className="action-button-secondary w-full"
+                  className="action-button-secondary flex-1"
                   onClick={() => openMorningAction(morningSnapshot.secondaryTarget!)}
                 >
                   {morningSnapshot.secondaryLabel}
                 </button>
-                <button
-                  type="button"
-                  className="action-button-secondary"
-                  onClick={() => setShowWhyToday((current) => !current)}
-                >
-                  {showWhyToday ? 'Hide why' : 'Why today'}
-                </button>
-              </div>
-            ) : (
+              ) : null}
               <button
                 type="button"
-                className="action-button-secondary mt-2 w-full"
+                className="action-button-secondary"
                 onClick={() => setShowWhyToday((current) => !current)}
               >
                 {showWhyToday ? 'Hide why' : 'Why today'}
               </button>
-            )}
+            </div>
             {showWhyToday ? (
               <div className="mt-3 rounded-[18px] bg-white/80 px-3 py-3 text-sm text-slate-700 dark:bg-slate-950/70 dark:text-slate-200">
                 {morningSnapshot.whyNow}
@@ -427,7 +445,9 @@ export function DashboardScreen({
 
           {morningSnapshot.statusItems.length ? (
             <div className="flex flex-wrap gap-2">
-              {morningSnapshot.statusItems.map((item) => (
+              {morningSnapshot.statusItems
+                .slice(0, effectiveCommandDensity === 'fallback_stack' ? 2 : morningSnapshot.statusItems.length)
+                .map((item) => (
                 <div
                   key={item.id}
                   className={`rounded-[20px] px-3 py-3 text-sm ${statusToneClass(item.tone)}`}
@@ -435,7 +455,7 @@ export function DashboardScreen({
                   <p className="font-semibold">{item.label}</p>
                   <p className="mt-1 text-xs opacity-90">{item.detail}</p>
                 </div>
-              ))}
+                ))}
             </div>
           ) : null}
         </section>

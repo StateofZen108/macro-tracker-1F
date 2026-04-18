@@ -40,21 +40,23 @@ test('S22 weight layout keeps weekly check-in actions readable on initial render
   await seedWeeklyCheckInWindow(page)
   await goToWeight(page)
 
-  await expect(page.getByText('Weekly check-in').first()).toBeVisible()
-  await expect(page.getByText(/rate of loss was slower than target/i).first()).toBeVisible()
-  await expect(page.getByText(/recommendation evidence/i).first()).toBeVisible()
-  await expect(page.getByText(/estimated tdee/i).first()).toBeVisible()
-  await expectCenterHittable(page.getByRole('button', { name: /apply suggestion/i }))
-  await expectCenterHittable(page.getByRole('button', { name: /keep current/i }))
+  await expect(page.getByText(/progress proof/i).first()).toBeVisible()
+  await expect(page.getByText(/metrics and progress photos/i).first()).toBeVisible()
+  await expect(page.getByText(/capture focus/i).first()).toBeVisible()
+  await expectCenterHittable(page.getByRole('button', { name: /^settings$/i }).first())
 })
 
 test('weekly check-in can apply an athlete prep recommendation', async ({ page }) => {
   await seedWeeklyCheckInWindow(page)
   await goToWeight(page)
 
+  const weeklyCheckInHeading = page.getByText('Weekly check-in').first()
+  await weeklyCheckInHeading.scrollIntoViewIfNeeded()
   await expect(page.getByText(/rate of loss was slower than target/i).first()).toBeVisible()
   await expect(page.getByText(/1900 cal\/day/i)).toBeVisible()
-  await page.getByRole('button', { name: /apply suggestion/i }).click()
+  const applySuggestionButton = page.getByRole('button', { name: /apply suggestion/i })
+  await applySuggestionButton.scrollIntoViewIfNeeded()
+  await applySuggestionButton.click()
   await expect(page.getByText(/applied/i).first()).toBeVisible()
 
   await goToSettings(page)

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ScreenHeader } from '../components/ScreenHeader'
 import { CoachMessageCard } from '../components/coach/CoachMessageCard'
 import type {
   CoachActionProposal,
@@ -38,6 +39,7 @@ interface CoachScreenProps {
   cutDayPlan?: CutDayPlan | null
   workoutAction?: WorkoutActionCard
   onOpenWorkouts?: () => void
+  onOpenSettings?: () => void
 }
 
 function stateCopy(state: CoachState): { title: string; description: string } {
@@ -116,6 +118,7 @@ export function CoachScreen({
   cutDayPlan = null,
   workoutAction,
   onOpenWorkouts,
+  onOpenSettings,
 }: CoachScreenProps) {
   const [question, setQuestion] = useState('')
   const feedbackByMessageId = useMemo(
@@ -126,15 +129,14 @@ export function CoachScreen({
 
   return (
     <div className="space-y-4 pb-6">
-      <section className="app-card space-y-4 px-4 py-4">
-        <div className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
-            Ask Coach
-          </p>
-          <p className="font-display text-2xl text-slate-900 dark:text-white">{stateBanner.title}</p>
-          <p className="text-sm text-slate-600 dark:text-slate-300">{stateBanner.description}</p>
-        </div>
+      <ScreenHeader
+        eyebrow="Coach"
+        title={stateBanner.title}
+        description={stateBanner.description}
+        onOpenSettings={onOpenSettings}
+      />
 
+      <section className="app-card space-y-4 px-4 py-4">
         {fastCheckInEnabled && currentCheckIn ? (
           <div className="space-y-3 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
             <div>
@@ -183,13 +185,13 @@ export function CoachScreen({
         ) : null}
 
         {workoutAction ? (
-          <div className="space-y-3 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+          <div className="command-panel">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
                   Today&apos;s training action
                 </p>
-                <p className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">
                   {workoutAction.title}
                 </p>
                 <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
@@ -197,16 +199,16 @@ export function CoachScreen({
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <span className="status-chip">
                   {workoutAction.freshnessLabel}
                 </span>
-                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <span className="status-chip">
                   {workoutAction.confidence} confidence
                 </span>
-                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <span className="status-chip">
                   {workoutAction.mode === 'review_first' ? 'Review first' : 'Directive'}
                 </span>
-                <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                <span className="status-chip">
                   {workoutAction.source === 'manual_override' ? 'Manual' : 'Computed'}
                 </span>
               </div>

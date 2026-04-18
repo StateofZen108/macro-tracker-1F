@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ScreenHeader } from '../components/ScreenHeader'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import type {
   ActionResult,
@@ -57,6 +58,7 @@ interface WorkoutsScreenProps {
     date: string
     exercises: WorkoutSession['exercises']
   }) => ActionResult<{ session: WorkoutSession; decision: ProgressionDecision | null }>
+  onOpenSettings?: () => void
 }
 
 type SetDraft = { reps: string; load: string; rir: string }
@@ -204,6 +206,7 @@ export function WorkoutsScreen({
   onCreateProgram,
   onUpdateProgramPreservationDefaults,
   onLogSession,
+  onOpenSettings,
 }: WorkoutsScreenProps) {
   const gymProfiles = settings.gymProfiles ?? []
   const customExercises = settings.customExercises ?? []
@@ -469,6 +472,13 @@ export function WorkoutsScreen({
 
   return (
     <div className="space-y-4 pb-6">
+      <ScreenHeader
+        eyebrow="Workouts"
+        title="Training preservation"
+        description="Keep the default view directive-first. Program setup and analytics stay available, but they no longer compete with today's call."
+        onOpenSettings={onOpenSettings}
+      />
+
       <section className="app-card grid gap-3 px-4 py-4 sm:grid-cols-2 xl:grid-cols-4">
         <div><p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Active programs</p><p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">{snapshot.activeProgramCount}</p></div>
         <div><p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Sessions in 7d</p><p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">{snapshot.completedSessionCount7d}</p></div>
@@ -491,16 +501,16 @@ export function WorkoutsScreen({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <span className="status-chip">
                 {snapshot.actionCard.freshnessLabel}
               </span>
-              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <span className="status-chip">
                 {snapshot.actionCard.confidence} confidence
               </span>
-              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <span className="status-chip">
                 {snapshot.actionCard.mode === 'review_first' ? 'Review first' : 'Directive'}
               </span>
-              <span className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <span className="status-chip">
                 {snapshot.actionCard.source === 'manual_override' ? 'Manual' : 'Computed'}
               </span>
             </div>

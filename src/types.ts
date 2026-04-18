@@ -4,6 +4,13 @@ export type CatalogProvider = 'open_food_facts' | 'usda_fdc' | 'fatsecret'
 export type FoodImportConfidence = 'direct_match' | 'weak_match' | 'manual_review_required'
 export type FoodSourceQuality = 'high' | 'medium' | 'low'
 export type TabId = 'dashboard' | 'log' | 'weight' | 'workouts' | 'coach' | 'settings'
+export type PrimaryTabId = 'dashboard' | 'log' | 'weight' | 'workouts' | 'coach'
+export type SettingsHubSectionId =
+  | 'dashboard'
+  | 'logging'
+  | 'workouts'
+  | 'body_progress'
+  | 'data_sync'
 export type WeightRange = '30' | '90' | 'all'
 export type WeightUnit = 'lb' | 'kg'
 export type BarcodeVerification = 'verified' | 'needsConfirmation'
@@ -118,7 +125,8 @@ export type ComplianceRiskLevel = 'low' | 'medium' | 'high'
 export type MicronutrientStatus = 'low' | 'adequate' | 'high' | 'limited'
 export type NutrientGoalMode = 'auto' | 'custom' | 'none'
 export type GarminHistoryWindow = '7d' | '30d' | '90d'
-export type CommandSurfaceDensity = 'tight' | 'balanced'
+export type CommandSurfaceDensity = 'tight' | 'balanced' | 'fallback_stack'
+export type MotionPresetId = 'fast' | 'standard' | 'sheet' | 'reduced'
 export type LoggingToolbarStyle =
   | 'search_barcode'
   | 'search_barcode_custom'
@@ -597,6 +605,7 @@ export interface UserSettings {
   loggingToolbarStyle?: LoggingToolbarStyle
   loggingShortcuts?: ToolbarShortcutConfig[]
   featureSettingsVersionApplied?: number
+  settingsHubVersionApplied?: number
 }
 
 export interface UiPrefs {

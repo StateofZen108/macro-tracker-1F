@@ -1,4 +1,4 @@
-import { Beaker } from 'lucide-react'
+import { Beaker, Settings2 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CoachingCard } from '../components/CoachingCard'
 import { DailySummaryBar } from '../components/DailySummaryBar'
@@ -64,6 +64,7 @@ interface LogScreenProps {
   onEditEntry: (entryId: string) => void
   onAdjustEntryServings: (entryId: string, nextServings: number) => void
   onDeleteEntry: (entryId: string) => void
+  onOpenSettings: () => void
 }
 
 const DEFAULT_COLLAPSED_STATE: Record<MealType, boolean> = {
@@ -351,6 +352,7 @@ export function LogScreen({
   onEditEntry,
   onAdjustEntryServings,
   onDeleteEntry,
+  onOpenSettings,
 }: LogScreenProps) {
   const stickyRef = useRef<HTMLDivElement | null>(null)
   const previousMealCountsRef = useRef<Record<MealType, number>>({
@@ -445,7 +447,20 @@ export function LogScreen({
         className="pointer-events-none sticky top-[calc(env(safe-area-inset-top)+0.25rem)] z-30 space-y-3 pb-3"
       >
         <div className="pointer-events-auto">
-          <DateNavigator date={date} onChange={onChangeDate} />
+          <DateNavigator
+            date={date}
+            onChange={onChangeDate}
+            trailingAction={
+              <button
+                type="button"
+                className="icon-button h-10 w-10 rounded-xl sm:h-11 sm:w-11 sm:rounded-2xl"
+                onClick={onOpenSettings}
+                aria-label="Settings"
+              >
+                <Settings2 className="h-5 w-5" />
+              </button>
+            }
+          />
         </div>
         <div className="pointer-events-none">
           <DailySummaryBar totals={dailyTotals} settings={settings} />

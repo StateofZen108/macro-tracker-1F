@@ -61,6 +61,12 @@ export interface FeatureFlags {
   trainingTrustV1: boolean
   progressProofFinishV1: boolean
   cohesionFinishV1: boolean
+  premiumDesignV1: boolean
+  mobileIaV1: boolean
+  commandSurfacePolishV1: boolean
+  screenFinishV1: boolean
+  settingsHubV1: boolean
+  motionSystemV1: boolean
 }
 
 export function resolveFeatureFlag(
@@ -151,6 +157,12 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     trainingTrustV1: resolveFeatureFlag(env.VITE_FF_TRAINING_TRUST_V1, mode),
     progressProofFinishV1: resolveFeatureFlag(env.VITE_FF_PROGRESS_PROOF_FINISH_V1, mode),
     cohesionFinishV1: resolveFeatureFlag(env.VITE_FF_COHESION_FINISH_V1, mode),
+    premiumDesignV1: resolveFeatureFlag(env.VITE_FF_PREMIUM_DESIGN_V1, mode),
+    mobileIaV1: resolveFeatureFlag(env.VITE_FF_MOBILE_IA_V1, mode),
+    commandSurfacePolishV1: resolveFeatureFlag(env.VITE_FF_COMMAND_SURFACE_POLISH_V1, mode),
+    screenFinishV1: resolveFeatureFlag(env.VITE_FF_SCREEN_FINISH_V1, mode),
+    settingsHubV1: resolveFeatureFlag(env.VITE_FF_SETTINGS_HUB_V1, mode),
+    motionSystemV1: resolveFeatureFlag(env.VITE_FF_MOTION_SYSTEM_V1, mode),
   }
 
   if (!resolvedFlags.catalogProviderV2) {
@@ -319,6 +331,27 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     !resolvedFlags.progressProofFinishV1
   ) {
     resolvedFlags.cohesionFinishV1 = false
+  }
+
+  if (!resolvedFlags.premiumDesignV1) {
+    resolvedFlags.mobileIaV1 = false
+    resolvedFlags.motionSystemV1 = false
+  }
+
+  if (!resolvedFlags.commandSurfaceV2) {
+    resolvedFlags.commandSurfacePolishV1 = false
+  }
+
+  if (
+    !resolvedFlags.loggingMaturityV1 ||
+    !resolvedFlags.trainingTrustV1 ||
+    !resolvedFlags.progressProofFinishV1
+  ) {
+    resolvedFlags.screenFinishV1 = false
+  }
+
+  if (!resolvedFlags.cohesionFinishV1) {
+    resolvedFlags.settingsHubV1 = false
   }
 
   return resolvedFlags

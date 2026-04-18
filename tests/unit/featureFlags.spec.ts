@@ -70,6 +70,12 @@ describe('feature flags', () => {
       trainingTrustV1: false,
       progressProofFinishV1: false,
       cohesionFinishV1: false,
+      premiumDesignV1: false,
+      mobileIaV1: false,
+      commandSurfacePolishV1: false,
+      screenFinishV1: false,
+      settingsHubV1: false,
+      motionSystemV1: false,
     })
   })
 
@@ -141,6 +147,12 @@ describe('feature flags', () => {
       trainingTrustV1: true,
       progressProofFinishV1: true,
       cohesionFinishV1: true,
+      premiumDesignV1: true,
+      mobileIaV1: true,
+      commandSurfacePolishV1: true,
+      screenFinishV1: true,
+      settingsHubV1: true,
+      motionSystemV1: true,
     })
   })
 
@@ -231,6 +243,12 @@ describe('feature flags', () => {
       trainingTrustV1: false,
       progressProofFinishV1: false,
       cohesionFinishV1: false,
+      premiumDesignV1: false,
+      mobileIaV1: false,
+      commandSurfacePolishV1: false,
+      screenFinishV1: false,
+      settingsHubV1: false,
+      motionSystemV1: false,
     })
   })
 
@@ -296,5 +314,36 @@ describe('feature flags', () => {
     expect(flags.trainingGuidanceV2).toBe(false)
     expect(flags.progressStoryV1).toBe(false)
     expect(flags.quietSettingsV1).toBe(false)
+  })
+
+  it('downgrades premium finish flags when their prerequisites are disabled', () => {
+    const flags = buildFeatureFlags({
+      MODE: 'production',
+      VITE_FF_PREMIUM_DESIGN_V1: 'false',
+      VITE_FF_MOBILE_IA_V1: 'true',
+      VITE_FF_MOTION_SYSTEM_V1: 'true',
+      VITE_FF_COMMAND_HOME_V1: 'false',
+      VITE_FF_COMMAND_SURFACE_V2: 'true',
+      VITE_FF_COMMAND_SURFACE_POLISH_V1: 'true',
+      VITE_FF_PHASE_TEMPLATES_V1: 'false',
+      VITE_FF_LOGGING_MATURITY_V1: 'true',
+      VITE_FF_TRAINING_PRESERVATION_V1: 'false',
+      VITE_FF_TRAINING_TRUST_V1: 'true',
+      VITE_FF_PROGRESS_PROOF_V2: 'false',
+      VITE_FF_PROGRESS_PROOF_FINISH_V1: 'true',
+      VITE_FF_SCREEN_FINISH_V1: 'true',
+      VITE_FF_COHESION_FINISH_V1: 'false',
+      VITE_FF_SETTINGS_HUB_V1: 'true',
+    })
+
+    expect(flags.mobileIaV1).toBe(false)
+    expect(flags.motionSystemV1).toBe(false)
+    expect(flags.commandSurfaceV2).toBe(false)
+    expect(flags.commandSurfacePolishV1).toBe(false)
+    expect(flags.loggingMaturityV1).toBe(false)
+    expect(flags.trainingTrustV1).toBe(false)
+    expect(flags.progressProofFinishV1).toBe(false)
+    expect(flags.screenFinishV1).toBe(false)
+    expect(flags.settingsHubV1).toBe(false)
   })
 })
