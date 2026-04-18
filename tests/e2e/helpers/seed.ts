@@ -759,6 +759,20 @@ async function seedPsmfGarminFeatureState(
     },
   )
 
+  await page.evaluate(async () => {
+    await new Promise<void>((resolve) => {
+      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
+      request.onsuccess = () => resolve()
+      request.onerror = () => resolve()
+      request.onblocked = () => resolve()
+    })
+    await new Promise<void>((resolve) => {
+      const request = window.indexedDB.deleteDatabase('macrotracker-app')
+      request.onsuccess = () => resolve()
+      request.onerror = () => resolve()
+      request.onblocked = () => resolve()
+    })
+  })
   await page.reload()
   await restoreLogLanding(page)
 }

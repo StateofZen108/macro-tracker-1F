@@ -1,5 +1,5 @@
 import { Camera, Plus, Search, Star, Undo2, X } from 'lucide-react'
-import { useEffect, useState, type RefObject } from 'react'
+import { useState, type RefObject } from 'react'
 import type {
   BarcodeLookupResult,
   CaptureConvenienceDraft,
@@ -39,6 +39,7 @@ type QuickActionButton = {
   colorToken?: ToolbarColorToken
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildOrderedQuickActionButtons(
   quickActionButtons: ReadonlyArray<QuickActionButton>,
   loggingShortcutPreference?: UserSettings['loggingShortcutPreference'],
@@ -108,6 +109,7 @@ export function buildOrderedQuickActionButtons(
   return orderedButtons
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function shouldCollapseLegacyAddFoodSections(params: {
   mode: AddFoodPaneMode
   mealAwareLaneVisible: boolean
@@ -430,11 +432,12 @@ export function BrowsePane({
   const showLegacyFastPathSections =
     !focusedFastPathMode || showMoreWaysToLog || debouncedQuery.length > 0
 
-  useEffect(() => {
-    if (debouncedQuery.trim().length > 0) {
+  function handleSearchChange(nextQuery: string): void {
+    if (nextQuery.trim().length > 0) {
       setShowMoreWaysToLog(true)
     }
-  }, [debouncedQuery])
+    onQueryChange(nextQuery)
+  }
 
   function renderSearchInput(): React.ReactNode {
     return (
@@ -445,7 +448,7 @@ export function BrowsePane({
           className="field pl-11"
           placeholder={personalLibraryEnabled ? 'Search your library first' : 'Search your saved foods'}
           value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
+          onChange={(event) => handleSearchChange(event.target.value)}
         />
       </div>
     )

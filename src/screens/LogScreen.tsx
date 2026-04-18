@@ -148,6 +148,8 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const lastSyncedEntrySignatureRef = useRef(buildActivityEntrySignature(entry))
 
+  // Keep the draft inputs aligned when the active activity entry changes underneath the form.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const nextSignature = buildActivityEntrySignature(entry)
     if (lastSyncedEntrySignatureRef.current === nextSignature) {
@@ -161,6 +163,7 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
     setNotes(entry?.notes ?? '')
     setErrorMessage(null)
   }, [entry?.cardioMinutes, entry?.cardioType, entry?.date, entry?.notes, entry?.steps, entry?.updatedAt, entry?.deletedAt])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function handleSave(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault()

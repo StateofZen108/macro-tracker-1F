@@ -261,6 +261,8 @@ export function WorkoutsScreen({
   )
   const [setDrafts, setSetDrafts] = useState<Record<string, SetDraft[]>>(selectedTemplate ? buildSetDrafts(selectedTemplate.template) : {})
 
+  // Sync template and analytics drilldown state when workout data or persisted selections change.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!selectedTemplateId && activePrograms[0]?.templates[0]?.id) {
       setSelectedTemplateId(activePrograms[0].templates[0].id)
@@ -278,6 +280,7 @@ export function WorkoutsScreen({
 
     setSelectedExerciseId(snapshot.exerciseDrilldown?.exerciseId ?? snapshot.exerciseTrends[0]?.id ?? null)
   }, [selectedExerciseId, snapshot.exerciseDrilldown?.exerciseId, snapshot.exerciseTrends])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const exerciseDrilldown = useMemo(
     () => buildExerciseDrilldown(sessions, programs, analyticsRange, selectedExerciseId),

@@ -67,7 +67,9 @@ test('recent fat-loss mode switches force a stabilization hold on mobile preview
 
   await expect(page.getByText('Hold for more data').first()).toBeVisible()
   await expect(
-    page.getByText('Fat-loss mode changed recently. Hold targets during the current stabilization window.'),
+    page
+      .getByText('Fat-loss mode changed recently. Hold targets during the current stabilization window.')
+      .first(),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toHaveCount(0)
 
@@ -83,7 +85,9 @@ test('recent goal mode switches force a stabilization hold on mobile preview', a
 
   await expect(page.getByText('Hold for more data').first()).toBeVisible()
   await expect(
-    page.getByText('Goal mode changed recently. Hold targets during the current stabilization window.'),
+    page
+      .getByText('Goal mode changed recently. Hold targets during the current stabilization window.')
+      .first(),
   ).toBeVisible()
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toHaveCount(0)
 

@@ -193,6 +193,7 @@ export type MealAwareQuickLogItem =
       food: Food
     }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function buildMealAwareQuickLogItems({
   mealAwareLaneEnabled,
   savedMealSearchResults,

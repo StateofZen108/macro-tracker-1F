@@ -53,6 +53,14 @@ export interface PwaShellState {
   applyUpdate: () => Promise<void>
 }
 
+type RunDecisionFn = (
+  trigger: PwaUpdateTrigger,
+  options?: {
+    hiddenMs?: number | null
+    runtimeSnapshot?: PwaRuntimeState
+  },
+) => Promise<void>
+
 function canUseWindow(): boolean {
   return typeof window !== 'undefined'
 }
@@ -227,6 +235,7 @@ export function usePwaShell(input: PwaShellInput): PwaShellState {
   const applyWatchdogTimerRef = useRef<number | null>(null)
   const lastHiddenAtRef = useRef<number | null>(null)
   const lastDiagnosticSignatureRef = useRef<string | null>(null)
+  const runDecisionRef = useRef<RunDecisionFn | null>(null)
 
   const isAndroidChromium = useMemo(() => {
     if (typeof navigator === 'undefined') {
@@ -510,7 +519,7 @@ export function usePwaShell(input: PwaShellInput): PwaShellState {
           clearHealthCheckTimer()
           healthCheckTimerRef.current = window.setTimeout(() => {
             healthCheckTimerRef.current = null
-            void runDecision('health_check')
+            void runDecisionRef.current?.('health_check')
           }, decision.scheduleMs ?? HEALTH_CONFIRMATION_MS)
           break
         }
@@ -537,6 +546,10 @@ export function usePwaShell(input: PwaShellInput): PwaShellState {
       standaloneAndroid,
     ],
   )
+
+  useEffect(() => {
+    runDecisionRef.current = runDecision
+  }, [runDecision])
 
   useEffect(() => {
     if (!canUseWindow()) {
@@ -599,6 +612,8 @@ export function usePwaShell(input: PwaShellInput): PwaShellState {
     emitLaunchCountChange()
   }, [input.bootHealthy])
 
+  // Re-evaluate the update policy whenever the runtime snapshot or interaction guard changes.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     void runDecision('snapshot_changed')
   }, [
@@ -620,6 +635,7 @@ export function usePwaShell(input: PwaShellInput): PwaShellState {
 
     void runDecision('cold_start_ready')
   }, [input.bootHealthy, runDecision])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     const handleVisibilityChange = () => {

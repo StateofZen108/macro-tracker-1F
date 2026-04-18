@@ -1,17 +1,8 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { createPreviewEnv } from './preview-env.mjs'
 
 const port = process.argv[2] ?? process.env.COACH_WAVE1_PREVIEW_PORT ?? '4174'
-const coachPreviewEnv = {
-  ...process.env,
-  VITE_FF_COACH_ENGINE_V1: 'true',
-  VITE_FF_WEEKLY_DECISION_SYNC: 'true',
-  VITE_FF_WEEKLY_DECISION_CARD: 'true',
-  VITE_FF_COACH_METHOD_V2: 'true',
-  VITE_FF_PSMF_PHASE_V2: 'true',
-  VITE_FF_RECOVERY_LAYER_V1: 'true',
-  VITE_FF_GARMIN_CONNECT_V1: 'true',
-  VITE_FF_RECOVERY_HYBRID_GATES: 'true',
-}
+const coachPreviewEnv = createPreviewEnv('coach-preview')
 
 function getNpmInvocation(args) {
   return process.platform === 'win32'

@@ -736,6 +736,8 @@ export function WeightScreen({
     currentCheckIn && (currentCheckIn.status === 'ready' || currentCheckIn.status === 'insufficientData')
   const renderLegacyWeeklyCheckInBlocks = false
 
+  // Reset the editor draft whenever the selected snapshot or persisted compare preferences change.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setBodyMetricInputs(buildDefaultMetricRecord(editingBodyProgressSnapshot))
     setCustomMetrics(
@@ -769,6 +771,7 @@ export function WeightScreen({
   useEffect(() => {
     setSelectedCapturePose(settings.bodyProgressFocusState?.lastSelectedPose ?? 'front')
   }, [settings.bodyProgressFocusState?.lastSelectedPose])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function openOverrideEditor(): void {
     setOverrideCalorieTarget(`${settings.calorieTarget}`)
@@ -2284,8 +2287,6 @@ export function WeightScreen({
         description="Keep the first view anchored on whether the cut is still working, then drop into weigh-ins and longer history only after that."
         onOpenSettings={onOpenSettings}
       />
-      {renderBodyProgressSection()}
-      {!currentCheckIn ? renderTodayWeighInSection() : null}
       <section className="app-card space-y-3 px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -2341,35 +2342,67 @@ export function WeightScreen({
                   </ul>
                 </div>
               ) : null}
-              {currentCheckIn.reasonCodes?.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {currentCheckIn.reasonCodes.map((code) => (
-                    <span
-                      key={code}
-                      className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                    >
-                      {code}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl bg-slate-100/80 px-3 py-3 dark:bg-slate-950/60">
-                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                    Next check-in
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {formatShortDate(currentCheckIn.nextCheckInDate ?? currentCheckIn.weekEndDate)}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-slate-100/80 px-3 py-3 dark:bg-slate-950/60">
-                  <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                    Active target source
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-                    {currentCheckIn.status === 'overridden' ? 'Manual override' : 'Weekly recommendation'}
-                  </p>
-                </div>
+            </div>
+
+            {shouldShowActionButtons ? (
+              <div className="grid gap-3 sm:grid-cols-3">
+                {canApplyCheckInTargets ? (
+                  <button type="button" className="action-button" onClick={onApplyCheckInSuggestion}>
+                    Apply suggestion
+                  </button>
+                ) : null}
+                {currentCheckIn.status === 'ready' ? (
+                  <button type="button" className="action-button-secondary" onClick={onKeepCurrentCheckIn}>
+                    Keep current
+                  </button>
+                ) : null}
+                {onManualOverrideTargets ? (
+                  <button
+                    type="button"
+                    className="action-button-secondary"
+                    onClick={() => {
+                      if (showOverrideEditor) {
+                        closeOverrideEditor()
+                        return
+                      }
+
+                      openOverrideEditor()
+                    }}
+                  >
+                    {showOverrideEditor ? 'Close override' : 'Manual override'}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {currentCheckIn.reasonCodes?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {currentCheckIn.reasonCodes.map((code) => (
+                  <span
+                    key={code}
+                    className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  >
+                    {code}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl bg-slate-100/80 px-3 py-3 dark:bg-slate-950/60">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Next check-in
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                  {formatShortDate(currentCheckIn.nextCheckInDate ?? currentCheckIn.weekEndDate)}
+                </p>
+              </div>
+              <div className="rounded-2xl bg-slate-100/80 px-3 py-3 dark:bg-slate-950/60">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+                  Active target source
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+                  {currentCheckIn.status === 'overridden' ? 'Manual override' : 'Weekly recommendation'}
+                </p>
               </div>
             </div>
 
@@ -2442,37 +2475,6 @@ export function WeightScreen({
                       currentCheckIn.recommendedCalorieTarget,
                     )}
                   </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {shouldShowActionButtons ? (
-              <div className="grid gap-3 sm:grid-cols-3">
-                {canApplyCheckInTargets ? (
-                  <button type="button" className="action-button" onClick={onApplyCheckInSuggestion}>
-                    Apply suggestion
-                  </button>
-                ) : null}
-                {currentCheckIn.status === 'ready' ? (
-                  <button type="button" className="action-button-secondary" onClick={onKeepCurrentCheckIn}>
-                    Keep current
-                  </button>
-                ) : null}
-                {onManualOverrideTargets ? (
-                  <button
-                    type="button"
-                    className="action-button-secondary"
-                    onClick={() => {
-                      if (showOverrideEditor) {
-                        closeOverrideEditor()
-                        return
-                      }
-
-                      openOverrideEditor()
-                    }}
-                  >
-                    {showOverrideEditor ? 'Close override' : 'Manual override'}
-                  </button>
                 ) : null}
               </div>
             ) : null}
@@ -2670,6 +2672,8 @@ export function WeightScreen({
           </p>
         )}
       </section>
+      {renderBodyProgressSection()}
+      {!currentCheckIn ? renderTodayWeighInSection() : null}
 
       {nutritionOverview ? (
         <section className="app-card space-y-4 px-4 py-4">

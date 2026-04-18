@@ -47,7 +47,7 @@ test('repeat this meal surfaces recent foods and reuses the last amount', async 
   await seedPersonalLibraryScenario(page, 'repeat_this_meal')
   await openMealSheet(page)
 
-  await expect(page.getByText(/repeat this meal/i)).toBeVisible()
+  await expect(page.getByText(/meal-aware quick log/i)).toBeVisible()
   await page.getByRole('button', { name: /use last amount/i }).first().click()
 
   await ensureMealExpanded(page)

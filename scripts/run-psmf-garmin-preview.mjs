@@ -1,17 +1,8 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { createPreviewEnv } from './preview-env.mjs'
 
 const port = process.argv[2] ?? process.env.PSMF_GARMIN_PREVIEW_PORT ?? '4179'
-const previewEnv = {
-  ...process.env,
-  VITE_FF_COACH_ENGINE_V1: 'true',
-  VITE_FF_WEEKLY_DECISION_SYNC: 'true',
-  VITE_FF_WEEKLY_DECISION_CARD: 'true',
-  VITE_FF_COACH_METHOD_V2: 'true',
-  VITE_FF_PSMF_PHASE_V2: 'true',
-  VITE_FF_RECOVERY_LAYER_V1: 'true',
-  VITE_FF_GARMIN_CONNECT_V1: 'true',
-  VITE_FF_RECOVERY_HYBRID_GATES: 'true',
-}
+const previewEnv = createPreviewEnv('psmf-garmin-preview')
 
 function getNpmInvocation(args) {
   return process.platform === 'win32'
