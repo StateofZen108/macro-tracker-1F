@@ -2,6 +2,7 @@ import type {
   ActionResult,
   CoachingDecisionRecord,
   CoachingEvidenceCard,
+  CutReviewCard,
   EnergyModelSnapshot,
   GarminModifierWindow,
   WeeklyCheckInPacket,
@@ -111,6 +112,48 @@ function parseEvidenceCard(rawValue: unknown): CoachingEvidenceCard | null {
   }
 }
 
+function parseCutReviewCard(rawValue: unknown): CutReviewCard | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const verdict = readString(rawValue.verdict)
+  const lever = readString(rawValue.lever)
+  const title = readString(rawValue.title)
+  const summary = readString(rawValue.summary)
+  const confidence = readString(rawValue.confidence)
+  const confidenceReason = readString(rawValue.confidenceReason)
+  const nextReviewDate = normalizeDateKeyField(rawValue.nextReviewDate)
+  const state = readString(rawValue.state)
+  if (
+    !verdict ||
+    !lever ||
+    !title ||
+    !summary ||
+    !confidence ||
+    !confidenceReason ||
+    !nextReviewDate ||
+    !state
+  ) {
+    return undefined
+  }
+
+  return {
+    state: state as CutReviewCard['state'],
+    verdict: verdict as CutReviewCard['verdict'],
+    lever: lever as CutReviewCard['lever'],
+    title,
+    summary,
+    evidenceReasons: Array.isArray(rawValue.evidenceReasons)
+      ? rawValue.evidenceReasons.filter((value): value is CutReviewCard['evidenceReasons'][number] => typeof value === 'string')
+      : [],
+    confidence: confidence as CutReviewCard['confidence'],
+    confidenceReason,
+    nextReviewDate,
+    applyLabel: readString(rawValue.applyLabel),
+  }
+}
+
 function parseWeeklyCheckInPacket(rawValue: unknown): WeeklyCheckInPacket | undefined {
   if (!isRecord(rawValue)) {
     return undefined
@@ -129,6 +172,11 @@ function parseWeeklyCheckInPacket(rawValue: unknown): WeeklyCheckInPacket | unde
         proteinTarget: Number(rawValue.previousTargets.proteinTarget ?? 0),
         carbTarget: Number(rawValue.previousTargets.carbTarget ?? 0),
         fatTarget: Number(rawValue.previousTargets.fatTarget ?? 0),
+        dailyStepTarget:
+          typeof rawValue.previousTargets.dailyStepTarget === 'number' &&
+          Number.isFinite(rawValue.previousTargets.dailyStepTarget)
+            ? rawValue.previousTargets.dailyStepTarget
+            : undefined,
       }
     : null
   const energyModel = parseEnergyModelSnapshot(rawValue.energyModel)
@@ -152,6 +200,11 @@ function parseWeeklyCheckInPacket(rawValue: unknown): WeeklyCheckInPacket | unde
         proteinTarget: Number(rawValue.proposedTargets.proteinTarget ?? 0),
         carbTarget: Number(rawValue.proposedTargets.carbTarget ?? 0),
         fatTarget: Number(rawValue.proposedTargets.fatTarget ?? 0),
+        dailyStepTarget:
+          typeof rawValue.proposedTargets.dailyStepTarget === 'number' &&
+          Number.isFinite(rawValue.proposedTargets.dailyStepTarget)
+            ? rawValue.proposedTargets.dailyStepTarget
+            : undefined,
       }
     : undefined
 
@@ -174,6 +227,7 @@ function parseWeeklyCheckInPacket(rawValue: unknown): WeeklyCheckInPacket | unde
         : undefined,
     previousTargets,
     proposedTargets,
+    cutReviewCard: parseCutReviewCard(rawValue.cutReviewCard),
     energyModel,
     garminModifierWindow: parseGarminModifierWindow(rawValue.garminModifierWindow),
     evidenceCards: Array.isArray(rawValue.evidenceCards)
@@ -222,6 +276,11 @@ function normalizeDecisionRecord(rawValue: unknown): CoachingDecisionRecord | nu
         proteinTarget: Number(rawValue.previousTargets.proteinTarget ?? 0),
         carbTarget: Number(rawValue.previousTargets.carbTarget ?? 0),
         fatTarget: Number(rawValue.previousTargets.fatTarget ?? 0),
+        dailyStepTarget:
+          typeof rawValue.previousTargets.dailyStepTarget === 'number' &&
+          Number.isFinite(rawValue.previousTargets.dailyStepTarget)
+            ? rawValue.previousTargets.dailyStepTarget
+            : undefined,
       }
     : null
 
@@ -235,6 +294,11 @@ function normalizeDecisionRecord(rawValue: unknown): CoachingDecisionRecord | nu
         proteinTarget: Number(rawValue.proposedTargets.proteinTarget ?? 0),
         carbTarget: Number(rawValue.proposedTargets.carbTarget ?? 0),
         fatTarget: Number(rawValue.proposedTargets.fatTarget ?? 0),
+        dailyStepTarget:
+          typeof rawValue.proposedTargets.dailyStepTarget === 'number' &&
+          Number.isFinite(rawValue.proposedTargets.dailyStepTarget)
+            ? rawValue.proposedTargets.dailyStepTarget
+            : undefined,
       }
     : undefined
 

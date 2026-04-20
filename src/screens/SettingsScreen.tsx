@@ -47,6 +47,7 @@ import type {
   LoggingShortcutId,
   LoggingToolbarStyle,
   MealTemplate,
+  PhaseReviewIntent,
   Recipe,
   RecoverableDataIssue,
   RecoveryCheckIn,
@@ -94,6 +95,8 @@ interface SettingsScreenProps {
   initializationError: AppActionError | null
   getFoodReferenceCount: (foodId: string) => number
   onUpdateSettings: (settings: UserSettings) => ActionResult<void>
+  phaseReviewIntent?: PhaseReviewIntent | null
+  onClearPhaseReviewIntent?: () => void
   onStartPsmfPhase?: (startDate: string, plannedEndDate: string, notes?: string) => ActionResult<DietPhase>
   onUpdatePlannedPhase?: (
     phaseId: string,
@@ -231,7 +234,14 @@ interface PreviewPsmfGarminUiState {
     severity: 'green' | 'yellow' | 'red'
   }
   garmin?: {
-    kind: 'not_connected' | 'connected' | 'syncing' | 'rate_limited' | 'reconnect_required' | 'error'
+    kind:
+      | 'not_enabled'
+      | 'not_connected'
+      | 'connected'
+      | 'syncing'
+      | 'rate_limited'
+      | 'reconnect_required'
+      | 'error'
     lastSyncedLabel?: string
     rateLimitedUntilLabel?: string
     stale?: boolean
@@ -619,6 +629,8 @@ function SettingsScreen({
   initializationError,
   getFoodReferenceCount,
   onUpdateSettings,
+  phaseReviewIntent = null,
+  onClearPhaseReviewIntent,
   onStartPsmfPhase,
   onUpdatePlannedPhase,
   onExtendDietPhase,
@@ -1872,6 +1884,54 @@ function SettingsScreen({
     })
   }
 
+  useEffect(() => {
+    if (!phaseReviewIntent) {
+      return
+    }
+
+    openSettingsHubSection('workouts')
+    setPhaseActionError(null)
+
+    if (phaseReviewIntent.type === 'refeed_day') {
+      const targetEvent =
+        selectedPsmfPhaseRefeeds.find((event) => event.id === phaseReviewIntent.eventId) ?? null
+      setDietPhaseForm((current) => ({
+        ...current,
+        refeedDate: phaseReviewIntent.date,
+        refeedCalories:
+          targetEvent && Number.isFinite(targetEvent.calorieTargetOverride)
+            ? `${targetEvent.calorieTargetOverride}`
+            : current.refeedCalories,
+        refeedNotes: targetEvent?.notes ?? current.refeedNotes,
+      }))
+      setPhaseEditorTargetId(phaseReviewIntent.phaseId)
+      setRefeedEditorTargetId(phaseReviewIntent.eventId)
+      setPhaseEditorMode('edit_refeed')
+      onSelectPsmfPhase?.(phaseReviewIntent.phaseId)
+    } else {
+      const targetEvent =
+        activeCarbCycleHighCarbDays.find((event) => event.id === phaseReviewIntent.eventId) ?? null
+      setDietPhaseForm((current) => ({
+        ...current,
+        refeedDate: phaseReviewIntent.date,
+        refeedCalories:
+          targetEvent && Number.isFinite(targetEvent.calorieTargetOverride)
+            ? `${targetEvent.calorieTargetOverride}`
+            : current.refeedCalories,
+        refeedNotes: targetEvent?.notes ?? current.refeedNotes,
+      }))
+      setPhaseEditorMode(null)
+    }
+
+    onClearPhaseReviewIntent?.()
+  }, [
+    activeCarbCycleHighCarbDays,
+    onClearPhaseReviewIntent,
+    onSelectPsmfPhase,
+    phaseReviewIntent,
+    selectedPsmfPhaseRefeeds,
+  ])
+
   return (
     <div className="space-y-4 pb-6">
       <ScreenHeader
@@ -2684,54 +2744,86 @@ function SettingsScreen({
             <p className="font-display text-2xl text-slate-900 dark:text-white">Connected recovery data</p>
           </div>
           <div className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
-            {previewPsmfGarminUiState.garmin?.kind === 'connected' ? (
+            {previewPsmfGarminUiState.garmin?.kind === 'not_enabled' ? (
               <div className="space-y-2">
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Garmin is connected. Imported wellness data can influence recovery scoring and coaching holds.
+                  Garmin is not enabled in this deployment.
+                </p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Background sync requires provider credentials, durable server storage, and the production automation worker.
+                </p>
+              </div>
+            ) : previewPsmfGarminUiState.garmin?.kind === 'connected' ? (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Garmin is connected and background automation is active. Fresh wellness snapshots sync into MacroTracker automatically.
                 </p>
                 <p className="text-sm text-slate-600 dark:text-slate-300">
                   Last synced: {previewPsmfGarminUiState.garmin.lastSyncedLabel ?? 'Not yet'}
                 </p>
                 {previewPsmfGarminUiState.garmin.stale ? (
                   <p className="text-sm text-amber-700 dark:text-amber-300">
-                    Garmin data is older than 72 hours and will not trigger high-severity recovery holds.
+                    Garmin automation is behind. Snapshots older than 6 hours can delay recovery updates until the next successful sync.
                   </p>
-                ) : null}
+                ) : (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
+                    Background sync runs automatically. You only need troubleshooting actions if data stops refreshing.
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-2">
-                  <button type="button" className="action-button-secondary" onClick={onSyncGarmin} disabled={garminBusy}>
-                    Sync now
-                  </button>
                   <button type="button" className="action-button-secondary" onClick={onDisconnectGarmin} disabled={garminBusy}>
                     Disconnect
                   </button>
                 </div>
+                <details className="rounded-[20px] border border-black/5 bg-white/60 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-900 dark:text-white">
+                    Troubleshooting
+                  </summary>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="action-button-secondary" onClick={onSyncGarmin} disabled={garminBusy}>
+                      Sync now
+                    </button>
+                  </div>
+                </details>
               </div>
             ) : previewPsmfGarminUiState.garmin?.kind === 'syncing' ? (
               <p className="text-sm text-slate-600 dark:text-slate-300">Syncing Garmin data...</p>
             ) : previewPsmfGarminUiState.garmin?.kind === 'rate_limited' ? (
               <div className="space-y-2">
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Garmin sync is temporarily rate limited. Try again after{' '}
+                  Garmin background sync is temporarily rate limited. It will resume after{' '}
                   {previewPsmfGarminUiState.garmin.rateLimitedUntilLabel ?? 'later'}.
                 </p>
               </div>
             ) : previewPsmfGarminUiState.garmin?.kind === 'reconnect_required' ? (
               <div className="space-y-2">
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Garmin needs to be reconnected before new data can sync.
+                  Garmin needs to be reconnected before automatic background sync can resume.
                 </p>
                 <button type="button" className="action-button-secondary" onClick={onConnectGarmin} disabled={garminBusy}>
                   Reconnect Garmin
                 </button>
               </div>
             ) : previewPsmfGarminUiState.garmin?.kind === 'error' ? (
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Garmin sync failed. Your existing imported data is still available.
-              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  The last Garmin sync failed. Existing imported data is still available and background automation will retry.
+                </p>
+                <details className="rounded-[20px] border border-black/5 bg-white/60 px-4 py-3 dark:border-white/10 dark:bg-slate-950/40">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-900 dark:text-white">
+                    Troubleshooting
+                  </summary>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" className="action-button-secondary" onClick={onSyncGarmin} disabled={garminBusy}>
+                      Sync now
+                    </button>
+                  </div>
+                </details>
+              </div>
             ) : (
               <div className="space-y-2">
                 <p className="text-sm text-slate-600 dark:text-slate-300">
-                  Connect Garmin to import sleep, stress, Body Battery, steps, and cardio into recovery scoring.
+                  Connect Garmin once. After that, MacroTracker keeps sleep, stress, Body Battery, steps, and cardio snapshots updated automatically in the background.
                 </p>
                 <button type="button" className="action-button-secondary" onClick={onConnectGarmin} disabled={garminBusy}>
                   Connect Garmin

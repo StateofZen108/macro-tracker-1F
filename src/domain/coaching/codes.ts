@@ -76,6 +76,12 @@ const REASON_CODES = new Set<CoachingReasonCode>([
   'recovery_watch',
   'refeed_scheduled',
   'diet_break_review_recommended',
+  'waist_down_scale_confounded',
+  'refeed_spike_expected',
+  'diet_break_spike_expected',
+  'true_stall_confirmed',
+  'step_lever_selected',
+  'phase_review_required',
 ])
 
 export function toLegacyCoachingCode(rawCode: string): LegacyCoachingCode {

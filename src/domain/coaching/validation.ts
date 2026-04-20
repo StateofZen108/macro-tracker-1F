@@ -73,7 +73,12 @@ function normalizeBlockedReasonCodes(
 }
 
 function isActionDecision(decisionType: CoachingDecisionType): boolean {
-  return decisionType === 'increase_calories' || decisionType === 'decrease_calories'
+  return (
+    decisionType === 'increase_calories' ||
+    decisionType === 'decrease_calories' ||
+    decisionType === 'increase_steps' ||
+    decisionType === 'review_phase_structure'
+  )
 }
 
 export function runCoachingReplayScenario(

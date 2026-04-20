@@ -71,6 +71,7 @@ import type {
   DietPhaseEvent,
   FoodLogEntry,
   PhaseMealTemplate,
+  PhaseReviewIntent,
   RecoveryCheckIn,
   LegacyCoachingCode,
   MealType,
@@ -355,6 +356,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   const autoSnapshotPrimedRef = useRef(false)
   const [lastStorageMutationAt, setLastStorageMutationAt] = useState(() => Date.now())
   const [hasUserInteracted, setHasUserInteracted] = useState(false)
+  const [phaseReviewIntent, setPhaseReviewIntent] = useState<PhaseReviewIntent | null>(null)
 
   const {
     activeTab,
@@ -636,6 +638,23 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     stepRecords: garminModifierRecords.map((record) => ({ date: record.date, steps: record.steps })),
     activeGymProfileId: settings.activeGymProfileId,
   })
+  const weeklyCheckInAdaptiveInputs = useMemo(
+    () => ({
+      bodyProgressSnapshots:
+        FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1 ? bodyProgress.snapshots : [],
+      dietPhases: normalizedDietPhases,
+      dietPhaseEvents,
+      readiness: recoveryReadiness,
+      strengthRetention: workouts.snapshot.strengthRetention,
+    }),
+    [
+      bodyProgress.snapshots,
+      dietPhaseEvents,
+      normalizedDietPhases,
+      recoveryReadiness,
+      workouts.snapshot.strengthRetention,
+    ],
+  )
   const coachingInsight = useCoaching(coachingSettings, weights, recoveryIssues.length)
   const {
     currentCheckIn,
@@ -643,9 +662,15 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     checkInHistory,
     coachingDecisionHistory,
     markApplied,
+    markDeferred,
     markKept,
     markOverridden,
-  } = useWeeklyCheckIns(coachingSettings, weights, recoveryIssues.length)
+  } = useWeeklyCheckIns(
+    coachingSettings,
+    weights,
+    recoveryIssues.length,
+    weeklyCheckInAdaptiveInputs,
+  )
   const visibleCurrentCheckIn = useMemo(() => {
     if (!FEATURE_FLAGS.weeklyDecisionCard || !currentCheckIn) {
       return null
@@ -2001,6 +2026,30 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     guardedTabChange('settings')
   }
 
+  function resolvePhaseReviewIntent(record: NonNullable<typeof currentCheckIn>): PhaseReviewIntent | null {
+    const nextEvent =
+      [...dietPhaseEvents]
+        .filter(
+          (event) =>
+            !event.deletedAt &&
+            (event.type === 'refeed_day' || event.type === 'high_carb_day') &&
+            event.date > record.weekEndDate &&
+            event.date <= addDays(record.weekEndDate, 14),
+        )
+        .sort((left, right) => left.date.localeCompare(right.date))[0] ?? null
+
+    if (!nextEvent) {
+      return null
+    }
+
+    return {
+      eventId: nextEvent.id,
+      phaseId: nextEvent.phaseId,
+      type: nextEvent.type,
+      date: nextEvent.date,
+    }
+  }
+
   function handleChangeDayStatus(nextStatus: DayStatus): void {
     if (nextStatus === selectedDayStatus) {
       return
@@ -2269,8 +2318,79 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   }
 
   function handleApplyCheckInSuggestion(): void {
+    if (!currentCheckIn) {
+      return
+    }
+
     if (
-      !currentCheckIn ||
+      currentCheckIn.decisionType === 'increase_steps' &&
+      typeof currentCheckIn.recommendedStepTarget === 'number'
+    ) {
+      const settingsResult = updateSettings({
+        ...settings,
+        dailyStepTarget: currentCheckIn.recommendedStepTarget,
+      })
+      if (!settingsResult.ok) {
+        reportError(settingsResult.error)
+        return
+      }
+
+      const historyResult = markApplied()
+      if (!historyResult.ok) {
+        void updateSettings(settings)
+        reportError(historyResult.error)
+        return
+      }
+
+      void recordDiagnosticsEvent({
+        eventType: 'cut_intel_v1.step_apply_succeeded',
+        severity: 'info',
+        scope: 'diagnostics',
+        recordKey: currentCheckIn.decisionRecordId,
+        message: `Applied adaptive step target for ${currentCheckIn.weekEndDate}.`,
+        payload: {
+          decisionRecordId: currentCheckIn.decisionRecordId,
+          decisionType: currentCheckIn.decisionType,
+          recommendedStepTarget: currentCheckIn.recommendedStepTarget,
+        },
+      })
+
+      reportError(null)
+      return
+    }
+
+    if (currentCheckIn.decisionType === 'review_phase_structure') {
+      const intent = resolvePhaseReviewIntent(currentCheckIn)
+      if (!intent) {
+        reportError('No upcoming refeed or high-carb day is available to review in the next 14 days.')
+        return
+      }
+
+      setPhaseReviewIntent(intent)
+      guardedTabChange('settings')
+      const historyResult = markApplied()
+      if (!historyResult.ok) {
+        reportError(historyResult.error)
+        return
+      }
+
+      void recordDiagnosticsEvent({
+        eventType: 'cut_intel_v1.phase_review_opened',
+        severity: 'info',
+        scope: 'diagnostics',
+        recordKey: currentCheckIn.decisionRecordId,
+        message: `Opened phase review for ${currentCheckIn.weekEndDate}.`,
+        payload: {
+          decisionRecordId: currentCheckIn.decisionRecordId,
+          phaseReviewIntent: intent,
+        },
+      })
+
+      reportError(null)
+      return
+    }
+
+    if (
       currentCheckIn.recommendedCalorieTarget === undefined ||
       !currentCheckIn.recommendedMacroTargets
     ) {
@@ -2322,7 +2442,21 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     reportError(null)
   }
 
+  function handleDeferCutReview(): void {
+    const result = markDeferred()
+    if (!result.ok) {
+      reportError(result.error)
+      return
+    }
+
+    reportError(null)
+  }
+
   function summarizeFastCheckInRecommendation(checkIn: NonNullable<typeof visibleCurrentCheckIn>): string {
+    if (typeof checkIn.recommendedStepTarget === 'number') {
+      return `${checkIn.recommendationReason} (${Math.round(checkIn.recommendedStepTarget)} steps/day target)`
+    }
+
     if (typeof checkIn.recommendedCalorieDelta === 'number' && checkIn.recommendedCalorieDelta !== 0) {
       return `${checkIn.recommendationReason} (${Math.round(checkIn.recommendedCalorieDelta)} kcal/day delta)`
     }
@@ -2368,7 +2502,8 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       settings.calorieTarget !== nextSettings.calorieTarget ||
       settings.proteinTarget !== nextSettings.proteinTarget ||
       settings.carbTarget !== nextSettings.carbTarget ||
-      settings.fatTarget !== nextSettings.fatTarget
+      settings.fatTarget !== nextSettings.fatTarget ||
+      settings.dailyStepTarget !== nextSettings.dailyStepTarget
 
     const result = updateSettings(nextSettings)
     if (!result.ok) {
@@ -3098,6 +3233,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
               onRunFastCheckIn={() => handleRunFastCheckIn('dashboard')}
               onDismissReviewItem={handleDismissReviewItem}
               onUpdateSettings={handleManualSettingsUpdate}
+              onOpenAdaptiveReview={() => guardedTabChange('coach')}
             />
           ) : null}
 
@@ -3244,6 +3380,8 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 workoutAction={effectiveWorkoutSnapshot.actionCard}
                 onOpenWorkouts={() => setActiveTab('workouts')}
                 onOpenSettings={openSettingsTab}
+                onApplyCutReview={handleApplyCheckInSuggestion}
+                onDeferCutReview={handleDeferCutReview}
               />
             </Suspense>
           ) : null}
@@ -3303,6 +3441,8 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 initializationError={initializationError}
                 getFoodReferenceCount={getFoodReferenceCount}
                 onUpdateSettings={handleManualSettingsUpdate}
+                phaseReviewIntent={phaseReviewIntent}
+                onClearPhaseReviewIntent={() => setPhaseReviewIntent(null)}
                 onStartPsmfPhase={handleStartPsmfPhase}
                 onUpdatePlannedPhase={handleUpdatePlannedDietPhase}
                 onExtendDietPhase={handleExtendDietPhase}

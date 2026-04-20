@@ -1,14 +1,23 @@
 import type {
   ActivityEntry,
+  BodyProgressSnapshot,
   CheckInRecord,
   CoachingDecisionRecord,
+  CoachingExplanationV1,
+  CoachingReasonCode,
+  CoachingRecommendationV1,
   DayMeta,
+  DietPhase,
+  DietPhaseEvent,
   FoodLogEntry,
   InterventionEntry,
+  RecoveryReadiness,
+  StrengthRetentionSnapshot,
   UserSettings,
   WeightEntry,
 } from '../../types'
 import { FEATURE_FLAGS } from '../../config/featureFlags'
+import { buildAdaptiveCutOutcome } from '../adaptiveCut'
 import {
   buildCoachingDecisionId,
   buildCoachingDecisionRecord,
@@ -17,6 +26,7 @@ import {
   evaluateCoachEngineV1,
   evaluateCoachEngineV2,
 } from '../coaching'
+import type { CoachingEngineEvaluation } from '../coaching/engine'
 import { readCoachRuntimeState } from '../coaching/runtime'
 import { addDays, enumerateDateKeys, getTodayDateKey, parseDateKey } from '../../utils/dates'
 import { convertWeight } from '../../utils/macros'
@@ -26,6 +36,21 @@ export interface CheckInComputation {
   record: CheckInRecord
   canApplyTargets: boolean
   decisionRecord: CoachingDecisionRecord
+  shadowComparison?: CoachingShadowComparison
+}
+
+export interface AdaptiveCheckInInputs {
+  bodyProgressSnapshots?: BodyProgressSnapshot[]
+  dietPhases?: DietPhase[]
+  dietPhaseEvents?: DietPhaseEvent[]
+  readiness?: RecoveryReadiness
+  strengthRetention?: StrengthRetentionSnapshot
+  coachingDecisionHistory?: CoachingDecisionRecord[]
+}
+
+interface WindowComputation {
+  record: CheckInRecord
+  evaluation: CoachingEngineEvaluation
   shadowComparison?: CoachingShadowComparison
 }
 
@@ -40,6 +65,22 @@ function average(values: number[]): number | null {
   }
 
   return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+const DEFAULT_STRENGTH_RETENTION: StrengthRetentionSnapshot = {
+  anchorLiftTrend: 'flat',
+  volumeFloorStatus: 'met',
+  sessionCompletionRate7d: 100,
+  strengthRetentionScore: 100,
+}
+
+function buildDefaultRecoveryReadiness(today: string): RecoveryReadiness {
+  return {
+    state: 'green',
+    evaluatedDate: today,
+    reasons: [],
+    signals: [],
+  }
 }
 
 export function getLatestCompletedWeekEnd(
@@ -72,13 +113,9 @@ function buildActivityMap(activityLog: ActivityEntry[]): Map<string, ActivityEnt
   return new Map(activityLog.map((entry) => [entry.date, entry]))
 }
 
-function buildWellnessFallbackMap(settings: UserSettings): Map<
-  string,
-  {
-    steps?: number
-    cardioMinutes?: number
-  }
-> {
+function buildWellnessFallbackMap(
+  settings: UserSettings,
+): Map<string, { steps?: number; cardioMinutes?: number }> {
   const runtime = readCoachRuntimeState(settings)
   return new Map(
     (runtime?.recovery?.wellness ?? []).map((entry) => [
@@ -91,57 +128,58 @@ function buildWellnessFallbackMap(settings: UserSettings): Map<
   )
 }
 
-export function evaluateCheckInWeek(
-  settings: UserSettings,
-  weights: WeightEntry[],
-  logsByDate: Record<string, FoodLogEntry[]>,
-  dayMeta: DayMeta[],
-  activityLog: ActivityEntry[],
-  interventions: InterventionEntry[],
-  recoveryIssueCount: number,
-): CheckInComputation {
-  const today = getTodayDateKey()
-  const weekEndDate = getLatestCompletedWeekEnd(today, settings.checkInWeekday)
+function buildWindowRecord(params: {
+  weekEndDate: string
+  settings: UserSettings
+  weights: WeightEntry[]
+  logsByDate: Record<string, FoodLogEntry[]>
+  dayMeta: DayMeta[]
+  activityLog: ActivityEntry[]
+  interventions: InterventionEntry[]
+  recoveryIssueCount: number
+  shouldComputeV2: boolean
+  useV2AsAuthority: boolean
+  decisionSource: 'engine_v1' | 'engine_v2'
+}): WindowComputation {
+  const weekEndDate = params.weekEndDate
   const nextCheckInDate = getNextCheckInDate(weekEndDate)
   const weekStartDate = addDays(weekEndDate, -6)
   const priorWeekEndDate = addDays(weekEndDate, -7)
   const priorWeekStartDate = addDays(priorWeekEndDate, -6)
   const currentWeekDates = enumerateDateKeys(weekStartDate, weekEndDate)
   const priorWeekDates = enumerateDateKeys(priorWeekStartDate, priorWeekEndDate)
-  const activityByDate = buildActivityMap(activityLog)
-  const wellnessFallbackByDate = buildWellnessFallbackMap(settings)
-  const weightUnit = settings.weightUnit
+  const activityByDate = buildActivityMap(params.activityLog)
+  const wellnessFallbackByDate = buildWellnessFallbackMap(params.settings)
+  const weightUnit = params.settings.weightUnit
 
   const v1Evaluation = evaluateCoachEngineV1({
     windowEnd: weekEndDate,
-    settings,
-    logsByDate,
-    dayMeta,
-    weights,
-    activityLog,
-    interventions,
-    recoveryIssueCount,
+    settings: params.settings,
+    logsByDate: params.logsByDate,
+    dayMeta: params.dayMeta,
+    weights: params.weights,
+    activityLog: params.activityLog,
+    interventions: params.interventions,
+    recoveryIssueCount: params.recoveryIssueCount,
   })
-  const shouldComputeV2 = FEATURE_FLAGS.coachMethodV2
-  const v2Evaluation = shouldComputeV2
+  const v2Evaluation = params.shouldComputeV2
     ? evaluateCoachEngineV2({
         windowEnd: weekEndDate,
-        settings,
-        logsByDate,
-        dayMeta,
-        weights,
-        activityLog,
-        interventions,
-        recoveryIssueCount,
+        settings: params.settings,
+        logsByDate: params.logsByDate,
+        dayMeta: params.dayMeta,
+        weights: params.weights,
+        activityLog: params.activityLog,
+        interventions: params.interventions,
+        recoveryIssueCount: params.recoveryIssueCount,
       })
     : null
-  const useV2AsAuthority = shouldComputeV2 && import.meta.env.PROD
-  const decisionSource = useV2AsAuthority ? 'engine_v2' : 'engine_v1'
-  const engine = useV2AsAuthority && v2Evaluation ? v2Evaluation : v1Evaluation
+  const engine = params.useV2AsAuthority && v2Evaluation ? v2Evaluation : v1Evaluation
   const shadowComparison =
-    shouldComputeV2 && v2Evaluation
+    params.shouldComputeV2 && v2Evaluation
       ? compareCoachingShadowMode(v1Evaluation.recommendation, v2Evaluation.recommendation)
       : undefined
+
   const currentWeekSeries = engine.context.series.filter(
     (day) => day.date >= weekStartDate && day.date <= weekEndDate,
   )
@@ -152,10 +190,10 @@ export function evaluateCheckInWeek(
     .filter((day) => day.intakeState === 'complete' || day.intakeState === 'fasting')
     .map((day) => (day.intakeState === 'fasting' ? 0 : day.protein))
 
-  const currentWeekWeights = weights
+  const currentWeekWeights = params.weights
     .filter((entry) => currentWeekDates.includes(entry.date))
     .map((entry) => convertWeight(entry.weight, entry.unit, weightUnit))
-  const priorWeekWeights = weights
+  const priorWeekWeights = params.weights
     .filter((entry) => priorWeekDates.includes(entry.date))
     .map((entry) => convertWeight(entry.weight, entry.unit, weightUnit))
 
@@ -167,20 +205,24 @@ export function evaluateCheckInWeek(
       : 0
 
   const totalSteps = currentWeekDates.reduce(
-    (sum, date) => sum + (activityByDate.get(date)?.steps ?? wellnessFallbackByDate.get(date)?.steps ?? 0),
+    (sum, date) =>
+      sum + (activityByDate.get(date)?.steps ?? wellnessFallbackByDate.get(date)?.steps ?? 0),
     0,
   )
   const weeklyCardioMinutes = currentWeekDates.reduce(
     (sum, date) =>
-      sum + (activityByDate.get(date)?.cardioMinutes ?? wellnessFallbackByDate.get(date)?.cardioMinutes ?? 0),
+      sum +
+      (activityByDate.get(date)?.cardioMinutes ??
+        wellnessFallbackByDate.get(date)?.cardioMinutes ??
+        0),
     0,
   )
   const avgSteps = roundTo(totalSteps / currentWeekDates.length, 0)
-  const stepAdherencePercent = settings.dailyStepTarget
-    ? roundTo((avgSteps / settings.dailyStepTarget) * 100, 0)
+  const stepAdherencePercent = params.settings.dailyStepTarget
+    ? roundTo((avgSteps / params.settings.dailyStepTarget) * 100, 0)
     : 100
-  const cardioAdherencePercent = settings.weeklyCardioMinuteTarget
-    ? roundTo((weeklyCardioMinutes / settings.weeklyCardioMinuteTarget) * 100, 0)
+  const cardioAdherencePercent = params.settings.weeklyCardioMinuteTarget
+    ? roundTo((weeklyCardioMinutes / params.settings.weeklyCardioMinuteTarget) * 100, 0)
     : 100
 
   const recommendedCalorieDelta =
@@ -193,80 +235,258 @@ export function evaluateCheckInWeek(
       : engine.recommendation.decisionType === 'hold_for_more_data'
         ? 'insufficientData'
         : 'ready'
-  const canApplyTargets =
-    status === 'ready' &&
-    typeof recommendedCalorieTarget === 'number' &&
-    engine.recommendation.decisionType !== 'keep_targets'
-
-  const record: CheckInRecord = {
-    id: `checkin:${weekEndDate}`,
-    weekEndDate,
-    weekStartDate,
-    nextCheckInDate,
-    priorWeekStartDate,
-    priorWeekEndDate,
-    goalMode: settings.goalMode,
-    targetWeeklyRatePercent: settings.targetWeeklyRatePercent,
-    actualWeeklyRatePercent,
-    avgCalories: roundTo(average(currentWeekCalories) ?? 0, 0),
-    avgProtein: roundTo(average(currentWeekProtein) ?? 0, 1),
-    avgSteps,
-    weeklyCardioMinutes,
-    stepAdherencePercent,
-    cardioAdherencePercent,
-    avgWeight: roundTo(avgWeight ?? 0, 2),
-    priorAvgWeight: roundTo(priorAvgWeight ?? 0, 2),
-    recommendedCalorieDelta,
-    recommendedCalorieTarget,
-    recommendedMacroTargets,
-    recommendationReason: engine.explanation.reason,
-    recommendationExplanation: engine.explanation.explanation,
-    confidenceBand: engine.recommendation.confidenceBand,
-    confidenceScore: engine.recommendation.confidenceScore,
-    decisionType: engine.recommendation.decisionType,
-    reasonCodes: engine.recommendation.reasonCodes,
-    blockedReasons: engine.recommendation.blockedReasons,
-    dataQuality: engine.recommendation.dataQuality,
-    adherence: engine.recommendation.adherence,
-    confounders: engine.recommendation.confounders,
-    decisionRecordId: buildCoachingDecisionId(
-      engine.context.windowStart,
-      engine.context.windowEnd,
-      decisionSource,
-    ),
-    status,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  }
-  const weeklyCheckInPacket = FEATURE_FLAGS.coachEngineV3
-    ? buildWeeklyCheckInPacket({
-        record,
-        evaluation: engine,
-        source: decisionSource,
-        generatedAt: record.createdAt,
-      })
-    : undefined
-  const hydratedRecord: CheckInRecord = {
-    ...record,
-    weeklyCheckInPacket,
-  }
-  const decisionRecord = buildCoachingDecisionRecord({
-    id: hydratedRecord.decisionRecordId,
-    source: decisionSource,
-    windowStart: engine.context.windowStart,
-    windowEnd: engine.context.windowEnd,
-    recommendation: engine.recommendation,
-    explanation: engine.explanation,
-    weeklyCheckInPacket,
-    status: status === 'deferred' ? 'deferred' : 'pending',
-    createdAt: hydratedRecord.createdAt,
-  })
+  const createdAt = new Date().toISOString()
 
   return {
-    record: hydratedRecord,
+    record: {
+      id: `checkin:${weekEndDate}`,
+      weekEndDate,
+      weekStartDate,
+      nextCheckInDate,
+      priorWeekStartDate,
+      priorWeekEndDate,
+      goalMode: params.settings.goalMode,
+      targetWeeklyRatePercent: params.settings.targetWeeklyRatePercent,
+      actualWeeklyRatePercent,
+      avgCalories: roundTo(average(currentWeekCalories) ?? 0, 0),
+      avgProtein: roundTo(average(currentWeekProtein) ?? 0, 1),
+      avgSteps,
+      weeklyCardioMinutes,
+      stepAdherencePercent,
+      cardioAdherencePercent,
+      avgWeight: roundTo(avgWeight ?? 0, 2),
+      priorAvgWeight: roundTo(priorAvgWeight ?? 0, 2),
+      recommendedCalorieDelta,
+      recommendedCalorieTarget,
+      recommendedMacroTargets,
+      recommendationReason: engine.explanation.reason,
+      recommendationExplanation: engine.explanation.explanation,
+      confidenceBand: engine.recommendation.confidenceBand,
+      confidenceScore: engine.recommendation.confidenceScore,
+      decisionType: engine.recommendation.decisionType,
+      reasonCodes: engine.recommendation.reasonCodes,
+      blockedReasons: engine.recommendation.blockedReasons,
+      dataQuality: engine.recommendation.dataQuality,
+      adherence: engine.recommendation.adherence,
+      confounders: engine.recommendation.confounders,
+      decisionRecordId: buildCoachingDecisionId(
+        engine.context.windowStart,
+        engine.context.windowEnd,
+        params.decisionSource,
+      ),
+      status,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    evaluation: engine,
+    shadowComparison,
+  }
+}
+
+function buildDecisionRecommendation(
+  baseRecommendation: CoachingRecommendationV1,
+  baseExplanation: CoachingExplanationV1,
+  record: CheckInRecord,
+  previousTargets: CoachingRecommendationV1['previousTargets'],
+  proposedTargets: CoachingRecommendationV1['proposedTargets'],
+): { recommendation: CoachingRecommendationV1; explanation: CoachingExplanationV1 } {
+  const nextRecommendation: CoachingRecommendationV1 = {
+    ...baseRecommendation,
+    decisionType: record.decisionType ?? baseRecommendation.decisionType,
+    recommendedCalories:
+      typeof record.recommendedCalorieTarget === 'number'
+        ? record.recommendedCalorieTarget
+        : previousTargets.calorieTarget,
+    recommendedMacros: record.recommendedMacroTargets,
+    previousTargets,
+    proposedTargets,
+    reasonCodes: record.reasonCodes ?? baseRecommendation.reasonCodes,
+    blockedReasons: record.blockedReasons ?? baseRecommendation.blockedReasons,
+    dataQuality: record.dataQuality ?? baseRecommendation.dataQuality,
+    adherence: record.adherence ?? baseRecommendation.adherence,
+    confounders: record.confounders ?? baseRecommendation.confounders,
+    effectiveDate: record.weekEndDate,
+  }
+
+  const nextExplanation: CoachingExplanationV1 = {
+    ...baseExplanation,
+    reason: record.recommendationReason,
+    explanation: record.recommendationExplanation ?? baseExplanation.explanation,
+    reasonCodes: record.reasonCodes ?? baseExplanation.reasonCodes,
+    confounders: record.confounders?.reasons ?? baseExplanation.confounders,
+  }
+
+  return {
+    recommendation: nextRecommendation,
+    explanation: nextExplanation,
+  }
+}
+
+export function evaluateCheckInWeek(
+  settings: UserSettings,
+  weights: WeightEntry[],
+  logsByDate: Record<string, FoodLogEntry[]>,
+  dayMeta: DayMeta[],
+  activityLog: ActivityEntry[],
+  interventions: InterventionEntry[],
+  recoveryIssueCount: number,
+  adaptiveInputs?: AdaptiveCheckInInputs,
+): CheckInComputation {
+  const today = getTodayDateKey()
+  const weekEndDate = getLatestCompletedWeekEnd(today, settings.checkInWeekday)
+  const priorWeekEndDate = addDays(weekEndDate, -7)
+  const shouldComputeV2 = FEATURE_FLAGS.coachMethodV2
+  const useV2AsAuthority = shouldComputeV2 && import.meta.env.PROD
+  const decisionSource = useV2AsAuthority ? 'engine_v2' : 'engine_v1'
+  const currentWindow = buildWindowRecord({
+    weekEndDate,
+    settings,
+    weights,
+    logsByDate,
+    dayMeta,
+    activityLog,
+    interventions,
+    recoveryIssueCount,
+    shouldComputeV2,
+    useV2AsAuthority,
+    decisionSource,
+  })
+  const priorWindow = buildWindowRecord({
+    weekEndDate: priorWeekEndDate,
+    settings,
+    weights,
+    logsByDate,
+    dayMeta,
+    activityLog,
+    interventions,
+    recoveryIssueCount,
+    shouldComputeV2,
+    useV2AsAuthority,
+    decisionSource,
+  })
+
+  const adaptiveOutcome = buildAdaptiveCutOutcome({
+    enabled: FEATURE_FLAGS.adaptiveCutIntelligenceV1 && settings.goalMode === 'lose',
+    current: currentWindow.record,
+    prior: priorWindow.record,
+    bodyProgressSnapshots: adaptiveInputs?.bodyProgressSnapshots ?? [],
+    dietPhases: adaptiveInputs?.dietPhases ?? [],
+    dietPhaseEvents: adaptiveInputs?.dietPhaseEvents ?? [],
+    readiness: adaptiveInputs?.readiness ?? buildDefaultRecoveryReadiness(today),
+    strengthRetention: adaptiveInputs?.strengthRetention ?? DEFAULT_STRENGTH_RETENTION,
+    coachingDecisionHistory: adaptiveInputs?.coachingDecisionHistory ?? [],
+    settings,
+    previousTargets: currentWindow.evaluation.policy.previousTargets,
+    baseDecisionType: currentWindow.evaluation.recommendation.decisionType,
+    baseReasonCodes: (currentWindow.record.reasonCodes ?? []) as CoachingReasonCode[],
+    baseRecommendationReason: currentWindow.evaluation.explanation.reason,
+    baseRecommendationExplanation: currentWindow.evaluation.explanation.explanation,
+    baseProposedTargets: currentWindow.evaluation.policy.proposedTargets,
+  })
+
+  const finalDecisionType = adaptiveOutcome?.decisionType ?? currentWindow.record.decisionType
+  const usesCalorieTargets =
+    finalDecisionType === 'increase_calories' || finalDecisionType === 'decrease_calories'
+  const finalStatus: CheckInRecord['status'] = adaptiveOutcome?.cutReviewCard
+    ? adaptiveOutcome.cutReviewCard.state === 'deferred'
+      ? 'deferred'
+      : 'ready'
+    : currentWindow.record.status
+  const finalRecordBase: CheckInRecord = {
+    ...currentWindow.record,
+    recommendedCalorieDelta: usesCalorieTargets
+      ? currentWindow.record.recommendedCalorieDelta
+      : undefined,
+    recommendedCalorieTarget: usesCalorieTargets
+      ? currentWindow.record.recommendedCalorieTarget
+      : undefined,
+    recommendedMacroTargets: usesCalorieTargets
+      ? currentWindow.record.recommendedMacroTargets
+      : undefined,
+    recommendedStepDelta: adaptiveOutcome?.recommendedStepDelta,
+    recommendedStepTarget: adaptiveOutcome?.recommendedStepTarget,
+    recommendationReason:
+      adaptiveOutcome?.recommendationReason ?? currentWindow.record.recommendationReason,
+    recommendationExplanation:
+      adaptiveOutcome?.recommendationExplanation ?? currentWindow.record.recommendationExplanation,
+    decisionType: finalDecisionType,
+    reviewVerdict: adaptiveOutcome?.reviewVerdict,
+    reasonCodes:
+      adaptiveOutcome && adaptiveOutcome.reasonCodes.length > 0
+        ? adaptiveOutcome.reasonCodes
+        : currentWindow.record.reasonCodes,
+    cutReviewCard: adaptiveOutcome?.cutReviewCard,
+    status: finalStatus,
+  }
+  const decisionRecordId = buildCoachingDecisionId(
+    currentWindow.evaluation.context.windowStart,
+    currentWindow.evaluation.context.windowEnd,
+    decisionSource,
+    adaptiveOutcome?.decisionIdSuffix,
+  )
+
+  let weeklyCheckInPacket = FEATURE_FLAGS.coachEngineV3
+    ? buildWeeklyCheckInPacket({
+        record: finalRecordBase,
+        evaluation: currentWindow.evaluation,
+        source: decisionSource,
+        generatedAt: finalRecordBase.createdAt,
+      })
+    : undefined
+
+  if (weeklyCheckInPacket) {
+    weeklyCheckInPacket = {
+      ...weeklyCheckInPacket,
+      recommendationReason: finalRecordBase.recommendationReason,
+      recommendationExplanation: finalRecordBase.recommendationExplanation,
+      decisionType: finalRecordBase.decisionType ?? weeklyCheckInPacket.decisionType,
+      targetDelta: finalRecordBase.recommendedCalorieDelta,
+      previousTargets: weeklyCheckInPacket.previousTargets,
+      proposedTargets: adaptiveOutcome?.proposedTargets ?? weeklyCheckInPacket.proposedTargets,
+      cutReviewCard: finalRecordBase.cutReviewCard,
+    }
+  }
+
+  const record: CheckInRecord = {
+    ...finalRecordBase,
+    decisionRecordId,
+    weeklyCheckInPacket,
+  }
+
+  const { recommendation, explanation } = buildDecisionRecommendation(
+    currentWindow.evaluation.recommendation,
+    currentWindow.evaluation.explanation,
+    record,
+    weeklyCheckInPacket?.previousTargets ?? currentWindow.evaluation.policy.previousTargets,
+    weeklyCheckInPacket?.proposedTargets ?? adaptiveOutcome?.proposedTargets,
+  )
+  const decisionRecord = buildCoachingDecisionRecord({
+    id: decisionRecordId,
+    source: decisionSource,
+    windowStart: currentWindow.evaluation.context.windowStart,
+    windowEnd: currentWindow.evaluation.context.windowEnd,
+    recommendation,
+    explanation,
+    weeklyCheckInPacket,
+    status:
+      record.cutReviewCard?.state === 'accepted'
+        ? 'applied'
+        : record.status === 'deferred'
+          ? 'deferred'
+          : 'pending',
+    createdAt: record.createdAt,
+  })
+  const canApplyTargets =
+    record.status === 'ready' &&
+    record.cutReviewCard?.state !== 'accepted' &&
+    (Boolean(record.recommendedMacroTargets && typeof record.recommendedCalorieTarget === 'number') ||
+      typeof record.recommendedStepTarget === 'number')
+
+  return {
+    record,
     canApplyTargets,
     decisionRecord,
-    shadowComparison,
+    shadowComparison: currentWindow.shadowComparison,
   }
 }
 
