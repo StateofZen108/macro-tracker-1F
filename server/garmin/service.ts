@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 
 import {
   decryptGarminSecret,
@@ -6,37 +6,49 @@ import {
   readGarminTokenKeyRingFromEnv,
   type GarminTokenKeyRing,
 } from './crypto'
-import { buildGarminPkceChallenge, createGarminProviderAdapter, GarminProviderError } from './provider'
 import {
-  createGarminConnectionRecord,
+  buildGarminPkceChallenge,
+  createGarminProviderAdapter,
+  GarminProviderError,
+  isGarminProviderConfigured,
+} from './provider'
+import {
+  applyGarminSyncFailure,
+  applyGarminSyncSuccess,
+  claimGarminSyncLease,
   consumeGarminAuthSession,
   createGarminStateStore,
-  getGarminConnectionRecord,
   getGarminAuthSession,
+  getGarminConnectionRecord,
+  isGarminPersistentStateStore,
+  listGarminConnectionRecords,
   listGarminWellnessEntries,
-  removeGarminConnectionRecord,
   removeGarminAuthSessionsForUser,
   saveGarminAuthSession,
   saveGarminConnectionRecord,
-  saveGarminWellnessEntries,
   type GarminStateStore,
 } from './store'
 import type {
   GarminAuthSession,
+  GarminAutomationMode,
+  GarminBackgroundSyncResponse,
   GarminConnectionRecord,
   GarminProviderAdapter,
   GarminProviderSyncResponse,
-  GarminWellnessEntry,
   GarminStatusResponse,
+  GarminSyncActor,
   GarminSyncResult,
   GarminTokenBundle,
+  GarminWellnessEntry,
 } from './types'
 
 const INITIAL_BACKFILL_DAYS = 30
 const INCREMENTAL_OVERLAP_DAYS = 3
 const STALE_THRESHOLD_MS = 72 * 60 * 60 * 1000
+const BACKGROUND_SYNC_INTERVAL_MS = 3 * 60 * 60 * 1000
 const SESSION_TTL_MS = 15 * 60 * 1000
 const REFRESH_WINDOW_MS = 10 * 60 * 1000
+const LEASE_DURATION_MS = 10 * 60 * 1000
 const TRANSIENT_BACKOFF_MS = [30 * 60 * 1000, 2 * 60 * 60 * 1000, 6 * 60 * 60 * 1000]
 
 export class GarminServiceError extends Error {
@@ -65,6 +77,8 @@ export interface GarminServiceOptions {
   now?: () => Date
   redirectUri?: string
   scope?: string
+  backgroundSyncEnabled?: boolean
+  backgroundSyncSecret?: string | null
 }
 
 function toDateOnly(date: Date): string {
@@ -86,11 +100,7 @@ function isStale(lastSuccessfulSyncAt: string | undefined, now: Date): boolean {
 }
 
 function createStateToken(): string {
-  return randomBytes(16).toString('base64url')
-}
-
-function buildDefaultConnection(userId: string, now: Date): GarminConnectionRecord {
-  return createGarminConnectionRecord(userId, now)
+  return randomUUID()
 }
 
 function parseTokenExpiry(expiresAt?: string): number {
@@ -136,7 +146,7 @@ function ensureTokenKeyRing(tokenKeyRing: GarminTokenKeyRing | null): GarminToke
   return tokenKeyRing
 }
 
-function ensureProviderReady(provider: GarminProviderAdapter): GarminProviderAdapter {
+function ensureProviderReady(provider: GarminProviderAdapter | null): GarminProviderAdapter {
   if (!provider) {
     throw new GarminServiceError(
       'garminProviderUnavailable',
@@ -158,16 +168,79 @@ function normalizeConnectionForResponse(
   }
 }
 
+function readBooleanEnv(value: string | boolean | undefined): boolean {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'true' || normalized === '1' || normalized === 'on'
+}
+
+function isGarminBackgroundSyncDue(connection: GarminConnectionRecord, now: Date): boolean {
+  const retryAfterAt = connection.retryAfterAt ? new Date(connection.retryAfterAt).getTime() : 0
+  const leaseExpiresAt = connection.syncLeaseExpiresAt
+    ? new Date(connection.syncLeaseExpiresAt).getTime()
+    : 0
+  const lastSuccessfulSyncAt = connection.lastSuccessfulSyncAt
+    ? new Date(connection.lastSuccessfulSyncAt).getTime()
+    : 0
+
+  if (!connection.accessToken || !connection.refreshToken) {
+    return false
+  }
+
+  if (
+    connection.status !== 'connected' &&
+    connection.status !== 'error' &&
+    connection.status !== 'rate_limited'
+  ) {
+    return false
+  }
+
+  if (retryAfterAt > now.getTime()) {
+    return false
+  }
+
+  if (connection.syncLeaseId && leaseExpiresAt > now.getTime()) {
+    return false
+  }
+
+  if (!connection.lastSuccessfulSyncAt) {
+    return true
+  }
+
+  return now.getTime() - lastSuccessfulSyncAt >= BACKGROUND_SYNC_INTERVAL_MS
+}
+
 export function createGarminService(options: GarminServiceOptions = {}) {
   const store = options.store ?? createGarminStateStore()
-  const provider = options.provider ?? createGarminProviderAdapter()
+  const provider = options.provider ?? (isGarminProviderConfigured() ? createGarminProviderAdapter() : null)
   const tokenKeyRing = options.tokenKeyRing ?? readGarminTokenKeyRingFromEnv()
   const now = options.now ?? (() => new Date())
   const redirectUriFromOptions = options.redirectUri?.trim() || undefined
   const scope = options.scope?.trim() || process.env.GARMIN_OAUTH_SCOPE?.trim() || 'read'
+  const providerConfigured = Boolean((options.provider ?? provider) && tokenKeyRing)
+  const persistentStoreConfigured = isGarminPersistentStateStore(store)
+  const backgroundAutomationEnabled = Boolean(
+    readBooleanEnv(
+      options.backgroundSyncEnabled ?? process.env.GARMIN_BACKGROUND_SYNC_ENABLED,
+    ) &&
+      (options.backgroundSyncSecret?.trim() || process.env.GARMIN_BACKGROUND_SYNC_SECRET?.trim()),
+  )
+  const automationMode: GarminAutomationMode | undefined = backgroundAutomationEnabled
+    ? 'server_background'
+    : undefined
 
   function resolveRedirectUri(explicitRedirectUri?: string): string {
-    const redirectUri = explicitRedirectUri?.trim() || redirectUriFromOptions || process.env.GARMIN_REDIRECT_URI?.trim()
+    const redirectUri =
+      explicitRedirectUri?.trim() ||
+      redirectUriFromOptions ||
+      process.env.GARMIN_REDIRECT_URI?.trim()
     if (!redirectUri) {
       throw new GarminServiceError(
         'garminRedirectUriUnavailable',
@@ -179,15 +252,34 @@ export function createGarminService(options: GarminServiceOptions = {}) {
     return redirectUri
   }
 
+  function buildStatusResponse(
+    connection: GarminConnectionRecord,
+    currentTime: Date,
+  ): GarminStatusResponse {
+    const nextConnection = normalizeConnectionForResponse(connection, currentTime)
+
+    return {
+      connection: nextConnection,
+      staleData: nextConnection.staleData,
+      lastSyncWindow: nextConnection.lastSyncWindow,
+      providerConfigured,
+      persistentStoreConfigured,
+      backgroundAutomationEnabled,
+      automationMode,
+    }
+  }
+
   async function createConnectionSession(
     userId: string,
     redirectUri?: string,
+    returnToUrl?: string,
   ): Promise<GarminConnectSessionResult> {
     const currentTime = now()
     const connection = normalizeConnectionForResponse(
-      (await getGarminConnectionRecord(store, userId)) ?? buildDefaultConnection(userId, currentTime),
+      await getGarminConnectionRecord(store, userId),
       currentTime,
     )
+    const providerAdapter = ensureProviderReady(provider)
     const challenge = buildGarminPkceChallenge()
     const state = createStateToken()
     const session: GarminAuthSession = {
@@ -195,12 +287,13 @@ export function createGarminService(options: GarminServiceOptions = {}) {
       userId,
       codeVerifier: challenge.codeVerifier,
       redirectUri: resolveRedirectUri(redirectUri),
+      returnToUrl: returnToUrl?.trim() || undefined,
       createdAt: currentTime.toISOString(),
       expiresAt: new Date(currentTime.getTime() + SESSION_TTL_MS).toISOString(),
     }
 
     await saveGarminAuthSession(store, session)
-    const authorizationUrl = ensureProviderReady(provider).buildAuthorizationUrl({
+    const authorizationUrl = providerAdapter.buildAuthorizationUrl({
       userId,
       state,
       codeChallenge: challenge.codeChallenge,
@@ -222,13 +315,21 @@ export function createGarminService(options: GarminServiceOptions = {}) {
     code: string
   }): Promise<GarminConnectionRecord> {
     const currentTime = now()
-    const session = await consumeGarminAuthSession(store, input.state)
+    const session = await saveAndConsumeSession(input.state)
     if (!session) {
-      throw new GarminServiceError('garminSessionExpired', 'The Garmin authorization session expired.', 400)
+      throw new GarminServiceError(
+        'garminSessionExpired',
+        'The Garmin authorization session expired.',
+        400,
+      )
     }
 
     if (new Date(session.expiresAt).getTime() <= currentTime.getTime()) {
-      throw new GarminServiceError('garminSessionExpired', 'The Garmin authorization session expired.', 400)
+      throw new GarminServiceError(
+        'garminSessionExpired',
+        'The Garmin authorization session expired.',
+        400,
+      )
     }
 
     const providerAdapter = ensureProviderReady(provider)
@@ -259,10 +360,12 @@ export function createGarminService(options: GarminServiceOptions = {}) {
       staleData: isStale(existing.lastSuccessfulSyncAt, currentTime),
       lastSyncWindow: existing.lastSyncWindow,
       lastErrorMessage: undefined,
+      syncLeaseId: undefined,
+      syncLeaseExpiresAt: undefined,
+      lastSyncActor: undefined,
     }
 
     await saveGarminConnectionRecord(store, nextConnection)
-
     return normalizeConnectionForResponse(nextConnection, currentTime)
   }
 
@@ -274,11 +377,7 @@ export function createGarminService(options: GarminServiceOptions = {}) {
       await saveGarminConnectionRecord(store, nextConnection)
     }
 
-    return {
-      connection: nextConnection,
-      staleData: nextConnection.staleData,
-      lastSyncWindow: nextConnection.lastSyncWindow,
-    }
+    return buildStatusResponse(nextConnection, currentTime)
   }
 
   async function refreshAccessToken(
@@ -302,27 +401,146 @@ export function createGarminService(options: GarminServiceOptions = {}) {
     })
 
     const encryptedTokens = encryptGarminTokenBundle(tokenBundle, keyRing)
-    const nextConnection: GarminConnectionRecord = {
-      ...connection,
-      status: 'connected',
-      updatedAt: currentTime.toISOString(),
-      retryAfterAt: undefined,
-      failureCount: 0,
-      accessToken: encryptedTokens.accessToken,
-      refreshToken: encryptedTokens.refreshToken,
-      tokenExpiresAt: tokenBundle.expiresAt,
-      lastErrorMessage: undefined,
-    }
-
-    await saveGarminConnectionRecord(store, nextConnection)
-
     return {
-      connection: nextConnection,
+      connection: {
+        ...connection,
+        updatedAt: currentTime.toISOString(),
+        retryAfterAt: undefined,
+        failureCount: 0,
+        accessToken: encryptedTokens.accessToken,
+        refreshToken: encryptedTokens.refreshToken,
+        tokenExpiresAt: tokenBundle.expiresAt,
+        lastErrorMessage: undefined,
+      },
       tokenBundle,
     }
   }
 
-  async function syncConnection(userId: string): Promise<GarminSyncResult> {
+  async function persistSuccessfulSync(
+    userId: string,
+    leaseId: string,
+    connection: GarminConnectionRecord,
+    records: GarminWellnessEntry[],
+    actor: GarminSyncActor,
+  ): Promise<void> {
+    const applied = await applyGarminSyncSuccess(store, {
+      userId,
+      leaseId,
+      connection,
+      records,
+      actor,
+    })
+
+    if (!applied) {
+      throw new GarminServiceError(
+        'garminSyncLeaseLost',
+        'Garmin sync no longer owns the user lease.',
+        409,
+      )
+    }
+  }
+
+  async function persistFailedSync(
+    userId: string,
+    leaseId: string,
+    connection: GarminConnectionRecord,
+  ): Promise<void> {
+    const applied = await applyGarminSyncFailure(store, {
+      userId,
+      leaseId,
+      connection,
+    })
+
+    if (!applied) {
+      throw new GarminServiceError(
+        'garminSyncLeaseLost',
+        'Garmin sync no longer owns the user lease.',
+        409,
+      )
+    }
+  }
+
+  async function handleSyncError(
+    userId: string,
+    leaseId: string,
+    connection: GarminConnectionRecord,
+    currentTime: Date,
+    error: unknown,
+    syncWindow?: GarminConnectionRecord['lastSyncWindow'],
+  ): Promise<never> {
+    if (error instanceof GarminServiceError) {
+      throw error
+    }
+
+    const nextBaseConnection = normalizeConnectionForResponse(
+      await getGarminConnectionRecord(store, userId),
+      currentTime,
+    )
+    const baseConnection: GarminConnectionRecord = {
+      ...nextBaseConnection,
+      accessToken: connection.accessToken ?? nextBaseConnection.accessToken,
+      refreshToken: connection.refreshToken ?? nextBaseConnection.refreshToken,
+      tokenExpiresAt: connection.tokenExpiresAt ?? nextBaseConnection.tokenExpiresAt,
+      lastWatermarks: connection.lastWatermarks ?? nextBaseConnection.lastWatermarks,
+      lastSyncActor: connection.lastSyncActor,
+      lastSyncWindow: syncWindow ?? connection.lastSyncWindow ?? nextBaseConnection.lastSyncWindow,
+    }
+
+    if (error instanceof GarminProviderError) {
+      if (error.status === 401 || error.status === 403) {
+        const updatedConnection: GarminConnectionRecord = {
+          ...baseConnection,
+          status: 'reconnect_required',
+          updatedAt: currentTime.toISOString(),
+          retryAfterAt: undefined,
+          failureCount: baseConnection.failureCount + 1,
+          lastErrorMessage: error.message,
+          staleData: isStale(baseConnection.lastSuccessfulSyncAt, currentTime),
+        }
+        await persistFailedSync(userId, leaseId, updatedConnection)
+        throw new GarminServiceError('garminReconnectRequired', error.message, 409)
+      }
+
+      if (error.status === 429) {
+        const retryAfterAt = new Date(currentTime.getTime() + 6 * 60 * 60 * 1000).toISOString()
+        const updatedConnection: GarminConnectionRecord = {
+          ...baseConnection,
+          status: 'rate_limited',
+          updatedAt: currentTime.toISOString(),
+          retryAfterAt,
+          failureCount: baseConnection.failureCount + 1,
+          lastErrorMessage: error.message,
+          staleData: isStale(baseConnection.lastSuccessfulSyncAt, currentTime),
+        }
+        await persistFailedSync(userId, leaseId, updatedConnection)
+        throw new GarminServiceError('garminRateLimited', error.message, 429)
+      }
+    }
+
+    const failureCount = baseConnection.failureCount + 1
+    const retryAfterAt = new Date(currentTime.getTime() + getBackoffDelay(failureCount)).toISOString()
+    const updatedConnection: GarminConnectionRecord = {
+      ...baseConnection,
+      status: 'error',
+      updatedAt: currentTime.toISOString(),
+      retryAfterAt,
+      failureCount,
+      lastErrorMessage: error instanceof Error ? error.message : 'Garmin sync failed.',
+      staleData: isStale(baseConnection.lastSuccessfulSyncAt, currentTime),
+    }
+
+    await persistFailedSync(userId, leaseId, updatedConnection)
+    throw new GarminServiceError(
+      'garminSyncFailed',
+      error instanceof Error ? error.message : 'Garmin sync failed.',
+      502,
+    )
+  }
+
+  async function syncConnection(
+    userId: string,
+    actor: GarminSyncActor = 'manual',
+  ): Promise<GarminSyncResult> {
     const currentTime = now()
     const currentConnection = normalizeConnectionForResponse(
       await getGarminConnectionRecord(store, userId),
@@ -352,82 +570,115 @@ export function createGarminService(options: GarminServiceOptions = {}) {
       throw new GarminServiceError(
         currentConnection.status === 'rate_limited' ? 'garminRateLimited' : 'garminBackoffActive',
         `Garmin sync is temporarily unavailable until ${currentConnection.retryAfterAt}.`,
-        currentConnection.status === 'rate_limited' ? 429 : 429,
+        429,
       )
     }
 
-    const providerAdapter = ensureProviderReady(provider)
-    const keyRing = ensureTokenKeyRing(tokenKeyRing)
-    let accessToken = decryptGarminSecret(currentConnection.accessToken, keyRing)
-    let nextConnection = currentConnection
-    if (shouldRefreshToken(currentConnection, currentTime)) {
-      const refreshed = await refreshAccessToken(currentConnection, currentTime)
-      nextConnection = refreshed.connection
-      accessToken = refreshed.tokenBundle.accessToken
+    const leaseId = randomUUID()
+    const leaseExpiresAt = new Date(currentTime.getTime() + LEASE_DURATION_MS).toISOString()
+    const claimedConnection = await claimGarminSyncLease(store, {
+      userId,
+      leaseId,
+      leaseExpiresAt,
+      actor,
+      now: currentTime.toISOString(),
+    })
+
+    if (!claimedConnection) {
+      throw new GarminServiceError(
+        'garminSyncLeaseConflict',
+        'Garmin sync is already running for this user.',
+        409,
+      )
     }
 
-    const initialBackfill = !nextConnection.lastSuccessfulSyncAt
+    let workingConnection = claimedConnection
+    const keyRing = ensureTokenKeyRing(tokenKeyRing)
+    if (!workingConnection.accessToken) {
+      throw new GarminServiceError(
+        'garminNotConnected',
+        'Garmin is not connected for this user.',
+        409,
+      )
+    }
+
+    let accessToken = decryptGarminSecret(workingConnection.accessToken, keyRing)
+    if (shouldRefreshToken(workingConnection, currentTime)) {
+      try {
+        const refreshed = await refreshAccessToken(workingConnection, currentTime)
+        workingConnection = {
+          ...refreshed.connection,
+          status: 'syncing',
+          syncLeaseId: leaseId,
+          syncLeaseExpiresAt: leaseExpiresAt,
+          lastSyncActor: actor,
+        }
+        accessToken = refreshed.tokenBundle.accessToken
+      } catch (error) {
+        return handleSyncError(userId, leaseId, workingConnection, currentTime, error)
+      }
+    }
+
+    const initialBackfill = !workingConnection.lastSuccessfulSyncAt
     const endDate = toDateOnly(currentTime)
     const startDate = initialBackfill
       ? shiftDate(endDate, -INITIAL_BACKFILL_DAYS)
-      : shiftDate(toDateOnly(new Date(nextConnection.lastSuccessfulSyncAt ?? currentTime.toISOString())), -INCREMENTAL_OVERLAP_DAYS)
+      : shiftDate(
+          toDateOnly(new Date(workingConnection.lastSuccessfulSyncAt ?? currentTime.toISOString())),
+          -INCREMENTAL_OVERLAP_DAYS,
+        )
+    const syncWindow = { startDate, endDate }
 
-    const response = cloneWellnessResponse(
-      await providerAdapter.fetchWellnessData({
-        accessToken,
-        startDate,
-        endDate,
-        healthCursor: nextConnection.lastWatermarks.health,
-        activityCursor: nextConnection.lastWatermarks.activity,
-      }),
-    )
-
-    if (response.rateLimitedUntil) {
-      const retryAfterAt = response.rateLimitedUntil
-      const updatedConnection: GarminConnectionRecord = {
-        ...nextConnection,
-        status: 'rate_limited',
-        updatedAt: currentTime.toISOString(),
-        retryAfterAt,
-        failureCount: nextConnection.failureCount + 1,
-        lastErrorMessage: 'Garmin sync was rate limited.',
-        staleData: isStale(nextConnection.lastSuccessfulSyncAt, currentTime),
-        lastSyncWindow: {
+    let response: GarminProviderSyncResponse
+    try {
+      response = cloneWellnessResponse(
+        await ensureProviderReady(provider).fetchWellnessData({
+          accessToken,
           startDate,
           endDate,
-        },
-      }
+          healthCursor: workingConnection.lastWatermarks.health,
+          activityCursor: workingConnection.lastWatermarks.activity,
+        }),
+      )
+    } catch (error) {
+      return handleSyncError(userId, leaseId, workingConnection, currentTime, error, syncWindow)
+    }
 
-      await saveGarminConnectionRecord(store, updatedConnection)
+    if (response.rateLimitedUntil) {
+      const updatedConnection: GarminConnectionRecord = {
+        ...workingConnection,
+        status: 'rate_limited',
+        updatedAt: currentTime.toISOString(),
+        retryAfterAt: response.rateLimitedUntil,
+        failureCount: workingConnection.failureCount + 1,
+        lastErrorMessage: 'Garmin sync was rate limited.',
+        staleData: isStale(workingConnection.lastSuccessfulSyncAt, currentTime),
+        lastSyncWindow: syncWindow,
+      }
+      await persistFailedSync(userId, leaseId, updatedConnection)
       throw new GarminServiceError('garminRateLimited', 'Garmin sync was rate limited.', 429)
     }
 
-    const mergedWellness = mergeWellnessEntries(
-      await listGarminWellnessEntries(store, userId),
-      response.wellnessEntries,
-    )
-    await saveGarminWellnessEntries(store, userId, mergedWellness)
-
-    nextConnection = {
-      ...nextConnection,
+    const nextConnection: GarminConnectionRecord = {
+      ...workingConnection,
       status: 'connected',
       updatedAt: currentTime.toISOString(),
       lastSuccessfulSyncAt: currentTime.toISOString(),
       retryAfterAt: undefined,
       failureCount: 0,
       lastWatermarks: {
-        health: response.nextHealthCursor ?? nextConnection.lastWatermarks.health,
-        activity: response.nextActivityCursor ?? nextConnection.lastWatermarks.activity,
+        health: response.nextHealthCursor ?? workingConnection.lastWatermarks.health,
+        activity: response.nextActivityCursor ?? workingConnection.lastWatermarks.activity,
       },
       staleData: false,
-      lastSyncWindow: {
-        startDate,
-        endDate,
-      },
+      lastSyncWindow: syncWindow,
       lastErrorMessage: undefined,
+      syncLeaseId: undefined,
+      syncLeaseExpiresAt: undefined,
+      lastSyncActor: actor,
     }
 
-    await saveGarminConnectionRecord(store, nextConnection)
+    await persistSuccessfulSync(userId, leaseId, nextConnection, response.wellnessEntries, actor)
 
     return {
       records: response.wellnessEntries,
@@ -440,77 +691,71 @@ export function createGarminService(options: GarminServiceOptions = {}) {
     }
   }
 
-  async function handleSyncError(
-    userId: string,
-    error: unknown,
-  ): Promise<never> {
-    const currentTime = now()
-    if (error instanceof GarminServiceError) {
-      throw error
+  async function runBackgroundSync(): Promise<GarminBackgroundSyncResponse> {
+    if (!providerConfigured) {
+      throw new GarminServiceError(
+        'garminProviderUnavailable',
+        'Garmin Connect credentials are not configured for this environment.',
+        503,
+      )
     }
 
-    const connection = normalizeConnectionForResponse(
-      await getGarminConnectionRecord(store, userId),
-      currentTime,
-    )
-    if (error instanceof GarminProviderError) {
-      if (error.status === 401 || error.status === 403) {
-        const updatedConnection: GarminConnectionRecord = {
-          ...connection,
-          status: 'reconnect_required',
-          updatedAt: currentTime.toISOString(),
-          retryAfterAt: undefined,
-          failureCount: connection.failureCount + 1,
-          lastErrorMessage: error.message,
-          staleData: isStale(connection.lastSuccessfulSyncAt, currentTime),
-        }
-        await saveGarminConnectionRecord(store, updatedConnection)
-        throw new GarminServiceError('garminReconnectRequired', error.message, 409)
+    if (!persistentStoreConfigured) {
+      throw new GarminServiceError(
+        'garminPersistentStoreUnavailable',
+        'Garmin background sync requires a durable server-side store.',
+        503,
+      )
+    }
+
+    if (!backgroundAutomationEnabled) {
+      throw new GarminServiceError(
+        'garminBackgroundSyncDisabled',
+        'Garmin background automation is not enabled for this environment.',
+        503,
+      )
+    }
+
+    const startedAt = now()
+    const connections = await listGarminConnectionRecords(store)
+    let syncedUsers = 0
+    let skippedUsers = 0
+    let failedUsers = 0
+
+    for (const connection of connections) {
+      const normalizedConnection = normalizeConnectionForResponse(connection, startedAt)
+      if (!isGarminBackgroundSyncDue(normalizedConnection, startedAt)) {
+        skippedUsers += 1
+        continue
       }
 
-      if (error.status === 429) {
-        const retryAfterAt = new Date(currentTime.getTime() + 6 * 60 * 60 * 1000).toISOString()
-        const updatedConnection: GarminConnectionRecord = {
-          ...connection,
-          status: 'rate_limited',
-          updatedAt: currentTime.toISOString(),
-          retryAfterAt,
-          failureCount: connection.failureCount + 1,
-          lastErrorMessage: error.message,
-          staleData: isStale(connection.lastSuccessfulSyncAt, currentTime),
+      try {
+        await syncConnection(connection.userId, 'background')
+        syncedUsers += 1
+      } catch (error) {
+        if (
+          error instanceof GarminServiceError &&
+          (error.code === 'garminSyncLeaseConflict' ||
+            error.code === 'garminSyncLeaseLost' ||
+            error.code === 'garminNotConnected')
+        ) {
+          skippedUsers += 1
+          continue
         }
-        await saveGarminConnectionRecord(store, updatedConnection)
-        throw new GarminServiceError('garminRateLimited', error.message, 429)
+
+        failedUsers += 1
       }
     }
 
-    const failureCount = connection.failureCount + 1
-    const retryAfterAt = new Date(
-      currentTime.getTime() + getBackoffDelay(failureCount),
-    ).toISOString()
-    const updatedConnection: GarminConnectionRecord = {
-      ...connection,
-      status: 'error',
-      updatedAt: currentTime.toISOString(),
-      retryAfterAt,
-      failureCount,
-      lastErrorMessage: error instanceof Error ? error.message : 'Garmin sync failed.',
-      staleData: isStale(connection.lastSuccessfulSyncAt, currentTime),
-    }
+    const finishedAt = now()
 
-    await saveGarminConnectionRecord(store, updatedConnection)
-    throw new GarminServiceError(
-      'garminSyncFailed',
-      error instanceof Error ? error.message : 'Garmin sync failed.',
-      502,
-    )
-  }
-
-  async function syncConnectionWithErrorHandling(userId: string): Promise<GarminSyncResult> {
-    try {
-      return await syncConnection(userId)
-    } catch (error) {
-      return handleSyncError(userId, error)
+    return {
+      startedAt: startedAt.toISOString(),
+      finishedAt: finishedAt.toISOString(),
+      scannedUsers: connections.length,
+      syncedUsers,
+      skippedUsers,
+      failedUsers,
     }
   }
 
@@ -531,6 +776,9 @@ export function createGarminService(options: GarminServiceOptions = {}) {
       staleData: false,
       lastSyncWindow: undefined,
       lastErrorMessage: undefined,
+      syncLeaseId: undefined,
+      syncLeaseExpiresAt: undefined,
+      lastSyncActor: undefined,
     }
 
     await saveGarminConnectionRecord(store, nextConnection)
@@ -538,17 +786,27 @@ export function createGarminService(options: GarminServiceOptions = {}) {
     return nextConnection
   }
 
+  async function saveAndConsumeSession(state: string): Promise<GarminAuthSession | null> {
+    const session = await getGarminAuthSession(store, state)
+    if (!session) {
+      return null
+    }
+
+    return consumeGarminAuthSession(store, state)
+  }
+
   return {
     createConnectionSession,
     completeConnectionFromCallback,
     getConnectionStatus,
-    syncConnection: syncConnectionWithErrorHandling,
+    syncConnection,
+    runBackgroundSync,
     disconnectConnection,
     getSession: (state: string) => getGarminAuthSession(store, state),
     getWellnessEntries: (userId: string) => listGarminWellnessEntries(store, userId),
     saveConnection: (record: GarminConnectionRecord) => saveGarminConnectionRecord(store, record),
     saveAuthSession: (session: GarminAuthSession) => saveGarminAuthSession(store, session),
-    removeConnection: (userId: string) => removeGarminConnectionRecord(store, userId),
+    removeConnection: (userId: string) => disconnectConnection(userId),
   }
 }
 
@@ -560,19 +818,4 @@ export function getGarminService(): ReturnType<typeof createGarminService> {
   }
 
   return defaultGarminService
-}
-
-function mergeWellnessEntries(
-  existing: GarminWellnessEntry[],
-  incoming: GarminProviderSyncResponse['wellnessEntries'],
-): GarminWellnessEntry[] {
-  const merged = new Map<string, GarminWellnessEntry>()
-  for (const entry of [...existing, ...incoming]) {
-    const current = merged.get(entry.date)
-    if (!current || current.updatedAt <= entry.updatedAt) {
-      merged.set(entry.date, entry)
-    }
-  }
-
-  return [...merged.values()].sort((left, right) => right.date.localeCompare(left.date))
 }
