@@ -21,7 +21,10 @@ function getRecommendationStatus(window: WindowEvaluation): CoachingRecommendati
 
 export function buildCoachingRecommendationV1(
   window: WindowEvaluation,
-  settings: Pick<UserSettings, 'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget'>,
+  settings: Pick<
+    UserSettings,
+    'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget' | 'dailyStepTarget'
+  >,
   windowDays: number,
 ): CoachingRecommendationV1 {
   const recommendedMacros =
@@ -63,6 +66,7 @@ export function buildCoachingRecommendationV1(
       proteinTarget: settings.proteinTarget,
       carbTarget: settings.carbTarget,
       fatTarget: settings.fatTarget,
+      dailyStepTarget: settings.dailyStepTarget,
     },
     proposedTargets:
       window.recommendedCalories !== null
@@ -71,6 +75,7 @@ export function buildCoachingRecommendationV1(
             proteinTarget: settings.proteinTarget,
             carbTarget: settings.carbTarget,
             fatTarget: settings.fatTarget,
+            dailyStepTarget: settings.dailyStepTarget,
           }
         : undefined,
     effectiveDate: window.windowEnd,

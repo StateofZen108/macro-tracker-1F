@@ -295,6 +295,10 @@ function normalizeTargets(targets: CoachingTargetSet): CoachingTargetSet {
     proteinTarget: Number.isFinite(targets.proteinTarget) ? targets.proteinTarget : 0,
     carbTarget: Number.isFinite(targets.carbTarget) ? targets.carbTarget : 0,
     fatTarget: Number.isFinite(targets.fatTarget) ? targets.fatTarget : 0,
+    dailyStepTarget:
+      typeof targets.dailyStepTarget === 'number' && Number.isFinite(targets.dailyStepTarget)
+        ? targets.dailyStepTarget
+        : undefined,
   }
 }
 
@@ -318,6 +322,7 @@ export function normalizeWeeklyCheckInPacket(packet: WeeklyCheckInPacket): Weekl
         : undefined,
     previousTargets: normalizeTargets(packet.previousTargets),
     proposedTargets: packet.proposedTargets ? normalizeTargets(packet.proposedTargets) : undefined,
+    cutReviewCard: packet.cutReviewCard,
     energyModel: normalizeEnergyModelSnapshot(packet.energyModel),
     garminModifierWindow: packet.garminModifierWindow
       ? {
@@ -372,8 +377,9 @@ export function buildWeeklyCheckInPacket(params: {
     decisionType: params.record.decisionType ?? params.evaluation.recommendation.decisionType,
     nextCheckInDate: params.record.nextCheckInDate ?? params.record.weekEndDate,
     targetDelta: params.record.recommendedCalorieDelta,
-    previousTargets: params.evaluation.policy.previousTargets,
-    proposedTargets: params.evaluation.policy.proposedTargets,
+    previousTargets: params.record.weeklyCheckInPacket?.previousTargets ?? params.evaluation.policy.previousTargets,
+    proposedTargets: params.record.weeklyCheckInPacket?.proposedTargets ?? params.evaluation.policy.proposedTargets,
+    cutReviewCard: params.record.cutReviewCard,
     energyModel,
     garminModifierWindow,
     evidenceCards: buildEvidenceCards(

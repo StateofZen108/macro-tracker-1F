@@ -76,6 +76,8 @@ describe('feature flags', () => {
       screenFinishV1: false,
       settingsHubV1: false,
       motionSystemV1: false,
+      adaptiveCutIntelligenceV1: false,
+      adaptiveCutReviewSurfaceV1: false,
     })
   })
 
@@ -153,6 +155,8 @@ describe('feature flags', () => {
       screenFinishV1: true,
       settingsHubV1: true,
       motionSystemV1: true,
+      adaptiveCutIntelligenceV1: true,
+      adaptiveCutReviewSurfaceV1: true,
     })
   })
 
@@ -249,6 +253,8 @@ describe('feature flags', () => {
       screenFinishV1: false,
       settingsHubV1: false,
       motionSystemV1: false,
+      adaptiveCutIntelligenceV1: false,
+      adaptiveCutReviewSurfaceV1: false,
     })
   })
 
@@ -297,6 +303,8 @@ describe('feature flags', () => {
       VITE_FF_TRAINING_GUIDANCE_V2: 'true',
       VITE_FF_PROGRESS_STORY_V1: 'true',
       VITE_FF_QUIET_SETTINGS_V1: 'true',
+      VITE_FF_ADAPTIVE_CUT_INTELLIGENCE_V1: 'true',
+      VITE_FF_ADAPTIVE_CUT_REVIEW_SURFACE_V1: 'true',
     })
 
     expect(flags.nutrientGoalsV1).toBe(false)
@@ -314,6 +322,8 @@ describe('feature flags', () => {
     expect(flags.trainingGuidanceV2).toBe(false)
     expect(flags.progressStoryV1).toBe(false)
     expect(flags.quietSettingsV1).toBe(false)
+    expect(flags.adaptiveCutIntelligenceV1).toBe(false)
+    expect(flags.adaptiveCutReviewSurfaceV1).toBe(false)
   })
 
   it('downgrades premium finish flags when their prerequisites are disabled', () => {

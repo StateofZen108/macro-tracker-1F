@@ -28,6 +28,7 @@ import type {
 } from '../types'
 import { formatShortDate, getTodayDateKey } from '../utils/dates'
 import { buildWeightChartPoints, convertWeight } from '../utils/macros'
+import { CutReviewCard } from '../components/CutReviewCard'
 
 interface WeightScreenProps {
   settings: UserSettings
@@ -733,7 +734,9 @@ export function WeightScreen({
         ) / 100
       : null
   const shouldShowActionButtons =
-    currentCheckIn && (currentCheckIn.status === 'ready' || currentCheckIn.status === 'insufficientData')
+    currentCheckIn &&
+    !currentCheckIn.cutReviewCard &&
+    (currentCheckIn.status === 'ready' || currentCheckIn.status === 'insufficientData')
   const renderLegacyWeeklyCheckInBlocks = false
 
   // Reset the editor draft whenever the selected snapshot or persisted compare preferences change.
@@ -2343,6 +2346,14 @@ export function WeightScreen({
                 </div>
               ) : null}
             </div>
+
+            {currentCheckIn.cutReviewCard ? (
+              <CutReviewCard
+                card={currentCheckIn.cutReviewCard}
+                variant="weight"
+                onOpenCoach={onOpenCoach}
+              />
+            ) : null}
 
             {shouldShowActionButtons ? (
               <div className="grid gap-3 sm:grid-cols-3">
