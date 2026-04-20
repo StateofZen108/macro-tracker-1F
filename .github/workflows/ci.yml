@@ -421,6 +421,28 @@ jobs:
       - run: npm ci
       - run: npm run test:psmf-garmin:baseline-guard
 
+  merge-gate:
+    name: merge-gate
+    runs-on: ubuntu-latest
+    needs:
+      - lint
+      - build
+      - bundle
+      - unit
+      - food-truth-engineering-ready
+      - e2e-generic
+      - e2e-lane-guard
+      - psmf-phase-domain
+      - psmf-phase-storage-integration
+      - phase-planner-unit
+      - recovery-layer-domain
+      - garmin-connect-domain
+      - psmf-garmin-domain
+      - psmf-garmin-baseline-guard
+    if: github.event_name == 'pull_request'
+    steps:
+      - run: echo "merge gate passed"
+
   release-confidence:
     name: release-confidence
     runs-on: ubuntu-latest
