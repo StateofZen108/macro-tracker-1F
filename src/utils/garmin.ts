@@ -1,4 +1,6 @@
 import type {
+  GarminAvailabilityInfo,
+  GarminBackgroundSyncResponse,
   GarminConnectionInfo,
   GarminImportedWeight,
   GarminModifierRecord,
@@ -13,7 +15,7 @@ export interface GarminConnectResponse {
   connection: GarminConnectionInfo
 }
 
-export interface GarminStatusResponse {
+export interface GarminStatusResponse extends GarminAvailabilityInfo {
   connection: GarminConnectionInfo
   staleData: boolean
 }
@@ -46,6 +48,11 @@ export interface GarminApiError {
   message: string
 }
 
+export type GarminCallbackResult =
+  | { kind: 'connected' }
+  | { kind: 'error'; code: string }
+  | null
+
 async function requestJson<T>(
   path: string,
   init: RequestInit & { accessToken?: string } = {},
@@ -75,15 +82,21 @@ async function requestJson<T>(
   return payload as T
 }
 
-export function buildGarminApiPath(segment: 'connect' | 'callback' | 'status' | 'sync' | 'disconnect'): string {
+export function buildGarminApiPath(
+  segment: 'connect' | 'callback' | 'status' | 'sync' | 'disconnect' | 'background-sync',
+): string {
   return `/api/garmin/${segment}`
 }
 
 export function requestGarminConnect(
   accessToken: string,
+  returnTo?: string,
   redirectUri?: string,
 ): Promise<GarminConnectResponse> {
   const url = new URL(buildGarminApiPath('connect'), window.location.origin)
+  if (returnTo) {
+    url.searchParams.set('returnTo', returnTo)
+  }
   if (redirectUri) {
     url.searchParams.set('redirectUri', redirectUri)
   }
@@ -121,3 +134,48 @@ export function buildGarminCallbackUrl(code: string, state: string): string {
   url.searchParams.set('state', state)
   return url.toString()
 }
+
+function getGarminCallbackUrl(): URL {
+  return new URL(window.location.href)
+}
+
+export function hasGarminCallbackQuery(): boolean {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const url = getGarminCallbackUrl()
+  return url.searchParams.has('garmin_callback') || url.searchParams.has('garmin_callback_error')
+}
+
+export function readGarminCallbackResult(): GarminCallbackResult {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const url = getGarminCallbackUrl()
+  const success = url.searchParams.get('garmin_callback')
+  if (success === 'connected') {
+    return { kind: 'connected' }
+  }
+
+  const errorCode = url.searchParams.get('garmin_callback_error')
+  if (errorCode?.trim()) {
+    return { kind: 'error', code: errorCode.trim() }
+  }
+
+  return null
+}
+
+export function clearGarminCallbackQuery(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const url = getGarminCallbackUrl()
+  url.searchParams.delete('garmin_callback')
+  url.searchParams.delete('garmin_callback_error')
+  window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+}
+
+export type { GarminBackgroundSyncResponse }

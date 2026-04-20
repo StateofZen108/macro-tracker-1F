@@ -17,7 +17,14 @@ type PsmfGarminPreviewUiState = {
     severity: 'green' | 'yellow' | 'red'
   }
   garmin?: {
-    kind: 'not_connected' | 'connected' | 'syncing' | 'rate_limited' | 'reconnect_required' | 'error'
+    kind:
+      | 'not_enabled'
+      | 'not_connected'
+      | 'connected'
+      | 'syncing'
+      | 'rate_limited'
+      | 'reconnect_required'
+      | 'error'
     lastSyncedLabel?: string
     rateLimitedUntilLabel?: string
     stale?: boolean

@@ -16,6 +16,9 @@
     },
     "api/sync/push.ts": {
       "maxDuration": 30
+    },
+    "api/garmin/background-sync.ts": {
+      "maxDuration": 60
     }
   }
 }

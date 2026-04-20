@@ -38,6 +38,17 @@ interface ResolvedGarminProviderConfig {
   fetchImpl: FetchLike
 }
 
+export function isGarminProviderConfigured(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return Boolean(
+    env.GARMIN_CLIENT_ID?.trim() &&
+      env.GARMIN_CLIENT_SECRET?.trim() &&
+      (env.GARMIN_AUTHORIZATION_URL?.trim() || buildDefaultAuthorizationUrl()) &&
+      (env.GARMIN_TOKEN_URL?.trim() || buildDefaultTokenUrl()),
+  )
+}
+
 export class GarminProviderError extends Error {
   status: number
   code: string

@@ -165,7 +165,14 @@ interface PreviewPsmfGarminUiState {
     severity: 'green' | 'yellow' | 'red'
   }
   garmin?: {
-    kind: 'not_connected' | 'connected' | 'syncing' | 'rate_limited' | 'reconnect_required' | 'error'
+    kind:
+      | 'not_enabled'
+      | 'not_connected'
+      | 'connected'
+      | 'syncing'
+      | 'rate_limited'
+      | 'reconnect_required'
+      | 'error'
     lastSyncedLabel?: string
     rateLimitedUntilLabel?: string
     stale?: boolean
@@ -208,6 +215,14 @@ function formatDateTimeLabel(timestamp: string | undefined): string | undefined 
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(timestamp))
+}
+
+function isGarminSnapshotStale(timestamp: string | undefined): boolean {
+  if (!timestamp) {
+    return false
+  }
+
+  return Date.now() - new Date(timestamp).getTime() >= 6 * 60 * 60 * 1000
 }
 
 function normalizePhaseStatus(phase: DietPhase, today: string): DietPhase['status'] {
@@ -1059,20 +1074,24 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
         : undefined
 
     const garminKind: NonNullable<PreviewPsmfGarminUiState['garmin']>['kind'] =
-      garmin.connection.status === 'connected' ||
-      garmin.connection.status === 'syncing' ||
-      garmin.connection.status === 'rate_limited' ||
-      garmin.connection.status === 'reconnect_required' ||
-      garmin.connection.status === 'error'
-        ? garmin.connection.status
-        : 'not_connected'
+      !garmin.availability.providerConfigured ||
+      !garmin.availability.persistentStoreConfigured ||
+      !garmin.availability.backgroundAutomationEnabled
+        ? 'not_enabled'
+        : garmin.connection.status === 'connected' ||
+            garmin.connection.status === 'syncing' ||
+            garmin.connection.status === 'rate_limited' ||
+            garmin.connection.status === 'reconnect_required' ||
+            garmin.connection.status === 'error'
+          ? garmin.connection.status
+          : 'not_connected'
     const garminState: PreviewPsmfGarminUiState['garmin'] =
       FEATURE_FLAGS.garminConnectV1
         ? {
             kind: garminKind,
             lastSyncedLabel: formatDateTimeLabel(garmin.connection.lastSuccessfulSyncAt),
             rateLimitedUntilLabel: formatDateTimeLabel(garmin.connection.retryAfterAt),
-            stale: garmin.connection.staleData,
+            stale: isGarminSnapshotStale(garmin.connection.lastSuccessfulSyncAt),
           }
         : undefined
 

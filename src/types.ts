@@ -127,6 +127,8 @@ export type NutrientGoalMode = 'auto' | 'custom' | 'none'
 export type GarminHistoryWindow = '7d' | '30d' | '90d'
 export type CommandSurfaceDensity = 'tight' | 'balanced' | 'fallback_stack'
 export type MotionPresetId = 'fast' | 'standard' | 'sheet' | 'reduced'
+export type GarminSyncActor = 'manual' | 'background'
+export type GarminAutomationMode = 'server_background'
 export type CutReviewVerdict =
   | 'on_track'
   | 'confounded_stall'
@@ -830,6 +832,24 @@ export interface GarminConnectionInfo {
   lastSuccessfulSyncAt?: string
   retryAfterAt?: string
   staleData: boolean
+  syncLeaseExpiresAt?: string
+  lastSyncActor?: GarminSyncActor
+}
+
+export interface GarminAvailabilityInfo {
+  providerConfigured: boolean
+  persistentStoreConfigured: boolean
+  backgroundAutomationEnabled: boolean
+  automationMode?: GarminAutomationMode
+}
+
+export interface GarminBackgroundSyncResponse {
+  startedAt: string
+  finishedAt: string
+  scannedUsers: number
+  syncedUsers: number
+  skippedUsers: number
+  failedUsers: number
 }
 
 export interface GarminImportedWeight {

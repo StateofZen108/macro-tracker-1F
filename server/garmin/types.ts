@@ -6,6 +6,9 @@ export type GarminConnectionStatus =
   | 'error'
   | 'reconnect_required'
 
+export type GarminSyncActor = 'manual' | 'background'
+export type GarminAutomationMode = 'server_background'
+
 export interface GarminSecretEnvelope {
   keyId: string
   iv: string
@@ -28,6 +31,7 @@ export interface GarminAuthSession {
   userId: string
   codeVerifier: string
   redirectUri: string
+  returnToUrl?: string
   createdAt: string
   expiresAt: string
 }
@@ -57,6 +61,9 @@ export interface GarminConnectionRecord {
     endDate: string
   }
   lastErrorMessage?: string
+  syncLeaseId?: string
+  syncLeaseExpiresAt?: string
+  lastSyncActor?: GarminSyncActor
 }
 
 export interface GarminWellnessEntry {
@@ -88,6 +95,19 @@ export interface GarminStatusResponse {
   connection: GarminConnectionRecord
   staleData: boolean
   lastSyncWindow?: GarminConnectionRecord['lastSyncWindow']
+  providerConfigured: boolean
+  persistentStoreConfigured: boolean
+  backgroundAutomationEnabled: boolean
+  automationMode?: GarminAutomationMode
+}
+
+export interface GarminBackgroundSyncResponse {
+  startedAt: string
+  finishedAt: string
+  scannedUsers: number
+  syncedUsers: number
+  skippedUsers: number
+  failedUsers: number
 }
 
 export interface GarminProviderAuthorizationInput {
