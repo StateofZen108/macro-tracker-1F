@@ -127,6 +127,32 @@ export type NutrientGoalMode = 'auto' | 'custom' | 'none'
 export type GarminHistoryWindow = '7d' | '30d' | '90d'
 export type CommandSurfaceDensity = 'tight' | 'balanced' | 'fallback_stack'
 export type MotionPresetId = 'fast' | 'standard' | 'sheet' | 'reduced'
+export type GarminSyncActor = 'manual' | 'background'
+export type GarminAutomationMode = 'server_background'
+export type CutReviewVerdict =
+  | 'on_track'
+  | 'confounded_stall'
+  | 'needs_clean_confirmation'
+  | 'true_stall'
+  | 'too_fast_with_risk'
+export type CutInterventionLever =
+  | 'hold'
+  | 'logging_cleanup'
+  | 'increase_steps'
+  | 'review_phase_structure'
+  | 'reduce_training_stress'
+  | 'diet_break'
+export type CutEvidenceReason =
+  | 'waist_trend'
+  | 'scale_rate'
+  | 'expected_refeed_spike'
+  | 'expected_diet_break_spike'
+  | 'logging_quality'
+  | 'protein_adherence'
+  | 'step_adherence'
+  | 'recovery_risk'
+  | 'strength_retention'
+  | 'recent_intervention'
 export type LoggingToolbarStyle =
   | 'search_barcode'
   | 'search_barcode_custom'
@@ -257,6 +283,17 @@ export type DiagnosticsEventType =
   | 'garmin_v2_local_weight_wins'
   | 'garmin_v2_activity_modifier_attached'
   | 'garmin_v2_activity_modifier_deferred'
+  | 'cut_intel_v1.review_computed'
+  | 'cut_intel_v1.review_compute_failed'
+  | 'cut_intel_v1.verdict_computed'
+  | 'cut_intel_v1.verdict_failed'
+  | 'cut_intel_v1.lever_selected'
+  | 'cut_intel_v1.step_apply_started'
+  | 'cut_intel_v1.step_apply_succeeded'
+  | 'cut_intel_v1.step_apply_failed'
+  | 'cut_intel_v1.phase_review_opened'
+  | 'cut_intel_v1.phase_review_open_failed'
+  | 'cut_intel_v1.review_superseded'
   | 'workouts_v1_progression_applied'
   | 'workouts_v1_progression_failed'
   | 'sync_v2_replication_succeeded'
@@ -795,6 +832,24 @@ export interface GarminConnectionInfo {
   lastSuccessfulSyncAt?: string
   retryAfterAt?: string
   staleData: boolean
+  syncLeaseExpiresAt?: string
+  lastSyncActor?: GarminSyncActor
+}
+
+export interface GarminAvailabilityInfo {
+  providerConfigured: boolean
+  persistentStoreConfigured: boolean
+  backgroundAutomationEnabled: boolean
+  automationMode?: GarminAutomationMode
+}
+
+export interface GarminBackgroundSyncResponse {
+  startedAt: string
+  finishedAt: string
+  scannedUsers: number
+  syncedUsers: number
+  skippedUsers: number
+  failedUsers: number
 }
 
 export interface GarminImportedWeight {
@@ -861,18 +916,22 @@ export interface CheckInRecord {
   priorAvgWeight: number
   recommendedCalorieDelta?: number
   recommendedCalorieTarget?: number
+  recommendedStepDelta?: number
+  recommendedStepTarget?: number
   recommendedMacroTargets?: CheckInMacroTargets
   recommendationReason: string
   recommendationExplanation?: string
   confidenceBand?: CoachingConfidence
   confidenceScore?: number | null
   decisionType?: CoachingDecisionType
+  reviewVerdict?: CutReviewVerdict
   reasonCodes?: Array<CoachingReasonCode | LegacyCoachingCode>
   blockedReasons?: CoachingBlockedReason[]
   dataQuality?: DataQualityScore
   adherence?: AdherenceScore
   confounders?: ConfounderSet
   decisionRecordId?: string
+  cutReviewCard?: CutReviewCard
   weeklyCheckInPacket?: WeeklyCheckInPacket
   status: CheckInStatus
   supersededByDecisionRecordId?: string
@@ -1224,6 +1283,26 @@ export interface CoachInterventionCard {
   summary: string
   severity: ComplianceRiskLevel
   reasons: string[]
+}
+
+export interface CutReviewCard {
+  state: 'pending_review' | 'accepted' | 'deferred'
+  verdict: CutReviewVerdict
+  lever: CutInterventionLever
+  title: string
+  summary: string
+  evidenceReasons: CutEvidenceReason[]
+  confidence: CommandConfidence
+  confidenceReason: string
+  nextReviewDate: string
+  applyLabel?: string
+}
+
+export interface PhaseReviewIntent {
+  eventId: string
+  phaseId: string
+  type: 'refeed_day' | 'high_carb_day'
+  date: string
 }
 
 export interface RecoveryReadinessSignal {
@@ -2307,6 +2386,12 @@ export type CoachingReasonCode =
   | 'recovery_watch'
   | 'refeed_scheduled'
   | 'diet_break_review_recommended'
+  | 'waist_down_scale_confounded'
+  | 'refeed_spike_expected'
+  | 'diet_break_spike_expected'
+  | 'true_stall_confirmed'
+  | 'step_lever_selected'
+  | 'phase_review_required'
 
 export type LegacyCoachingCode = `legacy:${string}`
 
@@ -2352,6 +2437,8 @@ export type CoachingDecisionType =
   | 'keep_targets'
   | 'increase_calories'
   | 'decrease_calories'
+  | 'increase_steps'
+  | 'review_phase_structure'
   | 'hold_for_more_data'
   | 'ignore_period_due_to_confounders'
 
@@ -2362,6 +2449,7 @@ export interface CoachingTargetSet {
   proteinTarget: number
   carbTarget: number
   fatTarget: number
+  dailyStepTarget?: number
 }
 
 export interface EnergyModelSnapshot {
@@ -2410,6 +2498,7 @@ export interface WeeklyCheckInPacket {
   targetDelta?: number
   previousTargets: CoachingTargetSet
   proposedTargets?: CoachingTargetSet
+  cutReviewCard?: CutReviewCard
   energyModel: EnergyModelSnapshot
   garminModifierWindow?: GarminModifierWindow
   evidenceCards: CoachingEvidenceCard[]
@@ -2426,7 +2515,7 @@ export interface WeeklyCheckInPacket {
 export interface CoachingDecisionRecord {
   id: string
   source: CoachingDecisionSource
-  status: 'pending' | 'applied' | 'kept' | 'deferred' | 'overridden'
+  status: 'pending' | 'applied' | 'kept' | 'deferred' | 'overridden' | 'superseded'
   decisionType: CoachingDecisionType
   windowStart: string
   windowEnd: string

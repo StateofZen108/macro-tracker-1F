@@ -9,7 +9,17 @@ import {
   updateCoachingDecisionRecordStatus,
   upsertCoachingDecisionRecord,
 } from '../domain/coaching'
-import type { ActionResult, CheckInRecord, UserSettings, WeightEntry } from '../types'
+import type {
+  ActionResult,
+  BodyProgressSnapshot,
+  CheckInRecord,
+  DietPhase,
+  DietPhaseEvent,
+  RecoveryReadiness,
+  StrengthRetentionSnapshot,
+  UserSettings,
+  WeightEntry,
+} from '../types'
 import { loadActivityLog } from '../utils/storage/activity'
 import { loadCheckInHistory, saveCheckInHistory } from '../utils/storage/checkIns'
 import {
@@ -37,6 +47,13 @@ export function useWeeklyCheckIns(
   settings: UserSettings,
   weights: WeightEntry[],
   recoveryIssueCount: number,
+  adaptiveInputs?: {
+    bodyProgressSnapshots?: BodyProgressSnapshot[]
+    dietPhases?: DietPhase[]
+    dietPhaseEvents?: DietPhaseEvent[]
+    readiness?: RecoveryReadiness
+    strengthRetention?: StrengthRetentionSnapshot
+  },
 ) {
   const logsByDate = useSyncExternalStore(subscribeToStorage, loadAllFoodLogs, loadAllFoodLogs)
   const dayMeta = useSyncExternalStore(subscribeToStorage, loadDayMeta, loadDayMeta)
@@ -63,8 +80,22 @@ export function useWeeklyCheckIns(
         activityLog,
         interventions,
         recoveryIssueCount,
+        {
+          ...adaptiveInputs,
+          coachingDecisionHistory,
+        },
       ),
-    [activityLog, dayMeta, interventions, logsByDate, recoveryIssueCount, settings, weights],
+    [
+      activityLog,
+      adaptiveInputs,
+      coachingDecisionHistory,
+      dayMeta,
+      interventions,
+      logsByDate,
+      recoveryIssueCount,
+      settings,
+      weights,
+    ],
   )
   const lastShadowEventKeyRef = useRef<string | null>(null)
   const lastCoachV3PacketEventKeyRef = useRef<string | null>(null)
@@ -81,12 +112,35 @@ export function useWeeklyCheckIns(
 
   useEffect(() => {
     const latestHistory = loadCoachingDecisionHistory()
-    const nextHistory = upsertCoachingDecisionRecord(latestHistory, current.decisionRecord)
+    const staleRecords = latestHistory.filter(
+      (entry) =>
+        entry.windowStart === current.decisionRecord.windowStart &&
+        entry.windowEnd === current.decisionRecord.windowEnd &&
+        entry.id !== current.decisionRecord.id &&
+        (entry.status === 'pending' || entry.status === 'deferred'),
+    )
+    let nextHistory = upsertCoachingDecisionRecord(latestHistory, current.decisionRecord)
+    for (const staleRecord of staleRecords) {
+      nextHistory = updateCoachingDecisionRecordStatus(nextHistory, staleRecord.id, 'superseded')
+    }
     if (JSON.stringify(nextHistory) === JSON.stringify(latestHistory)) {
       return
     }
 
     void saveCoachingDecisionHistory(nextHistory)
+    if (FEATURE_FLAGS.adaptiveCutIntelligenceV1 && staleRecords.length > 0) {
+      void recordDiagnosticsEvent({
+        eventType: 'cut_intel_v1.review_superseded',
+        severity: 'info',
+        scope: 'diagnostics',
+        recordKey: current.record.id,
+        message: 'A stale adaptive cut review was superseded by fresher data.',
+        payload: {
+          supersededDecisionIds: staleRecords.map((entry) => entry.id),
+          nextDecisionId: current.decisionRecord.id,
+        },
+      })
+    }
   }, [current.decisionRecord])
 
   useEffect(() => {
@@ -162,7 +216,9 @@ export function useWeeklyCheckIns(
     return checkInHistory.find((entry) => entry.id === current.record.id) ?? current.record
   }, [checkInHistory, current.record])
 
-  function updateCurrentStatus(status: 'applied' | 'kept'): ActionResult<CheckInRecord> {
+  function updateCurrentStatus(
+    status: 'applied' | 'kept' | 'deferred',
+  ): ActionResult<CheckInRecord> {
     const existingRecord =
       loadCheckInHistory().find((entry) => entry.id === current.record.id) ?? current.record
     if (!existingRecord) {
@@ -172,7 +228,18 @@ export function useWeeklyCheckIns(
     const nextRecord: CheckInRecord = {
       ...existingRecord,
       status,
-      appliedAt: new Date().toISOString(),
+      appliedAt: status === 'applied' || status === 'kept' ? new Date().toISOString() : existingRecord.appliedAt,
+      cutReviewCard: existingRecord.cutReviewCard
+        ? {
+            ...existingRecord.cutReviewCard,
+            state:
+              status === 'applied' || status === 'kept'
+                ? 'accepted'
+                : status === 'deferred'
+                  ? 'deferred'
+                  : existingRecord.cutReviewCard.state,
+          }
+        : undefined,
       updatedAt: new Date().toISOString(),
     }
     const nextHistory = upsertCheckInRecord(loadCheckInHistory(), nextRecord).map((entry) =>
@@ -258,6 +325,7 @@ export function useWeeklyCheckIns(
     coachingDecisionHistory,
     markApplied: () => updateCurrentStatus('applied'),
     markKept: () => updateCurrentStatus('kept'),
+    markDeferred: () => updateCurrentStatus('deferred'),
     markOverridden,
   }
 }

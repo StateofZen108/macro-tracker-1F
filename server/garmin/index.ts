@@ -1,5 +1,7 @@
 export type {
+  GarminAutomationMode,
   GarminAuthSession,
+  GarminBackgroundSyncResponse,
   GarminConnectionRecord,
   GarminConnectionStatus,
   GarminProviderAdapter,
@@ -9,6 +11,7 @@ export type {
   GarminProviderSyncResponse,
   GarminProviderTokenExchangeInput,
   GarminSecretEnvelope,
+  GarminSyncActor,
   GarminStatusResponse,
   GarminSyncResult,
   GarminTokenBundle,
@@ -24,11 +27,17 @@ export {
   rotateGarminTokenBundle,
 } from './crypto'
 export {
+  applyGarminSyncFailure,
+  applyGarminSyncSuccess,
+  claimGarminSyncLease,
   consumeGarminAuthSession,
   createGarminConnectionRecord,
   createGarminStateStore,
   getGarminAuthSession,
   getGarminConnectionRecord,
+  getGarminStateStoreKind,
+  isGarminPersistentStateStore,
+  listGarminConnectionRecords,
   listGarminWellnessEntries,
   removeGarminConnectionRecord,
   saveGarminAuthSession,
@@ -39,6 +48,7 @@ export {
   buildGarminPkceChallenge,
   createGarminProviderAdapter,
   GarminProviderError,
+  isGarminProviderConfigured,
 } from './provider'
 export {
   createGarminService,

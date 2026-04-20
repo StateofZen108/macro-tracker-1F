@@ -26,6 +26,15 @@ const fakeService = {
     lastWatermarks: {},
     staleData: false,
   })),
+  getSession: vi.fn(async () => ({
+    state: 'state-1',
+    userId: 'user-1',
+    codeVerifier: 'verifier',
+    redirectUri: 'https://macrotracker-mf.vercel.app/api/garmin/callback',
+    returnToUrl: 'https://macrotracker-mf.vercel.app/settings',
+    createdAt: '2026-04-13T12:00:00.000Z',
+    expiresAt: '2026-04-13T12:15:00.000Z',
+  })),
   getConnectionStatus: vi.fn(async () => ({
     connection: {
       userId: 'user-1',
@@ -38,6 +47,10 @@ const fakeService = {
       staleData: false,
     },
     staleData: false,
+    providerConfigured: true,
+    persistentStoreConfigured: true,
+    backgroundAutomationEnabled: true,
+    automationMode: 'server_background',
   })),
   syncConnection: vi.fn(async () => ({
     records: [],
@@ -56,6 +69,14 @@ const fakeService = {
       endDate: '2026-04-13',
       initialBackfill: true,
     },
+  })),
+  runBackgroundSync: vi.fn(async () => ({
+    startedAt: '2026-04-13T12:00:00.000Z',
+    finishedAt: '2026-04-13T12:00:02.000Z',
+    scannedUsers: 1,
+    syncedUsers: 1,
+    skippedUsers: 0,
+    failedUsers: 0,
   })),
   disconnectConnection: vi.fn(async () => ({
     userId: 'user-1',
@@ -125,7 +146,7 @@ describe('garmin api routes', () => {
   it('returns a Garmin connect session', async () => {
     const routeModule = await import('../../api/garmin/connect')
     const response = await routeModule.default.fetch(
-      buildRequest('GET', 'http://localhost/api/garmin/connect'),
+      buildRequest('GET', 'http://localhost/api/garmin/connect?returnTo=https://macrotracker-mf.vercel.app/settings'),
     )
 
     expect(response.status).toBe(200)
@@ -153,7 +174,7 @@ describe('garmin api routes', () => {
     })
   })
 
-  it('returns a structured callback response', async () => {
+  it('redirects callback responses back into the app', async () => {
     const callbackRoute = await import('../../api/garmin/callback')
     const response = await callbackRoute.default.fetch(
       buildRequest(
@@ -163,9 +184,31 @@ describe('garmin api routes', () => {
       ),
     )
 
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({
-      status: 'connected',
+    expect(response.status).toBe(302)
+    expect(response.headers.get('Location')).toContain(
+      'https://macrotracker-mf.vercel.app/settings?garmin_callback=connected',
+    )
+  })
+
+  it('protects the background sync route with a bearer secret', async () => {
+    process.env.GARMIN_BACKGROUND_SYNC_SECRET = 'sync-secret'
+    const routeModule = await import('../../api/garmin/background-sync')
+
+    const unauthorizedResponse = await routeModule.default.fetch(
+      buildRequest('POST', 'http://localhost/api/garmin/background-sync', undefined),
+    )
+    expect(unauthorizedResponse.status).toBe(401)
+
+    const authorizedResponse = await routeModule.default.fetch(
+      buildRequest(
+        'POST',
+        'http://localhost/api/garmin/background-sync',
+        'Bearer sync-secret',
+      ),
+    )
+    expect(authorizedResponse.status).toBe(200)
+    await expect(authorizedResponse.json()).resolves.toMatchObject({
+      syncedUsers: 1,
     })
   })
 })

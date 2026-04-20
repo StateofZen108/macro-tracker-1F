@@ -10,12 +10,18 @@ import type {
 } from '../../../types'
 import type { CoachingEngineEvaluation, CoachingHistoryEntry } from './_types'
 
-function buildTargetSet(settings: Pick<UserSettings, 'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget'>) {
+function buildTargetSet(
+  settings: Pick<
+    UserSettings,
+    'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget' | 'dailyStepTarget'
+  >,
+) {
   return {
     calorieTarget: settings.calorieTarget,
     proteinTarget: settings.proteinTarget,
     carbTarget: settings.carbTarget,
     fatTarget: settings.fatTarget,
+    dailyStepTarget: settings.dailyStepTarget,
   }
 }
 
@@ -23,8 +29,9 @@ export function buildCoachingDecisionId(
   windowStart: string,
   windowEnd: string,
   source: CoachingDecisionSource = 'engine_v1',
+  suffix?: string,
 ): string {
-  return `${source}:${windowStart}:${windowEnd}`
+  return suffix ? `${source}:${windowStart}:${windowEnd}:${suffix}` : `${source}:${windowStart}:${windowEnd}`
 }
 
 export function buildCoachingDecisionRecord(params: {
@@ -123,8 +130,14 @@ export function updateCoachingDecisionRecordStatus(
 }
 
 export function buildManualOverrideDecisionRecord(
-  previousSettings: Pick<UserSettings, 'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget'>,
-  nextSettings: Pick<UserSettings, 'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget'>,
+  previousSettings: Pick<
+    UserSettings,
+    'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget' | 'dailyStepTarget'
+  >,
+  nextSettings: Pick<
+    UserSettings,
+    'calorieTarget' | 'proteinTarget' | 'carbTarget' | 'fatTarget' | 'dailyStepTarget'
+  >,
   effectiveDate: string,
   reasonCode: CoachingReasonCode | LegacyCoachingCode = 'manual_override',
 ): CoachingDecisionRecord {
@@ -137,7 +150,9 @@ export function buildManualOverrideDecisionRecord(
       ? 'increase_calories'
       : calorieDelta < 0
         ? 'decrease_calories'
-        : 'keep_targets'
+        : nextSettings.dailyStepTarget !== previousSettings.dailyStepTarget
+          ? 'increase_steps'
+          : 'keep_targets'
   const timestamp = new Date().toISOString()
 
   return {

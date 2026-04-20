@@ -7,6 +7,7 @@ import type {
   CatalogProvider,
   CheckInRecord,
   CoachingEvidenceCard,
+  CutReviewCard,
   EnergyModelSnapshot,
   GarminModifierWindow,
   CoachingCalibrationRecord,
@@ -319,6 +320,48 @@ function parseWeeklyPacketEvidenceCard(rawValue: unknown): CoachingEvidenceCard 
   }
 }
 
+function parseCutReviewCard(rawValue: unknown): CutReviewCard | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const verdict = readString(rawValue.verdict)
+  const lever = readString(rawValue.lever)
+  const title = readString(rawValue.title)
+  const summary = readString(rawValue.summary)
+  const confidence = readString(rawValue.confidence)
+  const confidenceReason = readString(rawValue.confidenceReason)
+  const nextReviewDate = isValidDateKey(rawValue.nextReviewDate) ? rawValue.nextReviewDate : null
+  const state = readString(rawValue.state)
+  if (
+    !verdict ||
+    !lever ||
+    !title ||
+    !summary ||
+    !confidence ||
+    !confidenceReason ||
+    !nextReviewDate ||
+    !state
+  ) {
+    return undefined
+  }
+
+  return {
+    state: state as CutReviewCard['state'],
+    verdict: verdict as CutReviewCard['verdict'],
+    lever: lever as CutReviewCard['lever'],
+    title,
+    summary,
+    evidenceReasons: Array.isArray(rawValue.evidenceReasons)
+      ? rawValue.evidenceReasons.filter((value): value is CutReviewCard['evidenceReasons'][number] => typeof value === 'string')
+      : [],
+    confidence: confidence as CutReviewCard['confidence'],
+    confidenceReason,
+    nextReviewDate,
+    applyLabel: readOptionalString(rawValue.applyLabel),
+  }
+}
+
 function parseWeeklyCheckInPacketRecord(rawValue: unknown): WeeklyCheckInPacket | undefined {
   if (!isRecord(rawValue)) {
     return undefined
@@ -337,6 +380,11 @@ function parseWeeklyCheckInPacketRecord(rawValue: unknown): WeeklyCheckInPacket 
         proteinTarget: Number(rawValue.previousTargets.proteinTarget ?? 0),
         carbTarget: Number(rawValue.previousTargets.carbTarget ?? 0),
         fatTarget: Number(rawValue.previousTargets.fatTarget ?? 0),
+        dailyStepTarget:
+          typeof rawValue.previousTargets.dailyStepTarget === 'number' &&
+          Number.isFinite(rawValue.previousTargets.dailyStepTarget)
+            ? rawValue.previousTargets.dailyStepTarget
+            : undefined,
       }
     : null
   const energyModel = parseWeeklyPacketEnergyModel(rawValue.energyModel)
@@ -360,6 +408,11 @@ function parseWeeklyCheckInPacketRecord(rawValue: unknown): WeeklyCheckInPacket 
         proteinTarget: Number(rawValue.proposedTargets.proteinTarget ?? 0),
         carbTarget: Number(rawValue.proposedTargets.carbTarget ?? 0),
         fatTarget: Number(rawValue.proposedTargets.fatTarget ?? 0),
+        dailyStepTarget:
+          typeof rawValue.proposedTargets.dailyStepTarget === 'number' &&
+          Number.isFinite(rawValue.proposedTargets.dailyStepTarget)
+            ? rawValue.proposedTargets.dailyStepTarget
+            : undefined,
       }
     : undefined
 
@@ -382,6 +435,7 @@ function parseWeeklyCheckInPacketRecord(rawValue: unknown): WeeklyCheckInPacket 
         : undefined,
     previousTargets,
     proposedTargets,
+    cutReviewCard: parseCutReviewCard(rawValue.cutReviewCard),
     energyModel,
     garminModifierWindow: parseGarminModifierWindow(rawValue.garminModifierWindow),
     evidenceCards: Array.isArray(rawValue.evidenceCards)
@@ -2252,6 +2306,10 @@ function normalizeCheckInRecord(record: CheckInRecord): CheckInRecord {
       Number.isFinite(record.recommendedCalorieDelta) ? record.recommendedCalorieDelta : undefined,
     recommendedCalorieTarget:
       Number.isFinite(record.recommendedCalorieTarget) ? record.recommendedCalorieTarget : undefined,
+    recommendedStepDelta:
+      Number.isFinite(record.recommendedStepDelta) ? record.recommendedStepDelta : undefined,
+    recommendedStepTarget:
+      Number.isFinite(record.recommendedStepTarget) ? record.recommendedStepTarget : undefined,
     recommendedMacroTargets:
       record.recommendedMacroTargets &&
       Number.isFinite(record.recommendedMacroTargets.protein) &&
@@ -2260,6 +2318,15 @@ function normalizeCheckInRecord(record: CheckInRecord): CheckInRecord {
         ? record.recommendedMacroTargets
         : undefined,
     recommendationReason: record.recommendationReason.trim(),
+    recommendationExplanation: record.recommendationExplanation?.trim() || undefined,
+    reviewVerdict:
+      record.reviewVerdict === 'on_track' ||
+      record.reviewVerdict === 'confounded_stall' ||
+      record.reviewVerdict === 'needs_clean_confirmation' ||
+      record.reviewVerdict === 'true_stall' ||
+      record.reviewVerdict === 'too_fast_with_risk'
+        ? record.reviewVerdict
+        : undefined,
     reasonCodes: Array.isArray(record.reasonCodes)
       ? record.reasonCodes.map((code) => normalizeReasonCode(String(code)))
       : [],
@@ -2273,6 +2340,7 @@ function normalizeCheckInRecord(record: CheckInRecord): CheckInRecord {
     weeklyCheckInPacket: record.weeklyCheckInPacket
       ? normalizeWeeklyCheckInPacket(record.weeklyCheckInPacket)
       : undefined,
+    cutReviewCard: record.cutReviewCard ? parseCutReviewCard(record.cutReviewCard) : undefined,
     status:
       record.status === 'applied' ||
       record.status === 'kept' ||
@@ -3138,6 +3206,8 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
       priorAvgWeight,
       recommendedCalorieDelta: readNumber(rawRecord.recommendedCalorieDelta) ?? undefined,
       recommendedCalorieTarget: readNumber(rawRecord.recommendedCalorieTarget) ?? undefined,
+      recommendedStepDelta: readNumber(rawRecord.recommendedStepDelta) ?? undefined,
+      recommendedStepTarget: readNumber(rawRecord.recommendedStepTarget) ?? undefined,
       recommendedMacroTargets:
         isRecord(rawRecord.recommendedMacroTargets) &&
         readNumber(rawRecord.recommendedMacroTargets.protein) !== null &&
@@ -3166,9 +3236,19 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
         rawRecord.decisionType === 'keep_targets' ||
         rawRecord.decisionType === 'increase_calories' ||
         rawRecord.decisionType === 'decrease_calories' ||
+        rawRecord.decisionType === 'increase_steps' ||
+        rawRecord.decisionType === 'review_phase_structure' ||
         rawRecord.decisionType === 'hold_for_more_data' ||
         rawRecord.decisionType === 'ignore_period_due_to_confounders'
           ? rawRecord.decisionType
+          : undefined,
+      reviewVerdict:
+        rawRecord.reviewVerdict === 'on_track' ||
+        rawRecord.reviewVerdict === 'confounded_stall' ||
+        rawRecord.reviewVerdict === 'needs_clean_confirmation' ||
+        rawRecord.reviewVerdict === 'true_stall' ||
+        rawRecord.reviewVerdict === 'too_fast_with_risk'
+          ? rawRecord.reviewVerdict
           : undefined,
       reasonCodes: Array.isArray(rawRecord.reasonCodes)
         ? rawRecord.reasonCodes
@@ -3182,6 +3262,7 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
           }))
         : undefined,
       decisionRecordId: readOptionalString(rawRecord.decisionRecordId),
+      cutReviewCard: parseCutReviewCard(rawRecord.cutReviewCard),
       weeklyCheckInPacket: parseWeeklyCheckInPacketRecord(rawRecord.weeklyCheckInPacket),
       status,
       supersededByDecisionRecordId: readOptionalString(rawRecord.supersededByDecisionRecordId),

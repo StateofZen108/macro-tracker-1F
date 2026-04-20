@@ -30,12 +30,12 @@ test('renders the default not-connected Garmin state', async ({ page }) => {
 
   const section = page.getByTestId('garmin-section')
   await expect(section).toContainText(
-    'Connect Garmin to import sleep, stress, Body Battery, steps, and cardio into recovery scoring.',
+    'Connect Garmin once. After that, MacroTracker keeps sleep, stress, Body Battery, steps, and cardio snapshots updated automatically in the background.',
   )
   await expect(section.getByRole('button', { name: /^Connect Garmin$/i })).toBeVisible()
 })
 
-test('renders the connected stale-data Garmin state with sync actions', async ({ page }) => {
+test('renders the connected stale-data Garmin state with troubleshooting actions', async ({ page }) => {
   await seedPsmfGarminFeatureState(page, {
     goalMode: 'lose',
     previewUi: {
@@ -52,14 +52,14 @@ test('renders the connected stale-data Garmin state with sync actions', async ({
 
   const section = page.getByTestId('garmin-section')
   await expect(section).toContainText(
-    'Garmin is connected. Imported wellness data can influence recovery scoring and coaching holds.',
+    'Garmin is connected and background automation is active. Fresh wellness snapshots sync into MacroTracker automatically.',
   )
   await expect(section).toContainText('Last synced: 2026-04-13 08:15 UTC')
   await expect(section).toContainText(
-    'Garmin data is older than 72 hours and will not trigger high-severity recovery holds.',
+    'Garmin automation is behind. Snapshots older than 6 hours can delay recovery updates until the next successful sync.',
   )
-  await expect(section.getByRole('button', { name: /^Sync now$/i })).toBeVisible()
   await expect(section.getByRole('button', { name: /^Disconnect$/i })).toBeVisible()
+  await expect(section.getByText('Troubleshooting')).toBeVisible()
 })
 
 test('renders the rate-limited Garmin state', async ({ page }) => {
@@ -77,7 +77,7 @@ test('renders the rate-limited Garmin state', async ({ page }) => {
   await goToSettings(page)
 
   await expect(page.getByTestId('garmin-section')).toContainText(
-    'Garmin sync is temporarily rate limited. Try again after 2026-04-13 18:00 UTC.',
+    'Garmin background sync is temporarily rate limited. It will resume after 2026-04-13 18:00 UTC.',
   )
 })
 
@@ -95,6 +95,26 @@ test('renders the reconnect-required Garmin state', async ({ page }) => {
   await goToSettings(page)
 
   const section = page.getByTestId('garmin-section')
-  await expect(section).toContainText('Garmin needs to be reconnected before new data can sync.')
+  await expect(section).toContainText(
+    'Garmin needs to be reconnected before automatic background sync can resume.',
+  )
   await expect(section.getByRole('button', { name: /^Reconnect Garmin$/i })).toBeVisible()
+})
+
+test('renders the deployment-disabled Garmin state', async ({ page }) => {
+  await seedPsmfGarminFeatureState(page, {
+    goalMode: 'lose',
+    previewUi: {
+      dietPhase: activePhasePreview,
+      recovery: { severity: 'green' },
+      garmin: {
+        kind: 'not_enabled',
+      },
+    },
+  })
+  await goToSettings(page)
+
+  const section = page.getByTestId('garmin-section')
+  await expect(section).toContainText('Garmin is not enabled in this deployment.')
+  await expect(section.getByRole('button', { name: /^Connect Garmin$/i })).toHaveCount(0)
 })

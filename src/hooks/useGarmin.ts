@@ -1,8 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { ActionResult, AppActionError, GarminConnectionInfo } from '../types'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  ActionResult,
+  AppActionError,
+  GarminAvailabilityInfo,
+  GarminConnectionInfo,
+} from '../types'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import { recordDiagnosticsEvent } from '../utils/diagnostics'
 import {
+  clearGarminCallbackQuery,
+  hasGarminCallbackQuery,
+  readGarminCallbackResult,
   requestGarminConnect,
   requestGarminDisconnect,
   requestGarminStatus,
@@ -15,6 +23,17 @@ import { useWellness } from './useWellness'
 
 interface SyncSessionLike {
   access_token?: string | null
+}
+
+const DEFAULT_CONNECTION: GarminConnectionInfo = {
+  status: 'not_connected',
+  staleData: false,
+}
+
+const DEFAULT_AVAILABILITY: GarminAvailabilityInfo = {
+  providerConfigured: false,
+  persistentStoreConfigured: false,
+  backgroundAutomationEnabled: false,
 }
 
 function fail(message: string, code = 'garmin'): ActionResult<never> {
@@ -41,12 +60,11 @@ function isOlderThanSixHours(timestamp: string | undefined): boolean {
 
 export function useGarmin(session: SyncSessionLike | null) {
   const { mergeImportedEntries } = useWellness()
-  const [connection, setConnection] = useState<GarminConnectionInfo>({
-    status: 'not_connected',
-    staleData: false,
-  })
+  const [connection, setConnection] = useState<GarminConnectionInfo>(DEFAULT_CONNECTION)
+  const [availability, setAvailability] = useState<GarminAvailabilityInfo>(DEFAULT_AVAILABILITY)
   const [busy, setBusy] = useState(false)
   const [lastError, setLastError] = useState<AppActionError | null>(null)
+  const bootstrapSyncTriggeredRef = useRef(false)
 
   const accessToken = useMemo(
     () => (session ? getSessionAccessToken(session as never) : null),
@@ -55,25 +73,27 @@ export function useGarmin(session: SyncSessionLike | null) {
 
   const refreshStatus = useCallback(async (): Promise<ActionResult<GarminConnectionInfo>> => {
     if (!FEATURE_FLAGS.garminConnectV1) {
-      return ok<GarminConnectionInfo>({
-        status: 'not_connected',
-        staleData: false,
-      })
+      setConnection(DEFAULT_CONNECTION)
+      setAvailability(DEFAULT_AVAILABILITY)
+      return ok(DEFAULT_CONNECTION)
     }
 
     if (!accessToken) {
-      const nextConnection: GarminConnectionInfo = {
-        status: 'not_connected',
-        staleData: false,
-      }
-      setConnection(nextConnection)
+      setConnection(DEFAULT_CONNECTION)
+      setAvailability(DEFAULT_AVAILABILITY)
       setLastError(null)
-      return ok(nextConnection)
+      return ok(DEFAULT_CONNECTION)
     }
 
     try {
       const status = await requestGarminStatus(accessToken)
       setConnection(status.connection)
+      setAvailability({
+        providerConfigured: status.providerConfigured,
+        persistentStoreConfigured: status.persistentStoreConfigured,
+        backgroundAutomationEnabled: status.backgroundAutomationEnabled,
+        automationMode: status.automationMode,
+      })
       setLastError(null)
       return ok(status.connection)
     } catch (error) {
@@ -167,9 +187,17 @@ export function useGarmin(session: SyncSessionLike | null) {
       return fail('Sign in before connecting Garmin.')
     }
 
+    if (
+      !availability.providerConfigured ||
+      !availability.persistentStoreConfigured ||
+      !availability.backgroundAutomationEnabled
+    ) {
+      return fail('Garmin is not enabled in this deployment.', 'garminNotEnabled')
+    }
+
     setBusy(true)
     try {
-      const response = await requestGarminConnect(accessToken)
+      const response = await requestGarminConnect(accessToken, window.location.href)
       window.location.assign(response.authorizationUrl)
       return ok(undefined)
     } catch (error) {
@@ -182,7 +210,7 @@ export function useGarmin(session: SyncSessionLike | null) {
     } finally {
       setBusy(false)
     }
-  }, [accessToken])
+  }, [accessToken, availability])
 
   const disconnect = useCallback(async (): Promise<ActionResult<GarminConnectionInfo>> => {
     if (!accessToken) {
@@ -194,6 +222,7 @@ export function useGarmin(session: SyncSessionLike | null) {
       const nextConnection = await requestGarminDisconnect(accessToken)
       setConnection(nextConnection)
       setLastError(null)
+      bootstrapSyncTriggeredRef.current = false
       return ok(nextConnection)
     } catch (error) {
       const nextError = {
@@ -210,6 +239,40 @@ export function useGarmin(session: SyncSessionLike | null) {
   useEffect(() => {
     void refreshStatus()
   }, [refreshStatus])
+
+  useEffect(() => {
+    if (!FEATURE_FLAGS.garminConnectV1 || !accessToken || !hasGarminCallbackQuery()) {
+      return
+    }
+
+    const callbackResult = readGarminCallbackResult()
+    if (!callbackResult) {
+      return
+    }
+
+    clearGarminCallbackQuery()
+
+    void (async () => {
+      if (callbackResult.kind === 'error') {
+        setLastError({
+          code: 'garminCallback',
+          message: `Garmin connection could not be completed (${callbackResult.code}).`,
+        })
+        await refreshStatus()
+        return
+      }
+
+      const statusResult = await refreshStatus()
+      if (
+        statusResult.ok &&
+        !statusResult.data.lastSuccessfulSyncAt &&
+        !bootstrapSyncTriggeredRef.current
+      ) {
+        bootstrapSyncTriggeredRef.current = true
+        await syncNow()
+      }
+    })()
+  }, [accessToken, refreshStatus, syncNow])
 
   useEffect(() => {
     if (!FEATURE_FLAGS.garminConnectV1 || !accessToken) {
@@ -245,6 +308,7 @@ export function useGarmin(session: SyncSessionLike | null) {
 
   return {
     connection,
+    availability,
     busy,
     lastError,
     refreshStatus,

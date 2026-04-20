@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ScreenHeader } from '../components/ScreenHeader'
 import { CoachMessageCard } from '../components/coach/CoachMessageCard'
+import { CutReviewCard } from '../components/CutReviewCard'
 import type {
   CoachActionProposal,
   CoachFeedback,
@@ -40,6 +41,8 @@ interface CoachScreenProps {
   workoutAction?: WorkoutActionCard
   onOpenWorkouts?: () => void
   onOpenSettings?: () => void
+  onApplyCutReview?: () => void
+  onDeferCutReview?: () => void
 }
 
 function stateCopy(state: CoachState): { title: string; description: string } {
@@ -119,6 +122,8 @@ export function CoachScreen({
   workoutAction,
   onOpenWorkouts,
   onOpenSettings,
+  onApplyCutReview,
+  onDeferCutReview,
 }: CoachScreenProps) {
   const [question, setQuestion] = useState('')
   const feedbackByMessageId = useMemo(
@@ -160,6 +165,15 @@ export function CoachScreen({
               </div>
             ) : null}
           </div>
+        ) : null}
+
+        {currentCheckIn?.cutReviewCard ? (
+          <CutReviewCard
+            card={currentCheckIn.cutReviewCard}
+            variant="coach"
+            onApply={onApplyCutReview}
+            onDefer={onDeferCutReview}
+          />
         ) : null}
 
         {cutDayPlan ? (

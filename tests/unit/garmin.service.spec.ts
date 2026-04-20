@@ -62,9 +62,16 @@ describe('garmin service state transitions', () => {
       scope: 'read',
     })
 
-    const session = await service.createConnectionSession('user-1')
+    const session = await service.createConnectionSession(
+      'user-1',
+      undefined,
+      'https://macrotracker-mf.vercel.app/settings',
+    )
     expect(session.authorizationUrl).toBe('https://garmin.example/oauth/authorize')
     expect(session.state).toBeTruthy()
+    await expect(service.getSession(session.state)).resolves.toMatchObject({
+      returnToUrl: 'https://macrotracker-mf.vercel.app/settings',
+    })
 
     const connection = await service.completeConnectionFromCallback({
       state: session.state,
@@ -292,5 +299,84 @@ describe('garmin service state transitions', () => {
     const status = await service.getConnectionStatus('user-1')
     expect(status.staleData).toBe(true)
     expect(status.connection.staleData).toBe(true)
+  })
+
+  it('runs background sync for due users and skips fresh connections', async () => {
+    const fetchWellnessData = vi
+      .fn()
+      .mockResolvedValue({
+        wellnessEntries: [
+          {
+            date: '2026-04-13',
+            provider: 'garmin',
+            steps: 6400,
+            sourceUpdatedAt: '2026-04-13T12:00:00.000Z',
+            updatedAt: '2026-04-13T12:00:00.000Z',
+          },
+        ],
+        nextHealthCursor: 'health-2',
+        nextActivityCursor: 'activity-2',
+      })
+
+    const provider = {
+      buildAuthorizationUrl: vi.fn(() => 'https://garmin.example/oauth/authorize'),
+      exchangeCodeForTokens: vi.fn(async () => ({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresAt: '2026-04-20T13:00:00.000Z',
+      })),
+      refreshAccessToken: vi.fn(async () => ({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresAt: '2026-04-20T13:00:00.000Z',
+      })),
+      fetchWellnessData,
+    }
+
+    const store = createGarminStateStore({ stateDir: tempDir })
+    const connectService = createGarminService({
+      store,
+      provider,
+      tokenKeyRing: createTokenKeyRing(),
+      now: () => new Date('2026-04-13T12:00:00.000Z'),
+      redirectUri: 'https://app.example.com/api/garmin/callback',
+      scope: 'read',
+      backgroundSyncEnabled: true,
+      backgroundSyncSecret: 'secret',
+    })
+
+    const userOneSession = await connectService.createConnectionSession('user-1')
+    await connectService.completeConnectionFromCallback({ state: userOneSession.state, code: 'auth-code' })
+    await connectService.saveConnection({
+      ...(await connectService.getConnectionStatus('user-1')).connection,
+      lastSuccessfulSyncAt: '2026-04-13T07:59:00.000Z',
+    })
+
+    const userTwoSession = await connectService.createConnectionSession('user-2')
+    await connectService.completeConnectionFromCallback({ state: userTwoSession.state, code: 'auth-code' })
+    await connectService.saveConnection({
+      ...(await connectService.getConnectionStatus('user-2')).connection,
+      lastSuccessfulSyncAt: '2026-04-13T11:30:00.000Z',
+    })
+
+    const backgroundService = createGarminService({
+      store,
+      provider,
+      tokenKeyRing: createTokenKeyRing(),
+      now: () => new Date('2026-04-13T12:00:00.000Z'),
+      redirectUri: 'https://app.example.com/api/garmin/callback',
+      scope: 'read',
+      backgroundSyncEnabled: true,
+      backgroundSyncSecret: 'secret',
+    })
+
+    const result = await backgroundService.runBackgroundSync()
+    expect(result).toMatchObject({
+      scannedUsers: 2,
+      syncedUsers: 1,
+      skippedUsers: 1,
+      failedUsers: 0,
+    })
+    expect(fetchWellnessData).toHaveBeenCalledTimes(1)
   })
 })

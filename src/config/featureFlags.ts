@@ -67,6 +67,8 @@ export interface FeatureFlags {
   screenFinishV1: boolean
   settingsHubV1: boolean
   motionSystemV1: boolean
+  adaptiveCutIntelligenceV1: boolean
+  adaptiveCutReviewSurfaceV1: boolean
 }
 
 export function resolveFeatureFlag(
@@ -163,6 +165,8 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     screenFinishV1: resolveFeatureFlag(env.VITE_FF_SCREEN_FINISH_V1, mode),
     settingsHubV1: resolveFeatureFlag(env.VITE_FF_SETTINGS_HUB_V1, mode),
     motionSystemV1: resolveFeatureFlag(env.VITE_FF_MOTION_SYSTEM_V1, mode),
+    adaptiveCutIntelligenceV1: resolveFeatureFlag(env.VITE_FF_ADAPTIVE_CUT_INTELLIGENCE_V1, mode),
+    adaptiveCutReviewSurfaceV1: resolveFeatureFlag(env.VITE_FF_ADAPTIVE_CUT_REVIEW_SURFACE_V1, mode),
   }
 
   if (!resolvedFlags.catalogProviderV2) {
@@ -352,6 +356,14 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
 
   if (!resolvedFlags.cohesionFinishV1) {
     resolvedFlags.settingsHubV1 = false
+  }
+
+  if (!resolvedFlags.coachEngineV3) {
+    resolvedFlags.adaptiveCutIntelligenceV1 = false
+  }
+
+  if (!resolvedFlags.adaptiveCutIntelligenceV1) {
+    resolvedFlags.adaptiveCutReviewSurfaceV1 = false
   }
 
   return resolvedFlags

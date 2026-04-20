@@ -1,0 +1,28 @@
+name: Garmin Background Sync
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: garmin-background-sync-production
+  cancel-in-progress: false
+
+jobs:
+  sync-production-garmin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call production Garmin background sync endpoint
+        env:
+          PRODUCTION_ORIGIN: ${{ vars.MACROTRACKER_PRODUCTION_ORIGIN }}
+          GARMIN_BACKGROUND_SYNC_SECRET: ${{ secrets.GARMIN_BACKGROUND_SYNC_SECRET }}
+        run: |
+          test -n "$PRODUCTION_ORIGIN"
+          test -n "$GARMIN_BACKGROUND_SYNC_SECRET"
+          curl --fail --show-error --silent \
+            -X POST \
+            "$PRODUCTION_ORIGIN/api/garmin/background-sync" \
+            -H "Authorization: Bearer $GARMIN_BACKGROUND_SYNC_SECRET" \
+            -H "Content-Type: application/json"

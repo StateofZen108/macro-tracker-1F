@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, EyeOff, Settings2 } from 'lucide-react'
+import { CutReviewCard } from '../components/CutReviewCard'
 import { useMemo, useState } from 'react'
 import { ScreenHeader } from '../components/ScreenHeader'
 import { FEATURE_FLAGS } from '../config/featureFlags'
@@ -48,6 +49,7 @@ interface DashboardScreenProps {
   onRunFastCheckIn: () => void
   onDismissReviewItem: (reviewItemId: string) => void
   onUpdateSettings: (settings: UserSettings) => ActionResult<void>
+  onOpenAdaptiveReview?: () => void
 }
 
 const DEFAULT_ORDER: DashboardSectionId[] = ['coach', 'nutrition', 'food_review', 'garmin', 'workouts', 'body_progress', 'benchmark']
@@ -76,6 +78,7 @@ export function DashboardScreen({
   onRunFastCheckIn,
   onDismissReviewItem,
   onUpdateSettings,
+  onOpenAdaptiveReview,
 }: DashboardScreenProps) {
   const [manageMode, setManageMode] = useState(false)
   const [showWhyToday, setShowWhyToday] = useState(false)
@@ -515,6 +518,16 @@ export function DashboardScreen({
             </div>
           </div>
         </section>
+      ) : null}
+
+      {FEATURE_FLAGS.adaptiveCutReviewSurfaceV1 &&
+      currentCheckIn?.cutReviewCard &&
+      currentCheckIn.cutReviewCard.state !== 'accepted' ? (
+        <CutReviewCard
+          card={currentCheckIn.cutReviewCard}
+          variant="dashboard"
+          onOpenCoach={onOpenAdaptiveReview}
+        />
       ) : null}
 
       {cutModeEnabled && cutCockpit ? (

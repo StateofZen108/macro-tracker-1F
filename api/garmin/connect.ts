@@ -20,7 +20,8 @@ async function handleGet(request: Request): Promise<Response> {
     const { userId } = await requireAuthenticatedSyncUser(request)
     const url = new URL(request.url)
     const redirectUri = url.searchParams.get('redirectUri') ?? undefined
-    const response = await getGarminService().createConnectionSession(userId, redirectUri)
+    const returnTo = url.searchParams.get('returnTo') ?? undefined
+    const response = await getGarminService().createConnectionSession(userId, redirectUri, returnTo)
     logApiEvent({
       event: 'garmin_connect',
       status: 200,

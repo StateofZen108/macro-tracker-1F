@@ -8,6 +8,7 @@ export function buildPreviousTargets(context: CoachingEngineInputContext): Coach
     proteinTarget: context.input.proteinTarget,
     carbTarget: context.input.carbTarget,
     fatTarget: context.input.fatTarget,
+    dailyStepTarget: context.input.dailyStepTarget,
   }
 }
 
@@ -39,6 +40,7 @@ export function realizeCarbLedTargets(
       proteinTarget: previousTargets.proteinTarget,
       carbTarget: proposedCarbTarget,
       fatTarget: previousTargets.fatTarget,
+      dailyStepTarget: previousTargets.dailyStepTarget,
     },
     realizedCalorieDelta: realizedMacroCalorieDelta,
     floorApplied,
