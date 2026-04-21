@@ -1,9 +1,9 @@
 {
   "status": "automated_passed",
-  "executedAt": "2026-04-14T18:43:24.895Z",
+  "executedAt": "2026-04-21T11:50:09.516Z",
   "buildMode": "production_like",
   "appVersion": "0.1.0",
-  "inputFingerprint": "8eba1138111d64632fb9f3869f80e5a3217169d199809d585220ad10d5ecca0b",
+  "inputFingerprint": "f2810c75c48eb917d107902632aaaade481a3092038935bb0eeb80fb879e7c6a",
   "notes": "Automated Wave 1 engineering acceptance passed.",
   "scenarios": {
     "barcodeExactAutolog": {

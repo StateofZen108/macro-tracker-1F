@@ -5,6 +5,8 @@ import {
   ensureMealExpanded,
   entryRow,
   resetApp,
+  safeClick,
+  safeFill,
 } from './helpers/app'
 
 test.beforeEach(async ({ page }) => {
@@ -13,19 +15,19 @@ test.beforeEach(async ({ page }) => {
 
 test('copy previous day duplicates entries into the current date', async ({ page }) => {
   await addFoodToMeal(page, 'Banana')
-  await page.getByRole('button', { name: /previous day/i }).click()
-  await page.getByRole('button', { name: /quick add/i }).click()
+  await safeClick(page.getByRole('button', { name: /previous day/i }))
+  await safeClick(page.getByRole('button', { name: /quick add/i }))
   const quickAddSheet = page.getByRole('dialog', { name: /quick add/i })
-  await quickAddSheet.getByLabel('Label (optional)').fill('Yesterday add')
-  await quickAddSheet.getByLabel('Calories').fill('100')
-  await quickAddSheet.getByLabel('Protein (g)').fill('0')
-  await quickAddSheet.getByLabel('Carbs (g)').fill('25')
-  await quickAddSheet.getByLabel('Fat (g)').fill('0')
-  await quickAddSheet.getByRole('button', { name: /log quick add/i }).click()
+  await safeFill(quickAddSheet.getByLabel('Label (optional)'), 'Yesterday add')
+  await safeFill(quickAddSheet.getByLabel('Calories'), '100')
+  await safeFill(quickAddSheet.getByLabel('Protein (g)'), '0')
+  await safeFill(quickAddSheet.getByLabel('Carbs (g)'), '25')
+  await safeFill(quickAddSheet.getByLabel('Fat (g)'), '0')
+  await safeClick(quickAddSheet.getByRole('button', { name: /log quick add/i }))
 
-  await page.getByRole('button', { name: /next day/i }).click()
-  await page.getByRole('button', { name: /copy previous/i }).click()
-  await page.getByRole('button', { name: /append previous day/i }).click()
+  await safeClick(page.getByRole('button', { name: /next day/i }))
+  await safeClick(page.getByRole('button', { name: /copy previous/i }))
+  await safeClick(page.getByRole('button', { name: /append previous day/i }))
   await applyBulkPreview(page, 'append')
 
   await expect(entryRow(page, 'Yesterday add')).toBeVisible()
@@ -35,27 +37,27 @@ test('saved meals can be saved, applied, deleted, and restored', async ({ page }
   await addFoodToMeal(page, 'Banana')
   await addFoodToMeal(page, 'Apple')
 
-  await page.getByRole('button', { name: /log$/i }).click()
+  await safeClick(page.getByRole('button', { name: /log$/i }))
   await ensureMealExpanded(page)
-  await page.getByRole('button', { name: /save as saved meal/i }).click()
+  await safeClick(page.getByRole('button', { name: /save as saved meal/i }))
   const saveTemplateSheet = page.getByRole('dialog', { name: /save saved meal/i })
-  await saveTemplateSheet.getByLabel('Saved meal name').fill('Usual breakfast')
-  await saveTemplateSheet.getByRole('button', { name: /save saved meal/i }).click()
+  await safeFill(saveTemplateSheet.getByLabel('Saved meal name'), 'Usual breakfast')
+  await safeClick(saveTemplateSheet.getByRole('button', { name: /save saved meal/i }))
 
   await expect(page.getByRole('button', { name: /^usual breakfast$/i })).toBeVisible()
 
-  await page.getByRole('button', { name: /next day/i }).click()
-  await page.getByRole('button', { name: /^usual breakfast$/i }).click()
+  await safeClick(page.getByRole('button', { name: /next day/i }))
+  await safeClick(page.getByRole('button', { name: /^usual breakfast$/i }))
   await applyBulkPreview(page, 'append')
   await expect(entryRow(page, 'Banana')).toBeVisible()
   await expect(entryRow(page, 'Apple')).toBeVisible()
 
-  await page.getByRole('button', { name: /more saved meals/i }).click()
+  await safeClick(page.getByRole('button', { name: /more saved meals/i }))
   const templateSheet = page.getByRole('dialog', { name: /saved meals/i })
-  await templateSheet.getByRole('button', { name: /delete usual breakfast saved meal/i }).click()
-  await templateSheet.getByRole('button', { name: /delete permanently/i }).click()
+  await safeClick(templateSheet.getByRole('button', { name: /delete usual breakfast saved meal/i }))
+  await safeClick(templateSheet.getByRole('button', { name: /delete permanently/i }))
   await expect(page.getByText(/saved meal deleted/i)).toBeVisible()
-  await templateSheet.getByRole('button', { name: /close sheet/i }).click()
-  await page.getByRole('button', { name: /^undo$/i }).last().click()
+  await safeClick(templateSheet.getByRole('button', { name: /close sheet/i }))
+  await safeClick(page.getByRole('button', { name: /^undo$/i }).last())
   await expect(page.getByRole('button', { name: /^usual breakfast$/i })).toBeVisible()
 })

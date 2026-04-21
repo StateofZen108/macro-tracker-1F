@@ -3,11 +3,13 @@ import type { PlaywrightTestConfig } from '@playwright/test'
 export const sharedPlaywrightConfig: PlaywrightTestConfig = {
   testDir: './tests/e2e',
   fullyParallel: false,
+  workers: 1,
   retries: 0,
   reporter: 'list',
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',
+    reducedMotion: 'reduce',
   },
   projects: [
     {

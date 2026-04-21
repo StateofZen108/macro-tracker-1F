@@ -374,7 +374,8 @@ export function LogScreen({
     }
 
     const updateStickyHeight = () => {
-      setStickyHeight(stickyRef.current?.getBoundingClientRect().height ?? 0)
+      const nextHeight = Math.ceil(stickyRef.current?.getBoundingClientRect().height ?? 0)
+      setStickyHeight((currentHeight) => (currentHeight === nextHeight ? currentHeight : nextHeight))
     }
 
     updateStickyHeight()
@@ -424,20 +425,25 @@ export function LogScreen({
       dinner: groupedEntries.dinner.length,
       snack: groupedEntries.snack.length,
     }
+    const mealsWithNewEntries = MEAL_TYPES.filter(
+      (meal) => nextCounts[meal] > previousMealCountsRef.current[meal],
+    )
 
-    setCollapsedMeals((currentState) => {
-      let didChange = false
-      const nextState = { ...currentState }
+    if (mealsWithNewEntries.length > 0) {
+      setCollapsedMeals((currentState) => {
+        let didChange = false
+        const nextState = { ...currentState }
 
-      for (const meal of MEAL_TYPES) {
-        if (nextCounts[meal] > previousMealCountsRef.current[meal] && currentState[meal]) {
-          nextState[meal] = false
-          didChange = true
+        for (const meal of mealsWithNewEntries) {
+          if (currentState[meal]) {
+            nextState[meal] = false
+            didChange = true
+          }
         }
-      }
 
-      return didChange ? nextState : currentState
-    })
+        return didChange ? nextState : currentState
+      })
+    }
 
     previousMealCountsRef.current = nextCounts
   }, [groupedEntries])

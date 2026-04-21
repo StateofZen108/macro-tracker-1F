@@ -371,6 +371,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   const autoSnapshotPrimedRef = useRef(false)
   const [lastStorageMutationAt, setLastStorageMutationAt] = useState(() => Date.now())
   const [hasUserInteracted, setHasUserInteracted] = useState(false)
+  const hasUserInteractedRef = useRef(false)
   const [phaseReviewIntent, setPhaseReviewIntent] = useState<PhaseReviewIntent | null>(null)
 
   const {
@@ -1874,18 +1875,30 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   }, [])
 
   useEffect(() => {
+    let interactionTimer: number | null = null
+
     const markUserInteraction = () => {
-      setHasUserInteracted(true)
+      if (hasUserInteractedRef.current) {
+        return
+      }
+
+      hasUserInteractedRef.current = true
+      interactionTimer = window.setTimeout(() => {
+        setHasUserInteracted(true)
+      }, 0)
     }
 
-    window.addEventListener('pointerdown', markUserInteraction, true)
+    window.addEventListener('click', markUserInteraction)
     window.addEventListener('keydown', markUserInteraction, true)
     window.addEventListener('input', markUserInteraction, true)
 
     return () => {
-      window.removeEventListener('pointerdown', markUserInteraction, true)
+      window.removeEventListener('click', markUserInteraction)
       window.removeEventListener('keydown', markUserInteraction, true)
       window.removeEventListener('input', markUserInteraction, true)
+      if (interactionTimer !== null) {
+        window.clearTimeout(interactionTimer)
+      }
     }
   }, [])
 

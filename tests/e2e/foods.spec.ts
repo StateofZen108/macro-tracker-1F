@@ -10,6 +10,8 @@ import {
   goToSettings,
   openMealSheet,
   resetApp,
+  safeClick,
+  safeFill,
 } from './helpers/app'
 
 const OCR_SESSION_RESPONSE = {
@@ -172,17 +174,17 @@ test.beforeEach(async ({ page }) => {
 
 test('custom food history stays frozen after edit and archive', async ({ page }) => {
   await goToSettings(page)
-  await page.getByRole('button', { name: /new food/i }).click()
+  await safeClick(page.getByRole('button', { name: /new food/i }))
   const createFoodSheet = page.getByRole('dialog', { name: /create food/i })
 
-  await createFoodSheet.getByLabel('Food name').fill('Beta Chicken')
-  await createFoodSheet.getByLabel('Serving size').fill('1')
-  await createFoodSheet.getByLabel('Serving unit').fill('serving')
-  await createFoodSheet.getByLabel('Calories').fill('200')
-  await createFoodSheet.getByLabel('Protein (g)').fill('30')
-  await createFoodSheet.getByLabel('Carbs (g)').fill('5')
-  await createFoodSheet.getByLabel('Fat (g)').fill('4')
-  await createFoodSheet.getByRole('button', { name: /save food/i }).click()
+  await safeFill(createFoodSheet.getByLabel('Food name'), 'Beta Chicken')
+  await safeFill(createFoodSheet.getByLabel('Serving size'), '1')
+  await safeFill(createFoodSheet.getByLabel('Serving unit'), 'serving')
+  await safeFill(createFoodSheet.getByLabel('Calories'), '200')
+  await safeFill(createFoodSheet.getByLabel('Protein (g)'), '30')
+  await safeFill(createFoodSheet.getByLabel('Carbs (g)'), '5')
+  await safeFill(createFoodSheet.getByLabel('Fat (g)'), '4')
+  await safeClick(createFoodSheet.getByRole('button', { name: /save food/i }))
 
   await goToLog(page)
   await addFoodToMeal(page, 'Beta Chicken')
@@ -191,49 +193,49 @@ test('custom food history stays frozen after edit and archive', async ({ page })
   await expect(betaChickenRow).toContainText('200 cal')
 
   await goToSettings(page)
-  await page.getByRole('button', { name: /edit beta chicken/i }).click()
+  await safeClick(page.getByRole('button', { name: /edit beta chicken/i }))
   const editFoodSheet = page.getByRole('dialog', { name: /edit food/i })
-  await editFoodSheet.getByLabel('Calories').fill('400')
-  await editFoodSheet.getByRole('button', { name: /save changes/i }).click()
-  await page.getByRole('button', { name: /archive beta chicken/i }).click()
+  await safeFill(editFoodSheet.getByLabel('Calories'), '400')
+  await safeClick(editFoodSheet.getByRole('button', { name: /save changes/i }))
+  await safeClick(page.getByRole('button', { name: /archive beta chicken/i }))
 
   await goToLog(page)
   await ensureMealExpanded(page)
   await expect(betaChickenRow).toContainText('200 cal')
 
-  await page.getByRole('button', { name: /add food to breakfast/i }).click()
-  await (await getAddFoodSearchInput(page)).fill('Beta Chicken')
+  await safeClick(page.getByRole('button', { name: /add food to breakfast/i }))
+  await safeFill(await getAddFoodSearchInput(page), 'Beta Chicken')
   await expect(page.getByText(/no local foods matched that search/i)).toBeVisible()
 })
 
 test('duplicate food creation is blocked before saving a second copy', async ({ page }) => {
   await goToSettings(page)
-  await page.getByRole('button', { name: /new food/i }).click()
+  await safeClick(page.getByRole('button', { name: /new food/i }))
   const createFoodSheet = page.getByRole('dialog', { name: /create food/i })
 
-  await createFoodSheet.getByLabel('Food name').fill('Banana')
-  await createFoodSheet.getByLabel('Serving size').fill('1')
-  await createFoodSheet.getByLabel('Serving unit').fill('medium')
-  await createFoodSheet.getByLabel('Calories').fill('105')
-  await createFoodSheet.getByLabel('Protein (g)').fill('1.3')
-  await createFoodSheet.getByLabel('Carbs (g)').fill('27')
-  await createFoodSheet.getByLabel('Fat (g)').fill('0.4')
-  await createFoodSheet.getByRole('button', { name: /save food/i }).click()
+  await safeFill(createFoodSheet.getByLabel('Food name'), 'Banana')
+  await safeFill(createFoodSheet.getByLabel('Serving size'), '1')
+  await safeFill(createFoodSheet.getByLabel('Serving unit'), 'medium')
+  await safeFill(createFoodSheet.getByLabel('Calories'), '105')
+  await safeFill(createFoodSheet.getByLabel('Protein (g)'), '1.3')
+  await safeFill(createFoodSheet.getByLabel('Carbs (g)'), '27')
+  await safeFill(createFoodSheet.getByLabel('Fat (g)'), '0.4')
+  await safeClick(createFoodSheet.getByRole('button', { name: /save food/i }))
 
   await expect(createFoodSheet.getByText(/banana already exists in your saved foods/i)).toBeVisible()
 })
 
 test('dirty food form dismissal requires confirmation', async ({ page }) => {
   await goToSettings(page)
-  await page.getByRole('button', { name: /new food/i }).click()
+  await safeClick(page.getByRole('button', { name: /new food/i }))
   const createFoodSheet = page.getByRole('dialog', { name: /create food/i })
-  await createFoodSheet.getByLabel('Food name').fill('Unsaved Draft')
-  await createFoodSheet.getByRole('button', { name: /close sheet/i }).click()
+  await safeFill(createFoodSheet.getByLabel('Food name'), 'Unsaved Draft')
+  await safeClick(createFoodSheet.getByRole('button', { name: /close sheet/i }))
   await expect(page.getByRole('alertdialog', { name: /discard changes/i })).toBeVisible()
-  await page.getByRole('button', { name: /keep editing/i }).click()
+  await safeClick(page.getByRole('button', { name: /keep editing/i }))
   await expect(createFoodSheet).toBeVisible()
-  await createFoodSheet.getByRole('button', { name: /close sheet/i }).click()
-  await page.getByRole('button', { name: /^discard$/i }).click()
+  await safeClick(createFoodSheet.getByRole('button', { name: /close sheet/i }))
+  await safeClick(page.getByRole('button', { name: /^discard$/i }))
   await expect(createFoodSheet).toBeHidden()
 })
 
@@ -243,16 +245,16 @@ test('add-food sheet keeps custom-food and barcode flows available while OCR wir
   await expect(page.getByRole('button', { name: /scan barcode/i })).toBeEnabled()
   await expect(page.getByRole('button', { name: /scan nutrition label/i })).toBeEnabled()
 
-  await page.getByRole('button', { name: /create custom food/i }).click()
+  await safeClick(page.getByRole('button', { name: /create custom food/i }))
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  await addFoodSheet.getByLabel('Food name').fill('Pocket Oats')
-  await addFoodSheet.getByLabel('Serving size').fill('40')
-  await addFoodSheet.getByLabel('Serving unit').fill('g')
-  await addFoodSheet.getByLabel('Calories').fill('152')
-  await addFoodSheet.getByLabel('Protein (g)').fill('5.3')
-  await addFoodSheet.getByLabel('Carbs (g)').fill('27')
-  await addFoodSheet.getByLabel('Fat (g)').fill('2.6')
-  await addFoodSheet.getByRole('button', { name: /save custom food/i }).click()
+  await safeFill(addFoodSheet.getByLabel('Food name'), 'Pocket Oats')
+  await safeFill(addFoodSheet.getByLabel('Serving size'), '40')
+  await safeFill(addFoodSheet.getByLabel('Serving unit'), 'g')
+  await safeFill(addFoodSheet.getByLabel('Calories'), '152')
+  await safeFill(addFoodSheet.getByLabel('Protein (g)'), '5.3')
+  await safeFill(addFoodSheet.getByLabel('Carbs (g)'), '27')
+  await safeFill(addFoodSheet.getByLabel('Fat (g)'), '2.6')
+  await safeClick(addFoodSheet.getByRole('button', { name: /save custom food/i }))
 
   await expect(page.getByText('Selected food')).toBeVisible()
   await expect(addFoodSheet.getByText('Pocket Oats').first()).toBeVisible()
@@ -270,29 +272,29 @@ test('nutrition-label OCR review saves a new food and logs it', async ({ page })
 
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  await addFoodSheet.getByRole('button', { name: /scan nutrition label/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /scan nutrition label/i }))
   await addFoodSheet
     .getByTestId('ocr-gallery-input')
     .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: VALID_LABEL_PNG })
-  await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /review nutrition label/i }))
 
   await expect(addFoodSheet.getByText(/review extracted label/i)).toBeVisible()
   await expect(addFoodSheet.getByLabel('Food name')).toHaveValue('OCR Oats')
   await expect(addFoodSheet.getByRole('button', { name: /28 g label/i })).toBeVisible()
   await expect(addFoodSheet.getByRole('button', { name: /per 100 g label/i })).toBeVisible()
-  await addFoodSheet.getByRole('button', { name: /save reviewed food/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /save reviewed food/i }))
 
   const selectedFoodCard = getSelectedFoodCard(page)
   await expect(selectedFoodCard.getByText('Selected food')).toBeVisible()
   await expect(selectedFoodCard.getByText('OCR Oats')).toBeVisible()
   await expect(selectedFoodCard.getByText('Test Brand')).toBeVisible()
   await expect(getSelectedFoodServingMeta(page)).toContainText('2 cookies (28g)')
-  await addFoodSheet.getByRole('button', { name: /^2x$/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /^2x$/i }))
   await expect(getSelectedFoodServingMeta(page)).toContainText('4 cookies (56g)')
   await expect(page.getByTestId('selected-food-serving-basis')).toContainText('1x = 2 cookies (28g)')
   await expect(selectedFoodCard.getByText('420 cal | 16P | 66C | 8F')).toBeVisible()
-  await addFoodSheet.getByRole('button', { name: /add to meal/i }).click()
-  await addFoodSheet.getByRole('button', { name: /close sheet/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /add to meal/i }))
+  await safeClick(addFoodSheet.getByRole('button', { name: /close sheet/i }))
   await expect(addFoodSheet).toBeHidden()
 
   await goToLog(page)
@@ -305,15 +307,15 @@ test('selected saved-food preview updates macros and fallback serving meta as se
 }) => {
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  await (await getAddFoodSearchInput(page)).fill('Banana')
-  await addFoodSheet.getByRole('button', { name: /banana/i }).first().click()
+  await safeFill(await getAddFoodSearchInput(page), 'Banana')
+  await safeClick(addFoodSheet.getByRole('button', { name: /banana/i }).first())
 
   const selectedFoodCard = getSelectedFoodCard(page)
   await expect(selectedFoodCard).toBeVisible()
   await expect(getSelectedFoodServingMeta(page)).toContainText('1medium')
   await expect(selectedFoodCard.getByText('105 cal | 1P | 27C | 0F')).toBeVisible()
 
-  await addFoodSheet.getByRole('button', { name: /^2x$/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /^2x$/i }))
   await expect(getSelectedFoodServingMeta(page)).toContainText('2medium')
   await expect(page.getByTestId('selected-food-serving-basis')).toBeHidden()
   await expect(selectedFoodCard.getByText('210 cal | 3P | 54C | 1F')).toBeVisible()
@@ -330,11 +332,11 @@ test('nutrition-label OCR review warns when the label has no gram or ml equivale
 
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  await addFoodSheet.getByRole('button', { name: /scan nutrition label/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /scan nutrition label/i }))
   await addFoodSheet
     .getByTestId('ocr-gallery-input')
     .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: VALID_LABEL_PNG })
-  await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /review nutrition label/i }))
 
   await expect(addFoodSheet.getByRole('button', { name: /enter manually/i })).toBeVisible()
   await expect(
@@ -356,13 +358,13 @@ test('nutrition-label review blocks save when a required field is cleared', asyn
 
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  await addFoodSheet.getByRole('button', { name: /scan nutrition label/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /scan nutrition label/i }))
   await addFoodSheet
     .getByTestId('ocr-gallery-input')
     .setInputFiles({ name: 'label.png', mimeType: 'image/png', buffer: VALID_LABEL_PNG })
-  await addFoodSheet.getByRole('button', { name: /review nutrition label/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /review nutrition label/i }))
 
-  await addFoodSheet.getByLabel('Calories').fill('')
+  await safeFill(addFoodSheet.getByLabel('Calories'), '')
   await expect(addFoodSheet.getByRole('button', { name: /save reviewed food/i })).toBeDisabled()
 })
 

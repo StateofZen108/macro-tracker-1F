@@ -439,9 +439,57 @@ jobs:
       - garmin-connect-domain
       - psmf-garmin-domain
       - psmf-garmin-baseline-guard
-    if: github.event_name == 'pull_request'
+    if: ${{ always() && github.event_name == 'pull_request' }}
     steps:
-      - run: echo "merge gate passed"
+      - name: Verify required dependencies
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          BUNDLE_RESULT: ${{ needs.bundle.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          FOOD_TRUTH_ENGINEERING_READY_RESULT: ${{ needs.food-truth-engineering-ready.result }}
+          E2E_GENERIC_RESULT: ${{ needs.e2e-generic.result }}
+          E2E_LANE_GUARD_RESULT: ${{ needs.e2e-lane-guard.result }}
+          PSMF_PHASE_DOMAIN_RESULT: ${{ needs.psmf-phase-domain.result }}
+          PSMF_PHASE_STORAGE_INTEGRATION_RESULT: ${{ needs.psmf-phase-storage-integration.result }}
+          PHASE_PLANNER_UNIT_RESULT: ${{ needs.phase-planner-unit.result }}
+          RECOVERY_LAYER_DOMAIN_RESULT: ${{ needs.recovery-layer-domain.result }}
+          GARMIN_CONNECT_DOMAIN_RESULT: ${{ needs.garmin-connect-domain.result }}
+          PSMF_GARMIN_DOMAIN_RESULT: ${{ needs.psmf-garmin-domain.result }}
+          PSMF_GARMIN_BASELINE_GUARD_RESULT: ${{ needs.psmf-garmin-baseline-guard.result }}
+        run: |
+          failed=0
+
+          check_dependency() {
+            local job="$1"
+            local result="$2"
+
+            if [ "$result" != "success" ]; then
+              echo "::error::merge-gate dependency failed: ${job}=${result}"
+              failed=1
+            fi
+          }
+
+          check_dependency "lint" "$LINT_RESULT"
+          check_dependency "build" "$BUILD_RESULT"
+          check_dependency "bundle" "$BUNDLE_RESULT"
+          check_dependency "unit" "$UNIT_RESULT"
+          check_dependency "food-truth-engineering-ready" "$FOOD_TRUTH_ENGINEERING_READY_RESULT"
+          check_dependency "e2e-generic" "$E2E_GENERIC_RESULT"
+          check_dependency "e2e-lane-guard" "$E2E_LANE_GUARD_RESULT"
+          check_dependency "psmf-phase-domain" "$PSMF_PHASE_DOMAIN_RESULT"
+          check_dependency "psmf-phase-storage-integration" "$PSMF_PHASE_STORAGE_INTEGRATION_RESULT"
+          check_dependency "phase-planner-unit" "$PHASE_PLANNER_UNIT_RESULT"
+          check_dependency "recovery-layer-domain" "$RECOVERY_LAYER_DOMAIN_RESULT"
+          check_dependency "garmin-connect-domain" "$GARMIN_CONNECT_DOMAIN_RESULT"
+          check_dependency "psmf-garmin-domain" "$PSMF_GARMIN_DOMAIN_RESULT"
+          check_dependency "psmf-garmin-baseline-guard" "$PSMF_GARMIN_BASELINE_GUARD_RESULT"
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "merge gate passed"
 
   release-confidence:
     name: release-confidence

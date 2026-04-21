@@ -8,6 +8,8 @@ import {
   getAddFoodSearchInput,
   openMealSheet,
   resetApp,
+  safeClick,
+  safeFill,
 } from './helpers/app'
 
 test.beforeEach(async ({ page }) => {
@@ -29,11 +31,11 @@ test('breakfast add button is hittable and search clears stale selection', async
   await openMealSheet(page)
   const searchInput = await getAddFoodSearchInput(page)
 
-  await searchInput.fill('Chicken')
-  await page.getByRole('button', { name: /Chicken Breast/i }).first().click()
+  await safeFill(searchInput, 'Chicken')
+  await safeClick(page.getByRole('button', { name: /Chicken Breast/i }).first())
   await expect(page.getByText('Selected food')).toBeVisible()
 
-  await searchInput.fill('Banana')
+  await safeFill(searchInput, 'Banana')
   await expect(page.getByText('Selected food')).toBeHidden()
 })
 
@@ -42,10 +44,10 @@ test('entry delete offers undo and restores the item', async ({ page }) => {
   const bananaRow = entryRow(page, 'Banana')
   await bananaRow.scrollIntoViewIfNeeded()
   await expectCenterHittable(bananaRow)
-  await bananaRow.getByRole('button', { name: /^banana\b/i }).click()
-  await page.getByRole('button', { name: /delete entry/i }).click()
+  await safeClick(bananaRow.getByRole('button', { name: /^banana\b/i }))
+  await safeClick(page.getByRole('button', { name: /delete entry/i }))
   await expect(page.getByText('Entry removed')).toBeVisible()
-  await page.getByRole('button', { name: /^undo$/i }).click()
+  await safeClick(page.getByRole('button', { name: /^undo$/i }))
   await expect(bananaRow).toBeVisible()
 })
 
@@ -57,14 +59,14 @@ test('first logged row stays tappable above the fixed bottom nav', async ({ page
 })
 
 test('quick add logs a snapshot-only entry and updates totals', async ({ page }) => {
-  await page.getByRole('button', { name: /quick add/i }).click()
+  await safeClick(page.getByRole('button', { name: /quick add/i }))
   const quickAddSheet = page.getByRole('dialog', { name: /quick add/i })
-  await quickAddSheet.getByLabel('Label (optional)').fill('Protein bar')
-  await quickAddSheet.getByLabel('Calories').fill('220')
-  await quickAddSheet.getByLabel('Protein (g)').fill('20')
-  await quickAddSheet.getByLabel('Carbs (g)').fill('23')
-  await quickAddSheet.getByLabel('Fat (g)').fill('7')
-  await quickAddSheet.getByRole('button', { name: /log quick add/i }).click()
+  await safeFill(quickAddSheet.getByLabel('Label (optional)'), 'Protein bar')
+  await safeFill(quickAddSheet.getByLabel('Calories'), '220')
+  await safeFill(quickAddSheet.getByLabel('Protein (g)'), '20')
+  await safeFill(quickAddSheet.getByLabel('Carbs (g)'), '23')
+  await safeFill(quickAddSheet.getByLabel('Fat (g)'), '7')
+  await safeClick(quickAddSheet.getByRole('button', { name: /log quick add/i }))
   await ensureMealExpanded(page)
 
   const quickAddRow = entryRow(page, 'Protein bar')
@@ -76,29 +78,29 @@ test('fast add keeps the sheet open and reuses the last amount shortcut', async 
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
   let searchInput = await getAddFoodSearchInput(page)
-  await searchInput.fill('Banana')
+  await safeFill(searchInput, 'Banana')
   await expect(addFoodSheet.getByRole('button', { name: /banana/i }).first()).toBeVisible()
-  await addFoodSheet.getByRole('button', { name: /^Add 1x$/i }).first().click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /^Add 1x$/i }).first())
   await expect(addFoodSheet).toBeVisible()
   await expect(searchInput).toHaveValue('Banana')
-  await addFoodSheet.getByRole('button', { name: /close sheet/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /close sheet/i }))
   await expect(page.getByRole('alertdialog', { name: /discard changes/i })).toBeVisible()
-  await page.getByRole('button', { name: /^discard$/i }).click()
+  await safeClick(page.getByRole('button', { name: /^discard$/i }))
 
   await openMealSheet(page)
   searchInput = await getAddFoodSearchInput(page)
-  await searchInput.fill('Banana')
+  await safeFill(searchInput, 'Banana')
   await expect(addFoodSheet.getByRole('button', { name: /banana/i }).first()).toBeVisible()
-  await addFoodSheet.getByRole('button', { name: /banana/i }).first().click()
-  await addFoodSheet.getByLabel('Servings').fill('1.5')
-  await addFoodSheet.getByRole('button', { name: /add to meal/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /banana/i }).first())
+  await safeFill(addFoodSheet.getByLabel('Servings'), '1.5')
+  await safeClick(addFoodSheet.getByRole('button', { name: /add to meal/i }))
 
   await openMealSheet(page)
   searchInput = await getAddFoodSearchInput(page)
-  await searchInput.fill('Banana')
+  await safeFill(searchInput, 'Banana')
   await expect(addFoodSheet.getByRole('button', { name: /banana/i }).first()).toBeVisible()
   await expect(addFoodSheet.getByRole('button', { name: /use last amount/i }).first()).toBeVisible()
-  await addFoodSheet.getByRole('button', { name: /use last amount/i }).first().click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /use last amount/i }).first())
   await expect(addFoodSheet).toBeVisible()
 })
 

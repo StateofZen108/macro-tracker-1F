@@ -15,7 +15,15 @@ import {
   seedReviewQueuePending,
   seedWorkoutGuidance,
 } from './helpers/qaRelease'
-import { entryRow, getAddFoodSearchInput, goToSettings, goToWeight, openMealSheet } from './helpers/app'
+import {
+  entryRow,
+  getAddFoodSearchInput,
+  goToSettings,
+  goToWeight,
+  openMealSheet,
+  safeClick,
+  safeFill,
+} from './helpers/app'
 
 test.describe.configure({ mode: 'serial' })
 
@@ -38,9 +46,9 @@ test('repeat_logging_fast_path', async ({ page }, testInfo) => {
     await openMealSheet(page)
     const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
     const searchInput = await getAddFoodSearchInput(page)
-    await searchInput.fill('Banana')
+    await safeFill(searchInput, 'Banana')
     await expect(addFoodSheet.getByRole('button', { name: /banana/i }).first()).toBeVisible()
-    await addFoodSheet.getByRole('button', { name: /^add 1x$/i }).first().click()
+    await safeClick(addFoodSheet.getByRole('button', { name: /^add 1x$/i }).first())
     await expect(addFoodSheet).toBeVisible()
     await expect(searchInput).toHaveValue('Banana')
     await assertAddFoodDialogAccessibility(page)
@@ -74,7 +82,7 @@ test('training_guidance_manual_override', async ({ page }, testInfo) => {
     await seedWorkoutGuidance(page)
 
     await goToWorkouts(page)
-    await page.getByRole('button', { name: /^push$/i }).click()
+    await safeClick(page.getByRole('button', { name: /^push$/i }))
     await expect(page.getByText(/^manual$/i).first()).toBeVisible()
     await expect(page.getByText(/review today's training signals/i).first()).toBeVisible()
 
@@ -94,7 +102,7 @@ test('progress_story_missing_photo', async ({ page }, testInfo) => {
     await seedBodyProgressMissingPhoto(page)
 
     await goToWeight(page)
-    await page.getByRole('button', { name: /^7d$/i }).click()
+    await safeClick(page.getByRole('button', { name: /^7d$/i }))
     await expect(page.getByText(/7-day progress looks on track/i).first()).toBeVisible()
     await expect(page.getByText(/photo compare is missing but your waist trend still supports the cut/i).first()).toBeVisible()
     await expect(page.getByText(/missing compare photo for/i).first()).toBeVisible()
@@ -134,7 +142,7 @@ test('food_catalog_5xx_fallback', async ({ page }, testInfo) => {
 
     await openMealSheet(page)
     const searchInput = await getAddFoodSearchInput(page)
-    await searchInput.fill('yakitori')
+    await safeFill(searchInput, 'yakitori')
     await expect(page.getByText(/remote catalog search is temporarily unavailable/i).first()).toBeVisible()
     await expect(page.getByText(/selected food/i)).toHaveCount(0)
     await assertAddFoodDialogAccessibility(page)
@@ -148,7 +156,7 @@ test('barcode_permission_denied', async ({ page }, testInfo) => {
 
   await runQaScenario(page, testInfo, 'barcode_permission_denied', async ({ runAccessibilityAudit }) => {
     await openMealSheet(page)
-    await page.getByRole('button', { name: /scan barcode/i }).click()
+    await safeClick(page.getByRole('button', { name: /scan barcode/i }))
     await expect(page.getByText(/camera access was denied/i).first()).toBeVisible()
     await expect(page.getByText(/manual barcode entry/i).first()).toBeVisible()
     await expect(page.getByPlaceholder('0123456789012')).toBeVisible()
@@ -166,7 +174,7 @@ test('export_restore_roundtrip', async ({ page }, testInfo) => {
     await goToSettings(page)
     await page.locator('input[type="file"][accept="application/json"]').setInputFiles(backupPath)
     await expect(page.getByText(/backup preview/i).first()).toBeVisible()
-    await page.getByRole('button', { name: /apply import/i }).click()
+    await safeClick(page.getByRole('button', { name: /apply import/i }))
     await expect(page.getByText(/replaced .* foods/i).first()).toBeVisible()
     await expectBackupRestored(page)
     await runAccessibilityAudit()

@@ -1,6 +1,19 @@
 import { expect, test } from '@playwright/test'
-import { addFoodToMeal, ensureMealExpanded, entryRow, goToWeight, resetApp } from './helpers/app'
-import { seedCoachingWindow, seedWeeklyCheckInWindow } from './helpers/seed'
+import {
+  addFoodToMeal,
+  ensureMealExpanded,
+  entryRow,
+  goToWeight,
+  resetApp,
+  safeClick,
+  safeFill,
+  safeSelectOption,
+} from './helpers/app'
+import {
+  seedCoachingWindow,
+  seedWeeklyCheckInWindow,
+  syncSeededPersistentStoresFromLocalStorage,
+} from './helpers/seed'
 
 test.beforeEach(async ({ page }) => {
   await resetApp(page)
@@ -30,7 +43,7 @@ test('coaching shows a recommendation only with consistent data', async ({ page 
   await expect(page.getByText(/all-days target/i)).toBeVisible()
   await expect(page.getByText(/confidence score/i).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toBeVisible()
-  await page.getByRole('button', { name: /keep current/i }).click()
+  await safeClick(page.getByRole('button', { name: /keep current/i }))
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toBeHidden()
 })
 
@@ -38,12 +51,12 @@ test('manual override supersedes the active weekly recommendation window', async
   await seedWeeklyCheckInWindow(page)
   await goToWeight(page)
 
-  await page.getByRole('button', { name: /manual override/i }).click()
-  await page.getByLabel(/^Calories$/i).fill('2100')
-  await page.getByLabel(/^Protein$/i).fill('190')
-  await page.getByLabel(/^Carbs$/i).fill('180')
-  await page.getByLabel(/^Fat$/i).fill('55')
-  await page.getByRole('button', { name: /save override/i }).click()
+  await safeClick(page.getByRole('button', { name: /manual override/i }))
+  await safeFill(page.getByLabel(/^Calories$/i), '2100')
+  await safeFill(page.getByLabel(/^Protein$/i), '190')
+  await safeFill(page.getByLabel(/^Carbs$/i), '180')
+  await safeFill(page.getByLabel(/^Fat$/i), '55')
+  await safeClick(page.getByRole('button', { name: /save override/i }))
 
   await expect
     .poll(async () => {
@@ -122,21 +135,7 @@ test('weight screen renders the micronutrient overview for today and the trailin
     )
   })
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-app')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
-
+  await syncSeededPersistentStoresFromLocalStorage(page)
   await page.reload()
   await goToWeight(page)
 
@@ -149,36 +148,34 @@ test('weight screen renders the micronutrient overview for today and the trailin
 test('fasting day requires explicit confirmation before clearing intake', async ({ page }) => {
   await addFoodToMeal(page, 'Banana')
   const fastingButton = page.getByRole('button', { name: /^fasting$/i })
-  await fastingButton.scrollIntoViewIfNeeded()
-  await fastingButton.click({ force: true })
+  await safeClick(fastingButton)
 
   await expect(page.getByRole('heading', { name: /clear intake and mark fasting/i })).toBeVisible()
-  await page.getByRole('button', { name: /^clear intake and mark fasting$/i }).click()
+  await safeClick(page.getByRole('button', { name: /^clear intake and mark fasting$/i }))
 
   await expect(entryRow(page, 'Banana')).toBeHidden()
   await expect(page.getByText(/fasting day saved/i)).toBeVisible()
-  await page.getByRole('button', { name: /^undo$/i }).click()
+  await safeClick(page.getByRole('button', { name: /^undo$/i }))
   await ensureMealExpanded(page)
   await expect(entryRow(page, 'Banana')).toBeVisible()
 })
 
 test('interventions can be logged and edited from the log screen', async ({ page }) => {
   const logInterventionButton = page.getByRole('button', { name: /log your first intervention/i })
-  await logInterventionButton.scrollIntoViewIfNeeded()
-  await logInterventionButton.click({ force: true })
+  await safeClick(logInterventionButton)
   const interventionSheet = page.getByRole('dialog', { name: /log intervention/i })
-  await interventionSheet.getByLabel('Name').fill('Caffeine')
-  await interventionSheet.getByRole('button', { name: /^stimulant$/i }).click()
-  await interventionSheet.getByLabel('Dose').fill('200')
-  await interventionSheet.getByLabel('Unit').fill('mg')
-  await interventionSheet.getByLabel('Time taken').fill('08:00')
-  await interventionSheet.getByRole('button', { name: /log intervention/i }).click()
+  await safeFill(interventionSheet.getByLabel('Name'), 'Caffeine')
+  await safeClick(interventionSheet.getByRole('button', { name: /^stimulant$/i }))
+  await safeFill(interventionSheet.getByLabel('Dose'), '200')
+  await safeFill(interventionSheet.getByLabel('Unit'), 'mg')
+  await safeFill(interventionSheet.getByLabel('Time taken'), '08:00')
+  await safeClick(interventionSheet.getByRole('button', { name: /log intervention/i }))
 
   await expect(page.getByText(/caffeine/i).first()).toBeVisible()
-  await page.getByRole('button', { name: /200 mg/i }).first().click()
+  await safeClick(page.getByRole('button', { name: /200 mg/i }).first())
   const editInterventionSheet = page.getByRole('dialog', { name: /edit intervention/i })
-  await editInterventionSheet.getByLabel('Dose').fill('250')
-  await editInterventionSheet.getByRole('button', { name: /save intervention/i }).click()
+  await safeFill(editInterventionSheet.getByLabel('Dose'), '250')
+  await safeClick(editInterventionSheet.getByRole('button', { name: /save intervention/i }))
 
   await expect(page.getByText(/250 mg/i).first()).toBeVisible()
 })
@@ -187,19 +184,18 @@ test('activity can be logged and cleared from the log screen', async ({ page }) 
   const stepsInput = page.locator('input[name="steps"]')
   const cardioMinutesInput = page.locator('input[name="cardioMinutes"]')
 
-  await stepsInput.click()
-  await stepsInput.pressSequentially('9000')
-  await cardioMinutesInput.fill('35')
-  await page.getByLabel('Cardio type').selectOption('walk')
-  await page.getByLabel('Note').fill('Post-workout walk')
-  await page.getByRole('button', { name: /save activity/i }).click()
+  await safeFill(stepsInput, '9000')
+  await safeFill(cardioMinutesInput, '35')
+  await safeSelectOption(page.getByLabel('Cardio type'), 'walk')
+  await safeFill(page.getByLabel('Note'), 'Post-workout walk')
+  await safeClick(page.getByRole('button', { name: /save activity/i }))
 
   await expect(page.getByText(/logged for this day/i)).toBeVisible()
   await expect(stepsInput).toHaveValue('9000')
   await expect(cardioMinutesInput).toHaveValue('35')
 
-  await page.getByRole('button', { name: /clear activity/i }).click()
+  await safeClick(page.getByRole('button', { name: /clear activity/i }))
   await expect(page.getByText(/not logged yet/i)).toBeVisible()
-  await page.getByRole('button', { name: /^undo$/i }).click()
+  await safeClick(page.getByRole('button', { name: /^undo$/i }))
   await expect(stepsInput).toHaveValue('9000')
 })

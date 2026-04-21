@@ -5,8 +5,14 @@ import {
   goToSettings,
   goToWeight,
   resetApp,
+  safeClick,
+  safeFill,
 } from './helpers/app'
-import { seedWeeklyCheckInWindow } from './helpers/seed'
+import {
+  seedCoachWave1Scenario,
+  seedWeeklyCheckInWindow,
+  syncSeededPersistentStoresFromLocalStorage,
+} from './helpers/seed'
 
 test.beforeEach(async ({ page }) => {
   await resetApp(page)
@@ -14,13 +20,13 @@ test.beforeEach(async ({ page }) => {
 
 test('weight history converts instead of relabeling', async ({ page }) => {
   await goToWeight(page)
-  await page.getByLabel('Weight (lb)').fill('200')
-  await page.getByRole('button', { name: /save today's weight/i }).click()
+  await safeFill(page.getByLabel('Weight (lb)'), '200')
+  await safeClick(page.getByRole('button', { name: /save today's weight/i }))
   await expect(page.getByText('200 lb').first()).toBeVisible()
 
   await goToSettings(page)
-  await page.getByRole('button', { name: /^kg$/i }).click()
-  await page.getByRole('button', { name: /save targets/i }).click()
+  await safeClick(page.getByRole('button', { name: /^kg$/i }))
+  await safeClick(page.getByRole('button', { name: /save targets/i }))
 
   await goToWeight(page)
   await expect(page.getByText('90.72 kg').first()).toBeVisible()
@@ -28,11 +34,11 @@ test('weight history converts instead of relabeling', async ({ page }) => {
 
 test('weight clear offers undo', async ({ page }) => {
   await goToWeight(page)
-  await page.getByLabel('Weight (lb)').fill('200')
-  await page.getByRole('button', { name: /save today's weight/i }).click()
-  await page.getByRole('button', { name: /clear today/i }).click()
+  await safeFill(page.getByLabel('Weight (lb)'), '200')
+  await safeClick(page.getByRole('button', { name: /save today's weight/i }))
+  await safeClick(page.getByRole('button', { name: /clear today/i }))
   await expect(page.getByText(/weight cleared/i)).toBeVisible()
-  await page.getByRole('button', { name: /^undo$/i }).click()
+  await safeClick(page.getByRole('button', { name: /^undo$/i }))
   await expect(page.getByText('200 lb').first()).toBeVisible()
 })
 
@@ -46,30 +52,29 @@ test('S22 weight layout keeps weekly check-in actions readable on initial render
   await expectCenterHittable(page.getByRole('button', { name: /^settings$/i }).first())
 })
 
-test('weekly check-in can apply an athlete prep recommendation', async ({ page }) => {
-  await seedWeeklyCheckInWindow(page)
+test('weekly check-in can apply a ready calorie recommendation', async ({ page }) => {
+  await seedCoachWave1Scenario(page, 'standard_cut_actionable')
   await goToWeight(page)
 
   const weeklyCheckInHeading = page.getByText('Weekly check-in').first()
   await weeklyCheckInHeading.scrollIntoViewIfNeeded()
   await expect(page.getByText(/rate of loss was slower than target/i).first()).toBeVisible()
-  await expect(page.getByText(/1900 cal\/day/i)).toBeVisible()
+  await expect(page.getByText(/2200 cal\/day/i)).toBeVisible()
   const applySuggestionButton = page.getByRole('button', { name: /apply suggestion/i })
-  await applySuggestionButton.scrollIntoViewIfNeeded()
-  await applySuggestionButton.click()
+  await safeClick(applySuggestionButton)
   await expect(page.getByText(/applied/i).first()).toBeVisible()
 
   await goToSettings(page)
-  await expect(getSettingsCalorieTargetInput(page)).toHaveValue('1900')
-  await expect(page.getByLabel(/Carbs \(g\)/i)).toHaveValue('175')
+  await expect(getSettingsCalorieTargetInput(page)).toHaveValue('2200')
+  await expect(page.getByLabel(/Carbs \(g\)/i)).toHaveValue('220')
 })
 
 test('body progress metrics can be saved from the weight screen', async ({ page }) => {
   await goToWeight(page)
 
-  await page.getByLabel(/Waist \(cm\)/i).fill('79')
-  await page.getByLabel(/Body fat \(%\)/i).fill('12')
-  await page.getByRole('button', { name: /save today's snapshot/i }).click()
+  await safeFill(page.getByLabel(/Waist \(cm\)/i), '79')
+  await safeFill(page.getByLabel(/Body fat \(%\)/i), '12')
+  await safeClick(page.getByRole('button', { name: /save today's snapshot/i }))
 
   await expect(page.getByText(/recent body progress/i)).toBeVisible()
   await expect(page.getByText(/waist: 79 cm/i)).toBeVisible()
@@ -79,8 +84,8 @@ test('body progress metrics can be saved from the weight screen', async ({ page 
 test('body progress quick review keeps compare and capture pose together', async ({ page }) => {
   await goToWeight(page)
 
-  await page.getByLabel(/Waist \(cm\)/i).fill('79')
-  await page.getByRole('button', { name: /save today's snapshot/i }).click()
+  await safeFill(page.getByLabel(/Waist \(cm\)/i), '79')
+  await safeClick(page.getByRole('button', { name: /save today's snapshot/i }))
 
   await expect(page.getByText(/quick review/i)).toBeVisible()
   await expect(page.getByRole('button', { name: /^same_day$/i }).first()).toBeVisible()
@@ -93,7 +98,11 @@ test('body progress quick review keeps compare and capture pose together', async
     .filter({ hasText: 'Capture focus' })
     .getByRole('button', { name: /^back$/i })
     .first()
-    .click()
+    .evaluate((element) => {
+      if (element instanceof HTMLElement) {
+        element.click()
+      }
+    })
 
   const settings = await page.evaluate(() => JSON.parse(window.localStorage.getItem('mt_settings') ?? '{}'))
   expect(settings.bodyProgressFocusState?.lastSelectedPose).toBe('back')
@@ -202,14 +211,7 @@ test('nutrition intelligence v2 shows long-window alerts and contributors', asyn
     )
   })
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
+  await syncSeededPersistentStoresFromLocalStorage(page)
   await page.reload()
 
   await goToWeight(page)

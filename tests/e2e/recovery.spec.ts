@@ -1,6 +1,16 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from '@playwright/test'
-import { addFoodToMeal, entryRow, goToLog, goToSettings, openMealSheet, resetApp } from './helpers/app'
+import {
+  addFoodToMeal,
+  ensureMealExpanded,
+  entryRow,
+  goToLog,
+  goToSettings,
+  openMealSheet,
+  resetApp,
+  safeClick,
+  safeFill,
+} from './helpers/app'
 
 test.beforeEach(async ({ page }) => {
   await resetApp(page)
@@ -29,15 +39,15 @@ test('corrupted food storage is surfaced and blocked from silent overwrite', asy
 
   await openMealSheet(page)
   const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
-  await addFoodSheet.getByRole('button', { name: /create custom food/i }).click()
-  await addFoodSheet.getByLabel('Food name').fill('Blocked Save')
-  await addFoodSheet.getByLabel('Serving size').fill('1')
-  await addFoodSheet.getByLabel('Serving unit').fill('serving')
-  await addFoodSheet.getByLabel('Calories').fill('100')
-  await addFoodSheet.getByLabel('Protein (g)').fill('10')
-  await addFoodSheet.getByLabel('Carbs (g)').fill('10')
-  await addFoodSheet.getByLabel('Fat (g)').fill('1')
-  await addFoodSheet.getByRole('button', { name: /save custom food/i }).click()
+  await safeClick(addFoodSheet.getByRole('button', { name: /create custom food/i }))
+  await safeFill(addFoodSheet.getByLabel('Food name'), 'Blocked Save')
+  await safeFill(addFoodSheet.getByLabel('Serving size'), '1')
+  await safeFill(addFoodSheet.getByLabel('Serving unit'), 'serving')
+  await safeFill(addFoodSheet.getByLabel('Calories'), '100')
+  await safeFill(addFoodSheet.getByLabel('Protein (g)'), '10')
+  await safeFill(addFoodSheet.getByLabel('Carbs (g)'), '10')
+  await safeFill(addFoodSheet.getByLabel('Fat (g)'), '1')
+  await safeClick(addFoodSheet.getByRole('button', { name: /save custom food/i }))
   await expect(page.getByText(/recoverable data issues need review/i).first()).toBeVisible()
   await expect(
     page.evaluate(() => window.localStorage.getItem('mt_foods')),
@@ -81,16 +91,16 @@ test('quota failures do not leave a partial meal save behind', async ({ page }) 
 
 test('export and replace import restore logged history', async ({ page }) => {
   await goToSettings(page)
-  await page.getByRole('button', { name: /new food/i }).click()
+  await safeClick(page.getByRole('button', { name: /new food/i }))
   const createFoodSheet = page.getByRole('dialog', { name: /create food/i })
-  await createFoodSheet.getByLabel('Food name').fill('Backup Chicken')
-  await createFoodSheet.getByLabel('Serving size').fill('1')
-  await createFoodSheet.getByLabel('Serving unit').fill('serving')
-  await createFoodSheet.getByLabel('Calories').fill('180')
-  await createFoodSheet.getByLabel('Protein (g)').fill('30')
-  await createFoodSheet.getByLabel('Carbs (g)').fill('0')
-  await createFoodSheet.getByLabel('Fat (g)').fill('4')
-  await createFoodSheet.getByRole('button', { name: /save food/i }).click()
+  await safeFill(createFoodSheet.getByLabel('Food name'), 'Backup Chicken')
+  await safeFill(createFoodSheet.getByLabel('Serving size'), '1')
+  await safeFill(createFoodSheet.getByLabel('Serving unit'), 'serving')
+  await safeFill(createFoodSheet.getByLabel('Calories'), '180')
+  await safeFill(createFoodSheet.getByLabel('Protein (g)'), '30')
+  await safeFill(createFoodSheet.getByLabel('Carbs (g)'), '0')
+  await safeFill(createFoodSheet.getByLabel('Fat (g)'), '4')
+  await safeClick(createFoodSheet.getByRole('button', { name: /save food/i }))
 
   await goToLog(page)
   await addFoodToMeal(page, 'Backup Chicken')
@@ -98,7 +108,7 @@ test('export and replace import restore logged history', async ({ page }) => {
   await goToSettings(page)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: /export backup/i }).click(),
+    safeClick(page.getByRole('button', { name: /export backup/i })),
   ])
   const downloadPath = await download.path()
   expect(downloadPath).not.toBeNull()
@@ -115,37 +125,10 @@ test('export and replace import restore logged history', async ({ page }) => {
     .setInputFiles(downloadPath as string)
   await expect(page.getByText(/backup preview/i)).toBeVisible()
   const backupText = await readFile(downloadPath as string, 'utf8')
-  const applyImportResult = await page.evaluate(async ({ rawBackupText }) => {
-    const importExport = await import('/src/utils/storage/importExport.ts')
-    const validation = importExport.validateBackupText(rawBackupText)
-    if (!validation.ok) {
-      return { ok: false, message: validation.error.message }
-    }
-
-    const result = await importExport.applyBackupImport(validation.data.backup, 'replace')
-    if (!result.ok) {
-      return { ok: false, message: result.error.message }
-    }
-
-    const today = new Date()
-    const year = today.getFullYear()
-    const month = `${today.getMonth() + 1}`.padStart(2, '0')
-    const day = `${today.getDate()}`.padStart(2, '0')
-    const dateKey = `${year}-${month}-${day}`
-    const entries = JSON.parse(window.localStorage.getItem(`mt_log_${dateKey}`) ?? '[]')
-    const foods = JSON.parse(window.localStorage.getItem('mt_foods') ?? '[]')
-
-    return {
-      ok: true,
-      entryNames: Array.isArray(entries)
-        ? entries.map((entry: { snapshot?: { name?: string } }) => entry.snapshot?.name ?? '')
-        : [],
-      foodNames: Array.isArray(foods)
-        ? foods.map((food: { name?: string }) => food.name ?? '')
-        : [],
-    }
-  }, { rawBackupText: backupText })
-  expect(applyImportResult.ok).toBe(true)
-  expect(applyImportResult.entryNames).toContain('Backup Chicken')
-  expect(applyImportResult.foodNames).toContain('Backup Chicken')
+  expect(backupText).toContain('Backup Chicken')
+  await safeClick(page.getByRole('button', { name: /apply import/i }))
+  await expect(page.getByText(/replaced .* foods|import complete|backup restored/i).first()).toBeVisible()
+  await goToLog(page)
+  await ensureMealExpanded(page)
+  await expect(entryRow(page, 'Backup Chicken')).toBeVisible()
 })

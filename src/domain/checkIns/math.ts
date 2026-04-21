@@ -513,6 +513,13 @@ export function upsertCheckInRecord(
     appliedAt: existingRecord.appliedAt,
     supersededByDecisionRecordId: existingRecord.supersededByDecisionRecordId,
     updatedAt: existingRecord.updatedAt,
+    weeklyCheckInPacket:
+      record.weeklyCheckInPacket && existingRecord.weeklyCheckInPacket?.id === record.weeklyCheckInPacket.id
+        ? {
+            ...record.weeklyCheckInPacket,
+            generatedAt: existingRecord.weeklyCheckInPacket.generatedAt,
+          }
+        : record.weeklyCheckInPacket,
   }
 
   if (JSON.stringify(nextRecord) === JSON.stringify(existingRecord)) {

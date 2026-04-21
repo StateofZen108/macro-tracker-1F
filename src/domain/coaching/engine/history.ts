@@ -92,6 +92,13 @@ export function upsertCoachingDecisionRecord(
     overriddenAt: existing.overriddenAt,
     status: preservedStatus,
     updatedAt: existing.updatedAt,
+    weeklyCheckInPacket:
+      record.weeklyCheckInPacket && existing.weeklyCheckInPacket?.id === record.weeklyCheckInPacket.id
+        ? {
+            ...record.weeklyCheckInPacket,
+            generatedAt: existing.weeklyCheckInPacket.generatedAt,
+          }
+        : record.weeklyCheckInPacket,
   }
 
   if (JSON.stringify(nextRecord) === JSON.stringify(existing)) {

@@ -1,28 +1,50 @@
 import { expect, type Locator, type Page } from '@playwright/test'
 
+async function clearOriginData(page: Page, storageTypes: string, originOverride?: string) {
+  const currentUrl = page.url()
+  const origin = originOverride ?? (currentUrl === 'about:blank' ? undefined : new URL(currentUrl).origin)
+  if (!origin) {
+    return
+  }
+
+  const cdpSession = await page.context().newCDPSession(page).catch(() => null)
+  if (!cdpSession) {
+    return
+  }
+
+  try {
+    await cdpSession.send('Storage.clearDataForOrigin', { origin, storageTypes })
+  } finally {
+    await cdpSession.detach().catch(() => undefined)
+  }
+}
+
+async function expectAppShellReady(page: Page) {
+  const timeout = 10000
+  const appNav = page.locator('nav').last()
+
+  await expect(appNav.getByRole('button', { name: /^log$/i }).first()).toBeVisible({ timeout })
+  await expect(appNav.getByRole('button', { name: /^weight$/i }).first()).toBeVisible({ timeout })
+  await expect(appNav.getByRole('button', { name: /^coach$/i }).first()).toBeVisible({ timeout })
+
+  const homeButton = appNav.getByRole('button', { name: /^home$/i }).first()
+  if ((await homeButton.count()) > 0) {
+    await expect(homeButton).toBeVisible({ timeout })
+  }
+}
+
 async function resetApp(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' })
-  await page.waitForLoadState('domcontentloaded')
-  await page.evaluate(async () => {
-    async function deleteDatabase(name: string): Promise<void> {
-      await new Promise<void>((resolve) => {
-        const request = window.indexedDB.deleteDatabase(name)
-        request.onsuccess = () => resolve()
-        request.onerror = () => resolve()
-        request.onblocked = () => resolve()
-      })
-    }
-
-    window.localStorage.clear()
+  const appOrigin = new URL(page.url()).origin
+  await page.goto('about:blank')
+  await clearOriginData(page, 'all', appOrigin)
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await page.evaluate(() => {
     window.sessionStorage.clear()
-    await deleteDatabase('macrotracker-app')
-    await deleteDatabase('macrotracker-storage')
   })
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  const logButton = page.getByRole('button', { name: /^log$/i }).first()
-  await expect(logButton).toBeVisible()
-  await logButton.click()
-  await expect(page.locator('[data-meal-section="breakfast"]').first()).toBeVisible()
+  await expectAppShellReady(page)
+  await goToLog(page)
+  await expect(page.locator('[data-meal-section="breakfast"]').first()).toBeVisible({ timeout: 10000 })
 }
 
 async function expectCenterHittable(locator: Locator) {
@@ -56,6 +78,48 @@ async function expectFullyInViewport(locator: Locator) {
     .toBeTruthy()
 }
 
+async function safeClick(locator: Locator) {
+  await expect(locator).toBeVisible()
+  await locator.scrollIntoViewIfNeeded()
+  await locator.evaluate((element) => {
+    if (element instanceof HTMLElement) {
+      element.click()
+    }
+  })
+}
+
+async function safeFill(locator: Locator, value: string) {
+  await expect(locator).toBeVisible()
+  await locator.evaluate(
+    (element, nextValue) => {
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        const descriptor = Object.getOwnPropertyDescriptor(
+          element instanceof HTMLInputElement ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+          'value',
+        )
+        descriptor?.set?.call(element, nextValue)
+        element.dispatchEvent(new Event('input', { bubbles: true }))
+        element.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    },
+    value,
+  )
+}
+
+async function safeSelectOption(locator: Locator, value: string) {
+  await expect(locator).toBeVisible()
+  await locator.evaluate(
+    (element, nextValue) => {
+      if (element instanceof HTMLSelectElement) {
+        element.value = nextValue
+        element.dispatchEvent(new Event('input', { bubbles: true }))
+        element.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    },
+    value,
+  )
+}
+
 function getAddFoodDialog(page: Page) {
   return page.getByRole('dialog', { name: /add food/i })
 }
@@ -69,7 +133,7 @@ async function getAddFoodSearchInput(page: Page): Promise<Locator> {
 
   const expandButton = addFoodDialog.getByRole('button', { name: /more ways to log/i })
   if (await expandButton.isVisible().catch(() => false)) {
-    await expandButton.click()
+    await safeClick(expandButton)
   }
 
   await expect(searchInput).toBeVisible()
@@ -112,21 +176,19 @@ async function openMealSheet(
     const quickAddButton = mealSection.getByRole('button', {
       name: new RegExp(`^add food to ${meal}$`, 'i'),
     })
-    await quickAddButton.scrollIntoViewIfNeeded()
-    await quickAddButton.click({ force: true })
+    await safeClick(quickAddButton)
     const addFoodDialog = getAddFoodDialog(page)
     if (!(await addFoodDialog.isVisible().catch(() => false))) {
       const fallbackAddFoodButton = mealSection.getByRole('button', { name: /^add food$/i }).first()
       if (await fallbackAddFoodButton.isVisible().catch(() => false)) {
-        await fallbackAddFoodButton.click({ force: true })
+        await safeClick(fallbackAddFoodButton)
       }
     }
     await expect(addFoodDialog).toBeVisible()
     return
   }
 
-  await addFoodButton.scrollIntoViewIfNeeded()
-  await addFoodButton.click({ force: true })
+  await safeClick(addFoodButton)
   await expect(getAddFoodDialog(page)).toBeVisible()
 }
 
@@ -138,12 +200,12 @@ async function ensureMealExpanded(
   if (await addFoodDialog.isVisible().catch(() => false)) {
     const closeButton = addFoodDialog.getByRole('button', { name: /^close sheet$/i })
     if (await closeButton.isVisible().catch(() => false)) {
-      await closeButton.click()
+      await safeClick(closeButton)
     }
 
     const discardDialog = page.getByRole('alertdialog', { name: /discard changes\?/i })
     if (await discardDialog.isVisible().catch(() => false)) {
-      await discardDialog.getByRole('button', { name: /^discard$/i }).click()
+      await safeClick(discardDialog.getByRole('button', { name: /^discard$/i }))
     }
 
     await expect(addFoodDialog).toBeHidden({ timeout: 5000 })
@@ -159,8 +221,7 @@ async function ensureMealExpanded(
   const mealToggleButton = mealSection.getByRole('button', {
     name: new RegExp(`^${meal}\\b`, 'i'),
   }).first()
-  await mealToggleButton.scrollIntoViewIfNeeded()
-  await mealToggleButton.click()
+  await safeClick(mealToggleButton)
   await expect(inlineAddFoodButton).toBeVisible()
 }
 
@@ -169,14 +230,14 @@ async function applyBulkPreview(page: Page, mode?: 'append' | 'replace target') 
   await expect(previewSheet).toBeVisible()
 
   if (mode === 'append') {
-    await previewSheet.getByRole('button', { name: /^append$/i }).click()
+    await safeClick(previewSheet.getByRole('button', { name: /^append$/i }))
   }
 
   if (mode === 'replace target') {
-    await previewSheet.getByRole('button', { name: /^replace target$/i }).click()
+    await safeClick(previewSheet.getByRole('button', { name: /^replace target$/i }))
   }
 
-  await previewSheet.getByRole('button', { name: /apply changes/i }).click()
+  await safeClick(previewSheet.getByRole('button', { name: /apply changes/i }))
 }
 
 async function addFoodToMeal(
@@ -186,9 +247,9 @@ async function addFoodToMeal(
 ) {
   await openMealSheet(page, meal)
   const addFoodDialog = getAddFoodDialog(page)
-  await (await getAddFoodSearchInput(page)).fill(query)
-  await page.getByRole('button', { name: new RegExp(query, 'i') }).first().click()
-  await page.getByRole('button', { name: /add to meal/i }).click()
+  await safeFill(await getAddFoodSearchInput(page), query)
+  await safeClick(page.getByRole('button', { name: new RegExp(query, 'i') }).first())
+  await safeClick(page.getByRole('button', { name: /add to meal/i }))
 
   const dialogClosed = await addFoodDialog
     .waitFor({ state: 'hidden', timeout: 1000 })
@@ -201,10 +262,12 @@ async function addFoodToMeal(
 }
 
 async function clickNavButton(page: Page, name: RegExp) {
-  const button = page.getByRole('button', { name }).first()
+  const bottomNavButton = page.locator('nav').last().getByRole('button', { name }).first()
+  const button = (await bottomNavButton.isVisible().catch(() => false))
+    ? bottomNavButton
+    : page.getByRole('button', { name }).first()
   await expect(button).toBeVisible()
-  await button.scrollIntoViewIfNeeded()
-  await button.click()
+  await safeClick(button)
 }
 
 async function goToSettings(page: Page) {
@@ -241,4 +304,8 @@ export {
   goToWeight,
   openMealSheet,
   resetApp,
+  clearOriginData,
+  safeClick,
+  safeFill,
+  safeSelectOption,
 }

@@ -14,6 +14,8 @@ import {
   getAddFoodDialog,
   goToLog,
   goToSettings,
+  resetApp,
+  safeClick,
 } from './app'
 
 const QA_LANE_ID = process.env.QA_RELEASE_LANE_ID ?? 'dev_smoke'
@@ -71,36 +73,25 @@ async function deleteDatabases(page: Page): Promise<void> {
 }
 
 export async function resetQaApp(page: Page): Promise<void> {
-  await page.goto('/', { waitUntil: 'domcontentloaded' })
-  await page.waitForLoadState('domcontentloaded')
-  await page.evaluate(async () => {
-    window.localStorage.clear()
-    window.sessionStorage.clear()
-  })
-  await deleteDatabases(page)
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  const logButton = page.getByRole('button', { name: /^log$/i }).first()
-  await expect(logButton).toBeVisible()
-  await logButton.click()
-  await expect(page.locator('[data-meal-section="breakfast"]').first()).toBeVisible()
+  await resetApp(page)
 }
 
 export async function goToHome(page: Page): Promise<void> {
   const homeButton = page.getByRole('button', { name: /^home$/i }).first()
   await expect(homeButton).toBeVisible()
-  await homeButton.click()
+  await safeClick(homeButton)
 }
 
 export async function goToCoach(page: Page): Promise<void> {
   const coachButton = page.getByRole('button', { name: /^coach$/i }).first()
   await expect(coachButton).toBeVisible()
-  await coachButton.click()
+  await safeClick(coachButton)
 }
 
 export async function goToWorkouts(page: Page): Promise<void> {
   const workoutsButton = page.getByRole('button', { name: /^workouts$/i }).first()
   await expect(workoutsButton).toBeVisible()
-  await workoutsButton.click()
+  await safeClick(workoutsButton)
 }
 
 async function setSettingsPatch(page: Page, patch: Record<string, unknown>): Promise<void> {
@@ -675,7 +666,7 @@ export async function createBackupChickenAndExport(page: Page): Promise<string> 
   await goToSettings(page)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: /export backup/i }).click(),
+    safeClick(page.getByRole('button', { name: /export backup/i })),
   ])
 
   const downloadPath = await download.path()

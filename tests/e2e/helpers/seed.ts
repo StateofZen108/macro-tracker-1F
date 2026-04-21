@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test'
+import { goToLog } from './app'
 
 type CoachWave1Scenario =
   | 'standard_cut_actionable'
@@ -52,9 +53,129 @@ type PsmfGarminFeatureSeedOptions = {
 }
 
 async function restoreLogLanding(page: Page): Promise<void> {
-  const logButton = page.getByRole('button', { name: /^log$/i }).first()
-  await logButton.waitFor({ state: 'visible' })
-  await logButton.click()
+  await goToLog(page)
+}
+
+async function clearSeededPersistentStores(page: Page): Promise<void> {
+  await syncSeededPersistentStoresFromLocalStorage(page)
+}
+
+async function syncSeededPersistentStoresFromLocalStorage(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const dbName = 'macrotracker-storage'
+    const dbVersion = 2
+    const coreDomains = ['foods', 'settings', 'weights', 'mealTemplates', 'logsByDate']
+    const storeNames = [
+      'meta',
+      'foods',
+      'settings',
+      'weights',
+      'mealTemplates',
+      'wellness',
+      'recoveryCheckIns',
+      'dietPhases',
+      'dietPhaseEvents',
+      'logs',
+    ] as const
+
+    const parseJson = <T,>(key: string): T | undefined => {
+      const raw = window.localStorage.getItem(key)
+      if (raw === null) {
+        return undefined
+      }
+
+      try {
+        return JSON.parse(raw) as T
+      } catch {
+        return undefined
+      }
+    }
+
+    const openDatabase = () =>
+      new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(dbName, dbVersion)
+
+        request.onupgradeneeded = () => {
+          const database = request.result
+          for (const storeName of storeNames) {
+            if (!database.objectStoreNames.contains(storeName)) {
+              database.createObjectStore(storeName)
+            }
+          }
+        }
+
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+      })
+
+    const requestToPromise = <T,>(request: IDBRequest<T>) =>
+      new Promise<T>((resolve, reject) => {
+        request.onerror = () => reject(request.error)
+        request.onsuccess = () => resolve(request.result)
+      })
+
+    const db = await openDatabase()
+    try {
+      const transaction = db.transaction([...storeNames], 'readwrite')
+      const readExisting = async <T,>(storeName: (typeof storeNames)[number]) => {
+        return requestToPromise<T | undefined>(transaction.objectStore(storeName).get('default'))
+      }
+
+      const foods = parseJson<unknown[]>('mt_foods') ?? (await readExisting<unknown[]>('foods')) ?? []
+      const settings = parseJson<Record<string, unknown>>('mt_settings') ?? (await readExisting<Record<string, unknown>>('settings'))
+      const weights = parseJson<unknown[]>('mt_weights') ?? (await readExisting<unknown[]>('weights')) ?? []
+      const mealTemplates =
+        parseJson<unknown[]>('mt_meal_templates') ?? (await readExisting<unknown[]>('mealTemplates')) ?? []
+      const wellness = parseJson<unknown[]>('mt_wellness') ?? (await readExisting<unknown[]>('wellness')) ?? []
+      const recoveryCheckIns =
+        parseJson<unknown[]>('mt_recovery_check_ins') ?? (await readExisting<unknown[]>('recoveryCheckIns')) ?? []
+      const dietPhases = parseJson<unknown[]>('mt_diet_phases') ?? (await readExisting<unknown[]>('dietPhases')) ?? []
+      const dietPhaseEvents =
+        parseJson<unknown[]>('mt_diet_phase_events') ?? (await readExisting<unknown[]>('dietPhaseEvents')) ?? []
+
+      if (settings) {
+        transaction.objectStore('foods').put(foods, 'default')
+        transaction.objectStore('settings').put(settings, 'default')
+        transaction.objectStore('weights').put(weights, 'default')
+        transaction.objectStore('mealTemplates').put(mealTemplates, 'default')
+        transaction.objectStore('wellness').put(wellness, 'default')
+        transaction.objectStore('recoveryCheckIns').put(recoveryCheckIns, 'default')
+        transaction.objectStore('dietPhases').put(dietPhases, 'default')
+        transaction.objectStore('dietPhaseEvents').put(dietPhaseEvents, 'default')
+      }
+
+      const logsStore = transaction.objectStore('logs')
+      await requestToPromise(logsStore.clear())
+      for (const [key, rawValue] of Object.entries(window.localStorage)) {
+        if (!key.startsWith('mt_log_')) {
+          continue
+        }
+
+        const date = key.replace('mt_log_', '')
+        try {
+          logsStore.put(JSON.parse(rawValue), date)
+        } catch {
+          logsStore.put([], date)
+        }
+      }
+
+      transaction.objectStore('meta').put(
+        {
+          migratedDomains: coreDomains,
+          completedAt: new Date().toISOString(),
+        },
+        'migrationState',
+      )
+
+      await new Promise<void>((resolve, reject) => {
+        transaction.oncomplete = () => resolve()
+        transaction.onerror = () => reject(transaction.error)
+        transaction.onabort = () => reject(transaction.error)
+      })
+    } finally {
+      db.close()
+    }
+  })
 }
 
 async function seedCoachingWindow(
@@ -149,14 +270,7 @@ async function seedCoachingWindow(
     window.localStorage.setItem('mt_weights', JSON.stringify(weights))
   }, options)
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
+  await clearSeededPersistentStores(page)
   await page.reload()
   await restoreLogLanding(page)
 }
@@ -276,14 +390,7 @@ async function seedWeeklyCheckInWindow(page: Page) {
     window.localStorage.setItem('mt_weights', JSON.stringify(weights))
   })
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
+  await clearSeededPersistentStores(page)
   await page.reload()
   await restoreLogLanding(page)
 }
@@ -549,20 +656,7 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
     window.localStorage.setItem('mt_preview_psmf_garmin_ui', JSON.stringify(previewState))
   }, scenario)
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-app')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
+  await clearSeededPersistentStores(page)
   await page.reload()
   await restoreLogLanding(page)
 }
@@ -662,20 +756,7 @@ async function seedPersonalLibraryScenario(page: Page, scenario: PersonalLibrary
     }
   }, scenario)
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-app')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
+  await clearSeededPersistentStores(page)
   await page.reload()
   await restoreLogLanding(page)
 }
@@ -766,20 +847,7 @@ async function seedPsmfGarminFeatureState(
     },
   )
 
-  await page.evaluate(async () => {
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-storage')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-    await new Promise<void>((resolve) => {
-      const request = window.indexedDB.deleteDatabase('macrotracker-app')
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    })
-  })
+  await clearSeededPersistentStores(page)
   await page.reload()
   await restoreLogLanding(page)
 }
@@ -790,4 +858,5 @@ export {
   seedPersonalLibraryScenario,
   seedPsmfGarminFeatureState,
   seedWeeklyCheckInWindow,
+  syncSeededPersistentStoresFromLocalStorage,
 }
