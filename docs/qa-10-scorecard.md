@@ -14,14 +14,16 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `proof_bound_answer` | `tests/unit/coachProofAnswer.spec.ts` and `tests/e2e/coach.spec.ts` verify Coach answers from the Cut OS packet without live provider setup |
 | `sheet_dismissable` | `tests/e2e/logging.spec.ts` checks Escape close plus dirty discard keep/discard hit testing |
 | `chunk_polished` | `npm run build` has no Vite chunk warning; `npm run test:bundle` enforces budgets and HEIC precache exclusion |
+| `module_budget_green` | `npm run test:module-budgets` keeps public root modules below the ownership budgets after refactors |
 | `onboarding_ready` | `CutOsActivationCard` renders first-viewport activation, MacroFactor import, sealed demo, and next proof; `CutOsSetupChecklist` renders exact counts and route targets |
 | `device_qa_green` | `docs/device-qa-runbook.md` records physical camera/barcode/OCR/PWA/offline evidence for the release candidate |
 | `release_hygiene_green` | `npm run test:release` passes with 0 warnings, corpus gate enabled, and unknown untracked source files staged, ignored, or documented |
 | `security_audit_green` | `npm run test:security:audit` exits 0 with no moderate, high, or critical vulnerabilities |
 | `api_hardened` | `tests/unit/productionHardening.spec.ts` verifies request IDs, body limits, rate limits, timeout envelopes, and structured errors |
-| `observability_ready` | `tests/unit/productionHardening.spec.ts` verifies Sentry redaction; production DSNs enable client/server capture with build context |
+| `observability_ready` | `tests/unit/productionHardening.spec.ts` verifies Sentry redaction; `npm run test:observability:smoke` proves production server capture with build context |
 | `rls_defended` | `tests/unit/productionHardening.spec.ts` verifies the Supabase RLS/constraint migration includes policies, constraints, and hardened search paths |
-| `paid_10_final_candidate` | All predicates above are true on the same working tree |
+| `production_readiness_green` | `npm run test:production-readiness` validates a committed readiness manifest with device QA, Sentry smoke event, migration verification, and module budget proof |
+| `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:release:production` |
 
 ## Gate Status
 
@@ -31,10 +33,12 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `npm run test:security:audit` | 0 moderate/high/critical vulnerabilities | 2026-04-28: passed after hardening dependency updates |
 | `$env:VITE_APP_BUILD_ID='cut-os-final-focus-proof'; npm run build` | 0 TypeScript errors, 0 Vite warnings | 2026-04-28: passed, no Vite chunk warning |
 | `npm run test:bundle` | Budgets pass, HEIC excluded from precache | 2026-04-28: passed, HEIC excluded from app-shell precache |
+| `npm run test:module-budgets` | Public root module budgets pass | 2026-04-28: passed |
 | `npm run test:history-import:corpus` | MacroFactor corpus cases pass | 2026-04-28: passed, 5/5 corpus tests |
 | `npm run test:unit` | 0 failed tests | 2026-04-28: passed, 265 tests passed; existing documented skips/todos unchanged |
 | `npx playwright test tests/e2e --config=playwright.config.ts` | 0 failed tests | 2026-04-28: passed, 54/54 S22 tests |
 | `npm run test:release` | 0 failed release checks | 2026-04-28: passed; lint/build/bundle/unit/full E2E/corpus/lane guard/personal-library preview/coach preview all green |
+| `npm run test:release:production` | 0 failed production release checks with physical QA and Sentry smoke evidence | Pending real deployment/device evidence; fails by design without committed `docs/production-readiness/<build-id>.json` |
 
 ## Current Focus Areas
 
@@ -49,5 +53,6 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 - MacroFactor corpus coverage must include food+weight, weights-only, and unsupported day-total export shapes with exact expected counts/warnings.
 - Bottom-sheet dirty discard must stay above the parent sheet and keep its buttons center-hittable.
 - Device QA must attach dated physical-device evidence for camera permission denied/granted, barcode fallback, OCR save, PWA install/reopen, offline logging, and discard hit testing.
+- Production readiness must include the live Sentry smoke event ID, Supabase migration verification, and module budget proof for the same build ID and git SHA.
 
-Physical-device QA is the only release predicate that requires external evidence outside this desktop/headless environment.
+Physical-device QA, live Sentry smoke, and Supabase migration verification require external evidence outside this desktop/headless environment.

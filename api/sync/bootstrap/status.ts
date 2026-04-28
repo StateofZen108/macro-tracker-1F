@@ -1,4 +1,4 @@
-import { requireAuthenticatedSyncUser, SyncAuthError } from '../../../server/sync/auth.js'
+import { requireAuthenticatedSyncUser } from '../../../server/sync/auth.js'
 import { withApiMiddleware } from '../../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../../server/http/logging.js'
 import { API_ROUTE_CONFIGS } from '../../../server/http/routeConfigs.js'
@@ -16,10 +16,9 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-async function handleGet(request: Request): Promise<Response> {
+async function handleGet(_request: Request, userId: string): Promise<Response> {
   const startedAt = Date.now()
   try {
-    const { userId } = await requireAuthenticatedSyncUser(request)
     const response = await getBootstrapStatusForUser(userId)
     logApiEvent({
       event: 'sync_bootstrap_status',
@@ -29,22 +28,6 @@ async function handleGet(request: Request): Promise<Response> {
     })
     return jsonResponse(200, response)
   } catch (error) {
-    if (error instanceof SyncAuthError) {
-      logApiEvent({
-        event: 'sync_bootstrap_status',
-        status: error.status,
-        latencyMs: Date.now() - startedAt,
-        scope: 'bootstrap_status',
-        message: error.message,
-      })
-      return jsonResponse(error.status, {
-        error: {
-          code: error.code,
-          message: error.message,
-        },
-      })
-    }
-
     logApiEvent({
       event: 'sync_bootstrap_status',
       status: 502,
@@ -55,14 +38,14 @@ async function handleGet(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'bootstrapStatusFailed',
-        message: error instanceof Error ? error.message : 'Unable to load bootstrap status.',
+        message: 'Unable to load bootstrap status.',
       },
     })
   }
 }
 
 const handler = {
-  async fetch(request: Request) {
+  async fetch(request: Request, userId: string) {
     if (request.method !== 'GET') {
       logApiEvent({
         event: 'sync_bootstrap_status',
@@ -79,8 +62,11 @@ const handler = {
       })
     }
 
-    return handleGet(request)
+    return handleGet(request, userId)
   },
 }
 
-export default withApiMiddleware(API_ROUTE_CONFIGS.syncBootstrapStatus, (request) => handler.fetch(request))
+export default withApiMiddleware(
+  { ...API_ROUTE_CONFIGS.syncBootstrapStatus, authenticate: requireAuthenticatedSyncUser },
+  (request, context) => handler.fetch(request, context.userId ?? ''),
+)

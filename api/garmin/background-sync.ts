@@ -81,7 +81,7 @@ async function handlePost(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'garminBackgroundSyncFailed',
-        message: error instanceof Error ? error.message : 'Unable to run Garmin background sync.',
+        message: 'Unable to run Garmin background sync.',
       },
     })
   }

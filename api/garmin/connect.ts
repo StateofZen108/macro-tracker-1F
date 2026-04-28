@@ -1,4 +1,4 @@
-import { requireAuthenticatedSyncUser, SyncAuthError } from '../../server/sync/auth.js'
+import { requireAuthenticatedSyncUser } from '../../server/sync/auth.js'
 import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../server/http/logging.js'
 import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
@@ -16,10 +16,9 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-async function handleGet(request: Request): Promise<Response> {
+async function handleGet(request: Request, userId: string): Promise<Response> {
   const startedAt = Date.now()
   try {
-    const { userId } = await requireAuthenticatedSyncUser(request)
     const url = new URL(request.url)
     const redirectUri = url.searchParams.get('redirectUri') ?? undefined
     const returnTo = url.searchParams.get('returnTo') ?? undefined
@@ -32,7 +31,7 @@ async function handleGet(request: Request): Promise<Response> {
     })
     return jsonResponse(200, response)
   } catch (error) {
-    if (error instanceof SyncAuthError || error instanceof GarminServiceError) {
+    if (error instanceof GarminServiceError) {
       logApiEvent({
         event: 'garmin_connect',
         status: error.status,
@@ -58,14 +57,14 @@ async function handleGet(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'garminConnectFailed',
-        message: error instanceof Error ? error.message : 'Unable to start Garmin connect.',
+        message: 'Unable to start Garmin connect.',
       },
     })
   }
 }
 
 const handler = {
-  async fetch(request: Request) {
+  async fetch(request: Request, userId: string) {
     if (request.method !== 'GET') {
       logApiEvent({
         event: 'garmin_connect',
@@ -82,8 +81,11 @@ const handler = {
       })
     }
 
-    return handleGet(request)
+    return handleGet(request, userId)
   },
 }
 
-export default withApiMiddleware(API_ROUTE_CONFIGS.garminConnect, (request) => handler.fetch(request))
+export default withApiMiddleware(
+  { ...API_ROUTE_CONFIGS.garminConnect, authenticate: requireAuthenticatedSyncUser },
+  (request, context) => handler.fetch(request, context.userId ?? ''),
+)

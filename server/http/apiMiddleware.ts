@@ -1,5 +1,5 @@
 import { captureServerException, setServerRequestContext } from '../observability/sentry.server.js'
-import { ApiError, buildApiErrorEnvelope, jsonResponse } from './errors.js'
+import { ApiError, buildApiErrorEnvelope, GENERIC_INTERNAL_ERROR_MESSAGE, jsonResponse } from './errors.js'
 import { logApiEvent } from './logging.js'
 import { enforceRateLimit, type ApiRateLimitConfig } from './rateLimit.js'
 import { buildApiRequestContext, type ApiRequestContext } from './requestContext.js'
@@ -11,6 +11,7 @@ export interface ApiMiddlewareConfig {
   bodyLimitBytes?: number
   queryStringLimitBytes?: number
   rateLimit?: ApiRateLimitConfig
+  authenticate?: (request: Request, context: ApiRequestContext) => Promise<{ userId: string; email?: string }>
 }
 
 export type ApiHandler = (request: Request, context: ApiRequestContext) => Promise<Response>
@@ -114,13 +115,27 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   })
 }
 
+function isApiErrorLike(error: unknown): error is ApiError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    typeof (error as { status?: unknown }).status === 'number' &&
+    typeof (error as { code?: unknown }).code === 'string' &&
+    typeof (error as { message?: unknown }).message === 'string'
+  )
+}
+
 function errorToResponse(error: unknown, context: ApiRequestContext): Response {
-  if (error instanceof ApiError) {
+  if (error instanceof ApiError || isApiErrorLike(error)) {
+    const message =
+      error.exposure === 'public'
+        ? error.message
+        : GENERIC_INTERNAL_ERROR_MESSAGE
     return jsonResponse(
       error.status,
       buildApiErrorEnvelope({
         code: error.code,
-        message: error.message,
+        message,
         requestId: context.requestId,
         retryAfterSeconds: error.retryAfterSeconds,
       }),
@@ -132,10 +147,9 @@ function errorToResponse(error: unknown, context: ApiRequestContext): Response {
     )
   }
 
-  const message = error instanceof Error ? error.message : 'Unexpected API failure.'
   return jsonResponse(500, buildApiErrorEnvelope({
     code: 'internalServerError',
-    message,
+    message: GENERIC_INTERNAL_ERROR_MESSAGE,
     requestId: context.requestId,
   }))
 }
@@ -166,12 +180,26 @@ export function withApiMiddleware(config: ApiMiddlewareConfig, handler: ApiHandl
 
         enforceQueryStringLimit(request, config.queryStringLimitBytes)
         await enforceBodyLimit(request, config.bodyLimitBytes)
+        if (config.authenticate) {
+          const auth = await config.authenticate(request, context)
+          context.userId = auth.userId
+          logApiEvent({
+            event: 'api.rate_limit_auth_resolved',
+            status: 200,
+            latencyMs: Date.now() - startedAt,
+            scope: config.routeId,
+            recordId: context.requestId,
+          })
+        }
         await enforceRateLimit(context, config.rateLimit)
 
         const response = await withTimeout(handler(request, context), config.timeoutMs)
         return appendRequestIdHeader(response, context.requestId)
       } catch (error) {
-        if (!(error instanceof ApiError)) {
+        const knownApiError = error instanceof ApiError || isApiErrorLike(error)
+        if (!knownApiError) {
+          captureServerException(error, context)
+        } else if (error.exposure === 'private') {
           captureServerException(error, context)
         }
 

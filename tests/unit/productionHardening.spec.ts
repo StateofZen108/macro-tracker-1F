@@ -1,9 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import observabilitySmokeRoute from '../../api/observability/smoke'
 import { withApiMiddleware } from '../../server/http/apiMiddleware'
+import { ApiError, GENERIC_INTERNAL_ERROR_MESSAGE } from '../../server/http/errors'
 import { resetInMemoryRateLimitForTests } from '../../server/http/rateLimit'
 import { redactSentryEvent as redactServerSentryEvent } from '../../server/observability/sentry.server'
 import { redactClientSentryEvent } from '../../src/observability/sentry.client'
+import { findModuleBudgetViolations } from '../../scripts/check-module-budgets.mjs'
+import { validateProductionReadinessManifest } from '../../scripts/check-production-readiness.mjs'
+import { runSentrySmoke } from '../../scripts/check-sentry-smoke.mjs'
 import {
   findReleaseHygieneViolations,
   parsePorcelainStatus,
@@ -55,6 +60,28 @@ describe('production hardening scripts', () => {
     expect(validateDeviceQaEvidence(manifest, { buildId: 'build-1', gitSha: 'abc123' })).toEqual([])
     expect(validateDeviceQaEvidence({ ...manifest, gitSha: 'old' }, { buildId: 'build-1', gitSha: 'abc123' }))
       .toContain('Device QA gitSha mismatch: expected abc123, got old.')
+  })
+
+  it('requires complete production readiness evidence for the current build', () => {
+    const manifest = {
+      buildId: 'build-1',
+      gitSha: 'abc123',
+      checkedAt: '2026-04-28T12:00:00.000Z',
+      releaseSuitePassed: true,
+      deviceQaManifestPath: 'docs/device-qa-results/build-1.json',
+      sentrySmokeEventId: 'event-1',
+      sentryAlertsVerified: true,
+      supabaseMigrationVerified: true,
+      moduleBudgetPassed: true,
+    }
+
+    expect(validateProductionReadinessManifest(manifest, { buildId: 'build-1', gitSha: 'abc123' })).toEqual([])
+    expect(validateProductionReadinessManifest({ ...manifest, moduleBudgetPassed: false }, { buildId: 'build-1', gitSha: 'abc123' }))
+      .toContain('Readiness manifest requires moduleBudgetPassed=true.')
+  })
+
+  it('enforces public root module budgets', () => {
+    expect(findModuleBudgetViolations()).toEqual([])
   })
 })
 
@@ -123,6 +150,62 @@ describe('API middleware', () => {
 
     expect(response.status).toBe(200)
     expect(response.headers.get('X-Request-Id')).toBeTruthy()
+  })
+
+  it('redacts unknown and private API errors while preserving public ApiError copy', async () => {
+    const unknownRoute = withApiMiddleware(
+      {
+        routeId: 'test.unknown_error',
+        allowedMethods: ['GET'],
+        timeoutMs: 1000,
+      },
+      async () => {
+        throw new Error('SQL token abc')
+      },
+    )
+    const unknownResponse = await unknownRoute.fetch(new Request('http://localhost/api/test'))
+    await expect(unknownResponse.json()).resolves.toMatchObject({
+      error: {
+        code: 'internalServerError',
+        message: GENERIC_INTERNAL_ERROR_MESSAGE,
+      },
+    })
+
+    const privateRoute = withApiMiddleware(
+      {
+        routeId: 'test.private_error',
+        allowedMethods: ['GET'],
+        timeoutMs: 1000,
+      },
+      async () => {
+        throw new ApiError(502, 'providerFailed', 'Provider token leaked', { exposure: 'private' })
+      },
+    )
+    const privateResponse = await privateRoute.fetch(new Request('http://localhost/api/test'))
+    await expect(privateResponse.json()).resolves.toMatchObject({
+      error: {
+        code: 'providerFailed',
+        message: GENERIC_INTERNAL_ERROR_MESSAGE,
+      },
+    })
+
+    const publicRoute = withApiMiddleware(
+      {
+        routeId: 'test.public_error',
+        allowedMethods: ['GET'],
+        timeoutMs: 1000,
+      },
+      async () => {
+        throw new ApiError(400, 'badRequest', 'Fix the request.')
+      },
+    )
+    const publicResponse = await publicRoute.fetch(new Request('http://localhost/api/test'))
+    await expect(publicResponse.json()).resolves.toMatchObject({
+      error: {
+        code: 'badRequest',
+        message: 'Fix the request.',
+      },
+    })
   })
 
   it('enforces body limits before handlers run', async () => {
@@ -197,6 +280,87 @@ describe('API middleware', () => {
       },
     })
   })
+
+  it('authenticates before user-scoped rate limits', async () => {
+    const route = withApiMiddleware(
+      {
+        routeId: 'test.auth_rate',
+        allowedMethods: ['GET'],
+        timeoutMs: 1000,
+        rateLimit: {
+          limit: 1,
+          windowSeconds: 60,
+          scope: 'user',
+        },
+        authenticate: async () => ({ userId: 'supabase-user-a' }),
+      },
+      async (_request, context) => new Response(JSON.stringify({ userId: context.userId })),
+    )
+
+    const request = new Request('http://localhost/api/test', {
+      headers: {
+        Authorization: 'Bearer token-that-is-not-the-user-id',
+      },
+    })
+    expect((await route.fetch(request.clone())).status).toBe(200)
+    const second = await route.fetch(request.clone())
+    expect(second.status).toBe(429)
+  })
+})
+
+describe('observability smoke', () => {
+  beforeEach(() => {
+    resetInMemoryRateLimitForTests()
+    process.env.OBSERVABILITY_SMOKE_SECRET = 'secret'
+    process.env.OBSERVABILITY_SMOKE_TEST_EVENT_ID = 'event-123'
+  })
+
+  afterEach(() => {
+    delete process.env.OBSERVABILITY_SMOKE_SECRET
+    delete process.env.OBSERVABILITY_SMOKE_TEST_EVENT_ID
+    delete process.env.OBSERVABILITY_SMOKE_URL
+    delete process.env.PRODUCTION_RELEASE_REQUIRED
+    delete process.env.OBSERVABILITY_SMOKE_DISABLED
+  })
+
+  it('rejects smoke calls without the configured secret', async () => {
+    const response = await observabilitySmokeRoute.fetch(new Request('http://localhost/api/observability/smoke', {
+      method: 'POST',
+    }))
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'observabilitySmokeUnauthorized',
+        requestId: expect.any(String),
+      },
+    })
+  })
+
+  it('returns a Sentry event ID for authorized smoke calls', async () => {
+    const response = await observabilitySmokeRoute.fetch(new Request('http://localhost/api/observability/smoke', {
+      method: 'POST',
+      headers: {
+        'X-Observability-Smoke-Secret': 'secret',
+      },
+    }))
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      eventId: 'event-123',
+    })
+  })
+
+  it('blocks disabled smoke in production-required mode', async () => {
+    const result = await runSentrySmoke({
+      PRODUCTION_RELEASE_REQUIRED: 'true',
+      OBSERVABILITY_SMOKE_DISABLED: 'true',
+    } as NodeJS.ProcessEnv)
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toContain('OBSERVABILITY_SMOKE_DISABLED cannot be true when PRODUCTION_RELEASE_REQUIRED=true.')
+  })
 })
 
 describe('Supabase RLS migration', () => {
@@ -211,4 +375,3 @@ describe('Supabase RLS migration', () => {
     expect(sql).toContain('set search_path = public')
   })
 })
-

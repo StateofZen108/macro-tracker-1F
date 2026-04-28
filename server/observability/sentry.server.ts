@@ -107,3 +107,31 @@ export function captureServerException(error: unknown, context?: ApiRequestConte
     Sentry.captureException(error)
   })
 }
+
+export function captureServerMessage(message: string, context?: ApiRequestContext): string | null {
+  const testEventId = process.env.OBSERVABILITY_SMOKE_TEST_EVENT_ID?.trim()
+  if (testEventId) {
+    return testEventId
+  }
+
+  if (!initializeServerObservability()) {
+    return null
+  }
+
+  return Sentry.withScope((scope) => {
+    if (context) {
+      scope.setTag('requestId', context.requestId)
+      scope.setTag('routeId', context.routeId)
+      scope.setContext('apiRequest', {
+        requestId: context.requestId,
+        routeId: context.routeId,
+        ipHash: context.ipHash,
+        userId: context.userId,
+        deviceId: context.deviceId,
+      })
+    }
+    scope.setTag('buildId', process.env.VITE_APP_BUILD_ID ?? process.env.VERCEL_GIT_COMMIT_SHA ?? 'unknown')
+    scope.setTag('gitSha', process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? 'unknown')
+    return Sentry.captureMessage(message, 'info')
+  })
+}

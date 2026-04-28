@@ -68,7 +68,7 @@ async function handleGet(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'barcodeLookupFailed',
-        message: error instanceof Error ? error.message : 'Unable to look up barcode.',
+        message: 'Unable to look up barcode.',
       },
     })
   }

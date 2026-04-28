@@ -1,4 +1,4 @@
-import { requireAuthenticatedSyncUser, SyncAuthError } from '../../server/sync/auth.js'
+import { requireAuthenticatedSyncUser } from '../../server/sync/auth.js'
 import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../server/http/logging.js'
 import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
@@ -16,10 +16,9 @@ function jsonResponse(status: number, body: unknown): Response {
   })
 }
 
-async function handlePost(request: Request): Promise<Response> {
+async function handlePost(_request: Request, userId: string): Promise<Response> {
   const startedAt = Date.now()
   try {
-    const { userId } = await requireAuthenticatedSyncUser(request)
     const response = await getGarminService().disconnectConnection(userId)
     logApiEvent({
       event: 'garmin_disconnect',
@@ -29,7 +28,7 @@ async function handlePost(request: Request): Promise<Response> {
     })
     return jsonResponse(200, response)
   } catch (error) {
-    if (error instanceof SyncAuthError || error instanceof GarminServiceError) {
+    if (error instanceof GarminServiceError) {
       logApiEvent({
         event: 'garmin_disconnect',
         status: error.status,
@@ -55,14 +54,14 @@ async function handlePost(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'garminDisconnectFailed',
-        message: error instanceof Error ? error.message : 'Unable to disconnect Garmin.',
+        message: 'Unable to disconnect Garmin.',
       },
     })
   }
 }
 
 const handler = {
-  async fetch(request: Request) {
+  async fetch(request: Request, userId: string) {
     if (request.method !== 'POST') {
       logApiEvent({
         event: 'garmin_disconnect',
@@ -79,8 +78,11 @@ const handler = {
       })
     }
 
-    return handlePost(request)
+    return handlePost(request, userId)
   },
 }
 
-export default withApiMiddleware(API_ROUTE_CONFIGS.garminDisconnect, (request) => handler.fetch(request))
+export default withApiMiddleware(
+  { ...API_ROUTE_CONFIGS.garminDisconnect, authenticate: requireAuthenticatedSyncUser },
+  (request, context) => handler.fetch(request, context.userId ?? ''),
+)

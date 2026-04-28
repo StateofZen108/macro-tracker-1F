@@ -90,6 +90,7 @@ console.log(`Release suite build id: ${buildId}`)
 const scripts = [
   'test:security:audit',
   'test:all',
+  'test:module-budgets',
   ...(isFeatureEnabled(releaseEnv.VITE_FF_MACRO_FACTOR_CORPUS_GATE_V1)
     ? ['test:history-import:corpus']
     : []),

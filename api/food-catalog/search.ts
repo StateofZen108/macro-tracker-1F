@@ -77,7 +77,7 @@ async function handleGet(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'foodCatalogSearchFailed',
-        message: error instanceof Error ? error.message : 'Unable to search the food catalog.',
+        message: 'Unable to search the food catalog.',
       },
     })
   }

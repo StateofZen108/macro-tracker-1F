@@ -3089,3 +3089,17 @@ export interface DeviceQaEvidenceManifest {
     evidence: string
   }>
 }
+
+export type ApiErrorExposure = 'public' | 'private'
+
+export interface ProductionReadinessManifest {
+  buildId: string
+  gitSha: string
+  checkedAt: string
+  releaseSuitePassed: boolean
+  deviceQaManifestPath: string
+  sentrySmokeEventId: string
+  sentryAlertsVerified: boolean
+  supabaseMigrationVerified: boolean
+  moduleBudgetPassed: boolean
+}

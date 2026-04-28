@@ -13,15 +13,26 @@ npx playwright test tests/e2e --config=playwright.config.ts
 npm run test:release
 ```
 
-Production release also requires:
+Production release also requires a non-local build ID, physical-device evidence, a live Sentry smoke event, module budgets, Supabase migration verification, and a committed readiness manifest:
 
 ```powershell
-$env:RELEASE_DEVICE_QA_REQUIRED='true'
 $env:VITE_APP_BUILD_ID='<candidate-build-id>'
+$env:RELEASE_DEVICE_QA_REQUIRED='true'
+$env:PRODUCTION_RELEASE_REQUIRED='true'
+$env:OBSERVABILITY_SMOKE_URL='https://<deployment>/api/observability/smoke'
+$env:OBSERVABILITY_SMOKE_SECRET='<deployment-secret>'
+$env:SENTRY_ALERTS_VERIFIED='true'
+$env:SUPABASE_MIGRATION_VERIFIED='true'
 npm run test:device-qa:evidence
+npm run test:observability:smoke
+npm run test:module-budgets
+npm run test:production-readiness
+npm run test:release:production
 ```
 
 `npm run test:release` always runs audit, lint, build, bundle, unit, E2E, corpus, preview lanes, and release hygiene. It runs physical-device evidence automatically when `RELEASE_DEVICE_QA_REQUIRED=true` or `VERCEL_ENV=production`.
+
+`npm run test:release:production` is intentionally stricter than the local release suite. It rejects fallback `local-release-*` build IDs, requires physical-device QA, requires Sentry smoke to be enabled, validates `docs/production-readiness/<build-id>.json`, and runs release hygiene again after the smoke check. The production readiness manifest must already be committed; use `npm run write:production-readiness` only as a drafting helper before review and commit.
 
 ## Observability
 
@@ -36,6 +47,8 @@ Configure Sentry alerts before paid release:
 | OCR failure spike | Notify when OCR route failures exceed 3 in 10 minutes |
 | Sync failure spike | Notify when sync push/pull/bootstrap failures exceed 3 in 10 minutes |
 | Release regression | Notify when a new issue first appears on the current `SENTRY_RELEASE` |
+
+Production smoke uses `POST /api/observability/smoke` with `X-Observability-Smoke-Secret`. The route captures a synthetic server message and returns the Sentry event ID. The event ID must be recorded in `docs/production-readiness/<build-id>.json`; `OBSERVABILITY_SMOKE_DISABLED=true` is allowed only outside production-required runs.
 
 ## API Boundary
 
@@ -62,3 +75,15 @@ Physical-device evidence lives under `docs/device-qa-results/<build-id>.json`. T
 
 Do not mark a production release green without a real physical Android or iOS run. Playwright evidence is not a substitute for camera, barcode, OCR capture, PWA install/reopen, and offline logging proof.
 
+## Production Readiness Manifest
+
+Readiness manifests live under `docs/production-readiness/<build-id>.json` and must match the current git SHA. Each manifest records:
+
+- physical-device QA manifest path
+- Sentry smoke event ID
+- release suite status
+- Sentry alert verification
+- Supabase migration verification
+- module budget status
+
+The production gate fails if the manifest is missing, stale, incomplete, or uncommitted.

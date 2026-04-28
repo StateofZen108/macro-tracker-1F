@@ -1,15 +1,10 @@
 import { getSupabaseServiceClient } from './supabase.js'
+import { ApiError } from '../http/errors.js'
 
-export class SyncAuthError extends Error {
-  status: number
-
-  code: string
-
+export class SyncAuthError extends ApiError {
   constructor(code: string, message: string, status = 401) {
-    super(message)
+    super(status, code, message, { exposure: 'public' })
     this.name = 'SyncAuthError'
-    this.code = code
-    this.status = status
   }
 }
 

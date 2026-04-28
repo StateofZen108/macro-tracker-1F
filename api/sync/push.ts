@@ -1,4 +1,4 @@
-import { requireAuthenticatedSyncUser, SyncAuthError } from '../../server/sync/auth.js'
+import { requireAuthenticatedSyncUser } from '../../server/sync/auth.js'
 import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../server/http/logging.js'
 import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
@@ -82,10 +82,9 @@ function normalizeMutations(body: unknown): Array<{
   return normalized.length === body.mutations.length ? normalized : null
 }
 
-async function handlePost(request: Request): Promise<Response> {
+async function handlePost(request: Request, userId: string): Promise<Response> {
   const startedAt = Date.now()
   try {
-    const { userId } = await requireAuthenticatedSyncUser(request)
     const body = (await request.json()) as unknown
     const deviceId =
       isRecord(body) && typeof body.deviceId === 'string' && body.deviceId.trim()
@@ -120,22 +119,6 @@ async function handlePost(request: Request): Promise<Response> {
     })
     return jsonResponse(200, response)
   } catch (error) {
-    if (error instanceof SyncAuthError) {
-      logApiEvent({
-        event: 'sync_push',
-        status: error.status,
-        latencyMs: Date.now() - startedAt,
-        scope: 'push',
-        message: error.message,
-      })
-      return jsonResponse(error.status, {
-        error: {
-          code: error.code,
-          message: error.message,
-        },
-      })
-    }
-
     logApiEvent({
       event: 'sync_push',
       status: 502,
@@ -146,14 +129,14 @@ async function handlePost(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'syncPushFailed',
-        message: error instanceof Error ? error.message : 'Unable to push sync mutations.',
+        message: 'Unable to push sync mutations.',
       },
     })
   }
 }
 
 const handler = {
-  async fetch(request: Request) {
+  async fetch(request: Request, userId: string) {
     if (request.method !== 'POST') {
       logApiEvent({
         event: 'sync_push',
@@ -170,8 +153,11 @@ const handler = {
       })
     }
 
-    return handlePost(request)
+    return handlePost(request, userId)
   },
 }
 
-export default withApiMiddleware(API_ROUTE_CONFIGS.syncPush, (request) => handler.fetch(request))
+export default withApiMiddleware(
+  { ...API_ROUTE_CONFIGS.syncPush, authenticate: requireAuthenticatedSyncUser },
+  (request, context) => handler.fetch(request, context.userId ?? ''),
+)

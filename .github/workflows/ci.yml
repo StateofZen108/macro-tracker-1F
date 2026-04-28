@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - release/**
+      - codex/**
       - feature/**
       - fix/**
       - chore/**
@@ -52,6 +54,18 @@ jobs:
       - run: npm run build
       - run: npm run test:bundle
 
+  module-budgets:
+    name: module-budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:module-budgets
+
   security-audit:
     name: security-audit
     runs-on: ubuntu-latest
@@ -90,6 +104,27 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:device-qa:evidence
+
+  production-release:
+    name: production-release
+    runs-on: ubuntu-latest
+    if: ${{ vars.PRODUCTION_RELEASE_REQUIRED == 'true' }}
+    env:
+      PRODUCTION_RELEASE_REQUIRED: 'true'
+      RELEASE_DEVICE_QA_REQUIRED: 'true'
+      OBSERVABILITY_SMOKE_URL: ${{ secrets.OBSERVABILITY_SMOKE_URL }}
+      OBSERVABILITY_SMOKE_SECRET: ${{ secrets.OBSERVABILITY_SMOKE_SECRET }}
+      SENTRY_ALERTS_VERIFIED: ${{ vars.SENTRY_ALERTS_VERIFIED }}
+      SUPABASE_MIGRATION_VERIFIED: ${{ vars.SUPABASE_MIGRATION_VERIFIED }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:release:production
 
   unit:
     name: unit
@@ -467,9 +502,11 @@ jobs:
       - lint
       - build
       - bundle
+      - module-budgets
       - security-audit
       - release-hygiene
       - device-qa-evidence
+      - production-release
       - unit
       - food-truth-engineering-ready
       - e2e-generic
@@ -488,9 +525,11 @@ jobs:
           LINT_RESULT: ${{ needs.lint.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           BUNDLE_RESULT: ${{ needs.bundle.result }}
+          MODULE_BUDGETS_RESULT: ${{ needs.module-budgets.result }}
           SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
           RELEASE_HYGIENE_RESULT: ${{ needs.release-hygiene.result }}
           DEVICE_QA_EVIDENCE_RESULT: ${{ needs.device-qa-evidence.result }}
+          PRODUCTION_RELEASE_RESULT: ${{ needs.production-release.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           FOOD_TRUTH_ENGINEERING_READY_RESULT: ${{ needs.food-truth-engineering-ready.result }}
           E2E_GENERIC_RESULT: ${{ needs.e2e-generic.result }}
@@ -518,10 +557,15 @@ jobs:
           check_dependency "lint" "$LINT_RESULT"
           check_dependency "build" "$BUILD_RESULT"
           check_dependency "bundle" "$BUNDLE_RESULT"
+          check_dependency "module-budgets" "$MODULE_BUDGETS_RESULT"
           check_dependency "security-audit" "$SECURITY_AUDIT_RESULT"
           check_dependency "release-hygiene" "$RELEASE_HYGIENE_RESULT"
           if [ "$DEVICE_QA_EVIDENCE_RESULT" != "success" ] && [ "$DEVICE_QA_EVIDENCE_RESULT" != "skipped" ]; then
             echo "::error::merge-gate dependency failed: device-qa-evidence=${DEVICE_QA_EVIDENCE_RESULT}"
+            failed=1
+          fi
+          if [ "$PRODUCTION_RELEASE_RESULT" != "success" ] && [ "$PRODUCTION_RELEASE_RESULT" != "skipped" ]; then
+            echo "::error::merge-gate dependency failed: production-release=${PRODUCTION_RELEASE_RESULT}"
             failed=1
           fi
           check_dependency "unit" "$UNIT_RESULT"
@@ -549,6 +593,7 @@ jobs:
       - lint
       - build
       - bundle
+      - module-budgets
       - security-audit
       - release-hygiene
       - unit

@@ -1,4 +1,4 @@
-import { requireAuthenticatedSyncUser, SyncAuthError } from '../../server/sync/auth.js'
+import { requireAuthenticatedSyncUser } from '../../server/sync/auth.js'
 import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../server/http/logging.js'
 import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
@@ -60,10 +60,9 @@ function normalizeRecords(value: unknown): SyncRecordDraft[] | null {
   return normalized.length === value.length ? normalized : null
 }
 
-async function handlePost(request: Request): Promise<Response> {
+async function handlePost(request: Request, userId: string): Promise<Response> {
   const startedAt = Date.now()
   try {
-    const { userId } = await requireAuthenticatedSyncUser(request)
     const body = (await request.json()) as unknown
     if (!isRecord(body)) {
       logApiEvent({
@@ -141,22 +140,6 @@ async function handlePost(request: Request): Promise<Response> {
     })
     return jsonResponse(200, response)
   } catch (error) {
-    if (error instanceof SyncAuthError) {
-      logApiEvent({
-        event: 'sync_bootstrap',
-        status: error.status,
-        latencyMs: Date.now() - startedAt,
-        scope: 'bootstrap',
-        message: error.message,
-      })
-      return jsonResponse(error.status, {
-        error: {
-          code: error.code,
-          message: error.message,
-        },
-      })
-    }
-
     logApiEvent({
       event: 'sync_bootstrap',
       status: 502,
@@ -167,14 +150,14 @@ async function handlePost(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'bootstrapFailed',
-        message: error instanceof Error ? error.message : 'Unable to complete bootstrap.',
+        message: 'Unable to complete bootstrap.',
       },
     })
   }
 }
 
 const handler = {
-  async fetch(request: Request) {
+  async fetch(request: Request, userId: string) {
     if (request.method !== 'POST') {
       logApiEvent({
         event: 'sync_bootstrap',
@@ -191,8 +174,11 @@ const handler = {
       })
     }
 
-    return handlePost(request)
+    return handlePost(request, userId)
   },
 }
 
-export default withApiMiddleware(API_ROUTE_CONFIGS.syncBootstrap, (request) => handler.fetch(request))
+export default withApiMiddleware(
+  { ...API_ROUTE_CONFIGS.syncBootstrap, authenticate: requireAuthenticatedSyncUser },
+  (request, context) => handler.fetch(request, context.userId ?? ''),
+)

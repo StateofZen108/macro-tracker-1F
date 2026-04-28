@@ -195,6 +195,8 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - Sentry client/server error capture with build context and PII redaction
   - Supabase RLS and sync-table constraints as defense-in-depth
   - release hygiene checks for committed source state
+  - public root module budget checks
+  - production Sentry smoke checks and readiness manifests
   - physical-device QA evidence for camera, barcode, OCR, PWA, offline, and dirty-sheet paths
 
 ## What is intentionally not shipped yet

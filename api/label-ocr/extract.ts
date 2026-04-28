@@ -185,7 +185,7 @@ async function handlePost(request: Request): Promise<Response> {
     return jsonResponse(502, {
       error: {
         code: 'labelOcrUnavailable',
-        message: error instanceof Error ? error.message : 'Nutrition label OCR is unavailable.',
+        message: 'Nutrition label OCR is unavailable.',
       },
     })
   }

@@ -7,22 +7,29 @@ export interface ApiErrorEnvelope {
   }
 }
 
+export type ApiErrorExposure = 'public' | 'private'
+
+export const GENERIC_INTERNAL_ERROR_MESSAGE =
+  'Unexpected server error. Reference request ID for support.'
+
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
   readonly retryAfterSeconds?: number
+  readonly exposure: ApiErrorExposure
 
   constructor(
     status: number,
     code: string,
     message: string,
-    options: { retryAfterSeconds?: number } = {},
+    options: { retryAfterSeconds?: number; exposure?: ApiErrorExposure } = {},
   ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.retryAfterSeconds = options.retryAfterSeconds
+    this.exposure = options.exposure ?? 'public'
   }
 }
 
@@ -56,4 +63,3 @@ export function buildApiErrorEnvelope(error: {
     },
   }
 }
-
