@@ -1,4 +1,6 @@
+import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../server/http/logging.js'
+import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
 import { GarminServiceError, getGarminService } from '../../server/garmin/service.js'
 
 export const runtime = 'nodejs'
@@ -107,4 +109,4 @@ const handler = {
   },
 }
 
-export default handler
+export default withApiMiddleware(API_ROUTE_CONFIGS.garminBackgroundSync, (request) => handler.fetch(request))

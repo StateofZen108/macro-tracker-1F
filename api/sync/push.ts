@@ -1,5 +1,7 @@
 import { requireAuthenticatedSyncUser, SyncAuthError } from '../../server/sync/auth.js'
+import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../server/http/logging.js'
+import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
 import { pushUserMutations } from '../../server/sync/store.js'
 import type { SyncScope } from '../../src/types.js'
 
@@ -172,4 +174,4 @@ const handler = {
   },
 }
 
-export default handler
+export default withApiMiddleware(API_ROUTE_CONFIGS.syncPush, (request) => handler.fetch(request))

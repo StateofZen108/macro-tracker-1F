@@ -17,6 +17,10 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `onboarding_ready` | `CutOsActivationCard` renders first-viewport activation, MacroFactor import, sealed demo, and next proof; `CutOsSetupChecklist` renders exact counts and route targets |
 | `device_qa_green` | `docs/device-qa-runbook.md` records physical camera/barcode/OCR/PWA/offline evidence for the release candidate |
 | `release_hygiene_green` | `npm run test:release` passes with 0 warnings, corpus gate enabled, and unknown untracked source files staged, ignored, or documented |
+| `security_audit_green` | `npm run test:security:audit` exits 0 with no moderate, high, or critical vulnerabilities |
+| `api_hardened` | `tests/unit/productionHardening.spec.ts` verifies request IDs, body limits, rate limits, timeout envelopes, and structured errors |
+| `observability_ready` | `tests/unit/productionHardening.spec.ts` verifies Sentry redaction; production DSNs enable client/server capture with build context |
+| `rls_defended` | `tests/unit/productionHardening.spec.ts` verifies the Supabase RLS/constraint migration includes policies, constraints, and hardened search paths |
 | `paid_10_final_candidate` | All predicates above are true on the same working tree |
 
 ## Gate Status
@@ -24,6 +28,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | Gate | Expected result | Last verified |
 |---|---|---|
 | `npm run lint` | 0 errors, 0 warnings | 2026-04-28: passed with `eslint . --max-warnings=0` |
+| `npm run test:security:audit` | 0 moderate/high/critical vulnerabilities | 2026-04-28: passed after hardening dependency updates |
 | `$env:VITE_APP_BUILD_ID='cut-os-final-focus-proof'; npm run build` | 0 TypeScript errors, 0 Vite warnings | 2026-04-28: passed, no Vite chunk warning |
 | `npm run test:bundle` | Budgets pass, HEIC excluded from precache | 2026-04-28: passed, HEIC excluded from app-shell precache |
 | `npm run test:history-import:corpus` | MacroFactor corpus cases pass | 2026-04-28: passed, 5/5 corpus tests |

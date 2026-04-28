@@ -1,4 +1,7 @@
 import { buildSessionFromProviderPayload } from '../../src/utils/labelOcrPayload.js'
+import { ApiError } from '../../server/http/errors.js'
+import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
+import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
 import {
   extractNutritionLabel,
   LabelOcrProviderError,
@@ -100,6 +103,16 @@ function buildInternalRequest(body: unknown): LabelOcrRequest | null {
   }
 }
 
+function enforceDecodedImageLimit(input: LabelOcrRequest, limitBytes = 5 * 1024 * 1024): void {
+  const declaredBytes = input.image.byteLength
+  const estimatedBytes =
+    declaredBytes ??
+    Math.floor((input.image.base64Data.replace(/^data:[^,]+,/, '').trim().length * 3) / 4)
+  if (estimatedBytes > limitBytes) {
+    throw new ApiError(413, 'payloadTooLarge', 'Nutrition label image is too large.')
+  }
+}
+
 async function handlePost(request: Request): Promise<Response> {
   let body: PublicLabelOcrBody | null = null
   try {
@@ -122,6 +135,7 @@ async function handlePost(request: Request): Promise<Response> {
       },
     })
   }
+  enforceDecodedImageLimit(internalRequest)
 
   try {
     const providerResponse = await extractNutritionLabel(internalRequest)
@@ -192,4 +206,4 @@ const handler = {
   },
 }
 
-export default handler
+export default withApiMiddleware(API_ROUTE_CONFIGS.labelOcrExtract, (request) => handler.fetch(request))

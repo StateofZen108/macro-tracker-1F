@@ -188,6 +188,14 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - Recovery backup support for unsafe or unreadable storage transitions
 - PWA install support
 - Offline app-shell reopen
+- Production hardening gates now include:
+  - `npm audit --audit-level=moderate`
+  - zero-warning lint/build
+  - API request IDs, body/query limits, timeouts, rate limits, and structured errors
+  - Sentry client/server error capture with build context and PII redaction
+  - Supabase RLS and sync-table constraints as defense-in-depth
+  - release hygiene checks for committed source state
+  - physical-device QA evidence for camera, barcode, OCR, PWA, offline, and dirty-sheet paths
 
 ## What is intentionally not shipped yet
 

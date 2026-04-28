@@ -383,6 +383,9 @@ export type DiagnosticsEventType =
   | 'qa.device_evidence_invalidated'
   | 'release.hygiene_verified'
   | 'release.hygiene_failed'
+  | 'observability.client_initialized'
+  | 'observability.client_disabled'
+  | 'observability.redaction_failed'
 export type CoachProposalType =
   | 'applyCalorieTarget'
   | 'applyMacroTargets'
@@ -3031,4 +3034,58 @@ export interface DeviceQaResult {
   device: 'physical_android' | 'physical_ios'
   browser: string
   checks: Array<{ id: string; status: 'passed' | 'failed'; evidence: string }>
+}
+
+export interface ObservabilityContext {
+  buildId: string
+  release: string
+  environment: string
+  sessionId: string
+  deviceId: string
+  installMode: 'browser' | 'pwa'
+  online: boolean
+  signedIn: boolean
+  userHash?: string
+}
+
+export interface ApiErrorEnvelope {
+  error: {
+    code: string
+    message: string
+    requestId: string
+    retryAfterSeconds?: number
+  }
+}
+
+export interface ApiRequestContext {
+  requestId: string
+  routeId: string
+  startedAt: number
+  ipHash: string
+  userId?: string
+  deviceId?: string
+}
+
+export interface DeviceQaEvidenceManifest {
+  buildId: string
+  gitSha: string
+  checkedAt: string
+  tester: string
+  device: 'physical_android' | 'physical_ios'
+  deviceModel: string
+  osVersion: string
+  browser: string
+  installMode: 'browser' | 'pwa'
+  checks: Array<{
+    id:
+      | 'camera_permission_denied'
+      | 'barcode_permission_granted'
+      | 'barcode_manual_fallback'
+      | 'ocr_capture_save'
+      | 'pwa_install_reopen'
+      | 'offline_reopen_log'
+      | 'discard_dialog_hit_test'
+    status: 'passed' | 'failed'
+    evidence: string
+  }>
 }

@@ -73,12 +73,22 @@ function isFeatureEnabled(value) {
   return normalized !== 'false' && normalized !== '0' && normalized !== 'off'
 }
 
+function isRequired(value) {
+  if (typeof value !== 'string') {
+    return false
+  }
+
+  const normalized = value.trim().toLowerCase()
+  return normalized === 'true' || normalized === '1' || normalized === 'on'
+}
+
 const releaseEnv = buildReleaseEnv()
 const buildId =
   releaseEnv.VITE_APP_BUILD_ID ?? releaseEnv.VERCEL_GIT_COMMIT_SHA ?? releaseEnv.GIT_COMMIT_SHA
 console.log(`Release suite build id: ${buildId}`)
 
 const scripts = [
+  'test:security:audit',
   'test:all',
   ...(isFeatureEnabled(releaseEnv.VITE_FF_MACRO_FACTOR_CORPUS_GATE_V1)
     ? ['test:history-import:corpus']
@@ -86,6 +96,10 @@ const scripts = [
   'test:e2e:lane-guard',
   'test:e2e:personal-library-preview',
   'test:e2e:coach-preview',
+  ...(isRequired(releaseEnv.RELEASE_DEVICE_QA_REQUIRED) || releaseEnv.VERCEL_ENV === 'production'
+    ? ['test:device-qa:evidence']
+    : []),
+  'test:release:hygiene',
 ]
 
 for (const scriptName of scripts) {

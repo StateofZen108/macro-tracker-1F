@@ -1,5 +1,7 @@
 import { requireAuthenticatedSyncUser, SyncAuthError } from '../../server/sync/auth.js'
+import { withApiMiddleware } from '../../server/http/apiMiddleware.js'
 import { logApiEvent } from '../../server/http/logging.js'
+import { API_ROUTE_CONFIGS } from '../../server/http/routeConfigs.js'
 import { completeBootstrapWithCloudState, replaceBootstrapRecordsForUser } from '../../server/sync/store.js'
 import type { BootstrapResolution, SyncScope } from '../../src/types.js'
 import type { SyncRecordDraft } from '../../src/utils/sync/shared.js'
@@ -193,4 +195,4 @@ const handler = {
   },
 }
 
-export default handler
+export default withApiMiddleware(API_ROUTE_CONFIGS.syncBootstrap, (request) => handler.fetch(request))

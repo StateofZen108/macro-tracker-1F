@@ -52,6 +52,45 @@ jobs:
       - run: npm run build
       - run: npm run test:bundle
 
+  security-audit:
+    name: security-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:security:audit
+
+  release-hygiene:
+    name: release-hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:release:hygiene
+
+  device-qa-evidence:
+    name: device-qa-evidence
+    runs-on: ubuntu-latest
+    if: ${{ vars.RELEASE_DEVICE_QA_REQUIRED == 'true' }}
+    env:
+      RELEASE_DEVICE_QA_REQUIRED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:device-qa:evidence
+
   unit:
     name: unit
     runs-on: ubuntu-latest
@@ -428,6 +467,9 @@ jobs:
       - lint
       - build
       - bundle
+      - security-audit
+      - release-hygiene
+      - device-qa-evidence
       - unit
       - food-truth-engineering-ready
       - e2e-generic
@@ -446,6 +488,9 @@ jobs:
           LINT_RESULT: ${{ needs.lint.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           BUNDLE_RESULT: ${{ needs.bundle.result }}
+          SECURITY_AUDIT_RESULT: ${{ needs.security-audit.result }}
+          RELEASE_HYGIENE_RESULT: ${{ needs.release-hygiene.result }}
+          DEVICE_QA_EVIDENCE_RESULT: ${{ needs.device-qa-evidence.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           FOOD_TRUTH_ENGINEERING_READY_RESULT: ${{ needs.food-truth-engineering-ready.result }}
           E2E_GENERIC_RESULT: ${{ needs.e2e-generic.result }}
@@ -473,6 +518,12 @@ jobs:
           check_dependency "lint" "$LINT_RESULT"
           check_dependency "build" "$BUILD_RESULT"
           check_dependency "bundle" "$BUNDLE_RESULT"
+          check_dependency "security-audit" "$SECURITY_AUDIT_RESULT"
+          check_dependency "release-hygiene" "$RELEASE_HYGIENE_RESULT"
+          if [ "$DEVICE_QA_EVIDENCE_RESULT" != "success" ] && [ "$DEVICE_QA_EVIDENCE_RESULT" != "skipped" ]; then
+            echo "::error::merge-gate dependency failed: device-qa-evidence=${DEVICE_QA_EVIDENCE_RESULT}"
+            failed=1
+          fi
           check_dependency "unit" "$UNIT_RESULT"
           check_dependency "food-truth-engineering-ready" "$FOOD_TRUTH_ENGINEERING_READY_RESULT"
           check_dependency "e2e-generic" "$E2E_GENERIC_RESULT"
@@ -498,6 +549,8 @@ jobs:
       - lint
       - build
       - bundle
+      - security-audit
+      - release-hygiene
       - unit
       - food-truth-unit
       - food-truth-integration
