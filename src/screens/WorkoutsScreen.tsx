@@ -209,7 +209,7 @@ export function WorkoutsScreen({
   onOpenSettings,
 }: WorkoutsScreenProps) {
   const gymProfiles = settings.gymProfiles ?? []
-  const customExercises = settings.customExercises ?? []
+  const customExercises = useMemo(() => settings.customExercises ?? [], [settings.customExercises])
   const activePrograms = useMemo(() => programs.filter((program) => !program.archivedAt), [programs])
   const recentSessions = useMemo(() => sessions.slice(0, 5), [sessions])
   const activeGymProfile = gymProfiles.find((profile) => profile.id === settings.activeGymProfileId) ?? gymProfiles[0] ?? null
@@ -264,21 +264,25 @@ export function WorkoutsScreen({
   // Sync template and analytics drilldown state when workout data or persisted selections change.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!selectedTemplateId && activePrograms[0]?.templates[0]?.id) {
-      setSelectedTemplateId(activePrograms[0].templates[0].id)
-    }
-  }, [activePrograms, selectedTemplateId])
-
-  useEffect(() => {
-    setAnalyticsRange(snapshot.range)
-  }, [snapshot.range])
-
-  useEffect(() => {
-    if (selectedExerciseId) {
+    const fallbackTemplateId = activePrograms[0]?.templates[0]?.id ?? null
+    if (selectedTemplateId || !fallbackTemplateId) {
       return
     }
 
-    setSelectedExerciseId(snapshot.exerciseDrilldown?.exerciseId ?? snapshot.exerciseTrends[0]?.id ?? null)
+    setSelectedTemplateId(fallbackTemplateId)
+  }, [activePrograms, selectedTemplateId])
+
+  useEffect(() => {
+    setAnalyticsRange((currentRange) => (currentRange === snapshot.range ? currentRange : snapshot.range))
+  }, [snapshot.range])
+
+  useEffect(() => {
+    const fallbackExerciseId = snapshot.exerciseDrilldown?.exerciseId ?? snapshot.exerciseTrends[0]?.id ?? null
+    if (selectedExerciseId || !fallbackExerciseId) {
+      return
+    }
+
+    setSelectedExerciseId(fallbackExerciseId)
   }, [selectedExerciseId, snapshot.exerciseDrilldown?.exerciseId, snapshot.exerciseTrends])
   /* eslint-enable react-hooks/set-state-in-effect */
 

@@ -16,10 +16,21 @@ test.beforeEach(async ({ page }) => {
   await resetApp(page)
 })
 
-test('S22 log layout keeps day status and activity actions hittable on initial render', async ({ page }) => {
-  await expectFullyInViewport(page.getByText('Day status').first())
-  await expectFullyInViewport(page.getByText('Activity').first())
-  await expectCenterHittable(page.getByRole('button', { name: /^complete$/i }))
+test('S22 log layout exposes fast logging methods on initial render', async ({ page }) => {
+  const fastLogButtons = [
+    page.getByRole('button', { name: /^search food$/i }),
+    page.getByRole('button', { name: /^scan$/i }),
+    page.getByRole('button', { name: /^quick add$/i }),
+    page.getByRole('button', { name: /^copy previous$/i }),
+    page.getByRole('button', { name: /^custom$/i }),
+    page.getByRole('button', { name: /^logging settings$/i }),
+  ]
+
+  for (const button of fastLogButtons) {
+    await expect(button).toBeVisible()
+    await expectFullyInViewport(button)
+    await expectCenterHittable(button)
+  }
 })
 
 test('breakfast add button is hittable and search clears stale selection', async ({ page }) => {
@@ -72,6 +83,31 @@ test('quick add logs a snapshot-only entry and updates totals', async ({ page })
   const quickAddRow = entryRow(page, 'Protein bar')
   await expect(quickAddRow).toContainText('220 cal')
   await expect(page.getByText('220 cal').first()).toBeVisible()
+})
+
+test('bottom sheet escape closes clean sheets and dirty discard stays hittable', async ({ page }) => {
+  await safeClick(page.getByRole('button', { name: /quick add/i }))
+  await expect(page.getByRole('dialog', { name: /quick add/i })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: /quick add/i })).toBeHidden()
+  await expectCenterHittable(page.getByRole('button', { name: /^quick add$/i }))
+
+  await openMealSheet(page)
+  const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
+  const searchInput = await getAddFoodSearchInput(page)
+  await safeFill(searchInput, 'Banana')
+  await safeClick(addFoodSheet.getByRole('button', { name: /close sheet/i }))
+
+  const discardDialog = page.getByRole('alertdialog', { name: /discard changes/i })
+  await expect(discardDialog).toBeVisible()
+  await expectCenterHittable(discardDialog.getByRole('button', { name: /keep editing/i }))
+  await safeClick(discardDialog.getByRole('button', { name: /keep editing/i }))
+  await expect(addFoodSheet).toBeVisible()
+
+  await safeClick(addFoodSheet.getByRole('button', { name: /close sheet/i }))
+  await expectCenterHittable(discardDialog.getByRole('button', { name: /^discard$/i }))
+  await safeClick(discardDialog.getByRole('button', { name: /^discard$/i }))
+  await expect(addFoodSheet).toBeHidden()
 })
 
 test('fast add keeps the sheet open and reuses the last amount shortcut', async ({ page }) => {

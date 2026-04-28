@@ -66,6 +66,10 @@ import type {
   CaptureConvenienceSource,
   CoachingReasonCode,
   CutDayPlan,
+  CutOsActivationAction,
+  CutOsActivationModel,
+  CutOsActionTarget,
+  CutOsSurfaceModel,
   DayStatus,
   DietPhase,
   DietPhaseEvent,
@@ -78,6 +82,7 @@ import type {
   MorningPhoneSnapshot,
   RepeatLogRecommendation,
   SavedMeal,
+  SettingsFocusRequest,
   PrimaryTabId,
   TabId,
   UserSettings,
@@ -86,6 +91,9 @@ import type {
 import { FEATURE_FLAGS } from './config/featureFlags'
 import { reconcileFoodReviewQueue } from './domain/foods/reviewQueue'
 import { buildCoreClaimSnapshot } from './domain/benchmark'
+import { buildCutOsActivationModel } from './domain/cutOsActivation'
+import { createCutOsActionRecord, markCutOsActionApplied, markCutOsActionDeferred, markCutOsActionFailed } from './domain/cutOsActions'
+import { useCutOsSurface } from './hooks/useCutOsSurface'
 import {
   evaluateCoachRuntimeState,
   type CoachRuntimeState,
@@ -105,6 +113,12 @@ import {
 import { addDays, enumerateDateKeys, formatShortDate, getTodayDateKey } from './utils/dates'
 import { calculateFoodNutrition, sumNutrition } from './utils/macros'
 import { appendCoachingDecision } from './utils/storage/coachDecisions'
+import {
+  loadCutOsActivationState,
+  saveCutOsActivationState,
+  subscribeToCutOsActivationState,
+} from './utils/storage/cutOsActivation'
+import { upsertCutOsAction } from './utils/storage/cutOsActions'
 import { subscribeToStorage } from './utils/storage/core'
 import { loadActivityLog } from './utils/storage/activity'
 import { loadAllFoodLogs, loadFoodLog, saveFoodLog } from './utils/storage/logs'
@@ -387,6 +401,9 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     networkStatus,
     settingsEditorState,
     setSettingsEditorState,
+    settingsFocusRequest,
+    pushSettingsFocusRequest,
+    consumeSettingsFocusRequest,
     requestTabChange,
   } = useAppShell()
 
@@ -508,6 +525,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     coachState,
     starterPrompts,
     queueQuestion,
+    answerQuestionWithProof,
     clearQueuedQuestion,
     clearThread,
     rateMessage,
@@ -773,10 +791,14 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       },
     }
   }, [allFoodLogs, currentCheckIn, dayMeta, recoveryReadiness, settings.coachModuleSettings, settings.fastCheckInPreference?.enabled, workouts.snapshot.strengthRetention])
-  const visibleCheckInHistory = FEATURE_FLAGS.weeklyDecisionCard ? checkInHistory : []
-  const visibleCoachingDecisionHistory = FEATURE_FLAGS.weeklyDecisionCard
-    ? coachingDecisionHistory
-    : []
+  const visibleCheckInHistory = useMemo(
+    () => (FEATURE_FLAGS.weeklyDecisionCard ? checkInHistory : []),
+    [checkInHistory],
+  )
+  const visibleCoachingDecisionHistory = useMemo(
+    () => (FEATURE_FLAGS.weeklyDecisionCard ? coachingDecisionHistory : []),
+    [coachingDecisionHistory],
+  )
   const visibleCanApplyCheckInTargets =
     FEATURE_FLAGS.weeklyDecisionCard && canApplyCheckInTargets
 
@@ -1588,6 +1610,76 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       actionCard: manualActionCard,
     }
   }, [todayWorkoutActionOverride, workouts.snapshot])
+  const cutOsSnapshot = useCutOsSurface({
+    enabled: FEATURE_FLAGS.paidCutOsV1,
+    date: todayDateKey,
+    logsByDate: allFoodLogs,
+    weights,
+    currentCheckIn: visibleCurrentCheckIn,
+    checkInHistory: visibleCheckInHistory,
+    coachingDecisionHistory: visibleCoachingDecisionHistory,
+    bodyProgressSnapshots:
+      FEATURE_FLAGS.bodyMetricsV1 || FEATURE_FLAGS.progressPhotosV1 ? bodyProgress.snapshots : [],
+    dietPhases: normalizedDietPhases,
+    dietPhaseEvents,
+    cutDayPlan: todayCutDayPlan,
+    workoutSnapshot: effectiveWorkoutSnapshot,
+    foodReviewQueue,
+  })
+  const cutOsActivationState = useSyncExternalStore(
+    subscribeToCutOsActivationState,
+    loadCutOsActivationState,
+    loadCutOsActivationState,
+  )
+  const cutOsActivation = useMemo<CutOsActivationModel | null>(
+    () =>
+      buildCutOsActivationModel({
+        date: todayDateKey,
+        surface: cutOsSnapshot,
+        activationState: cutOsActivationState,
+      }),
+    [cutOsActivationState, cutOsSnapshot, todayDateKey],
+  )
+  const effectiveCutOsSnapshot = cutOsActivation?.demoSurface ?? cutOsSnapshot
+  const lastCutOsDiagnosticsKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!cutOsSnapshot) {
+      return
+    }
+
+    const diagnosticsKey = `${cutOsSnapshot.command.diagnosisId}:${cutOsSnapshot.command.state}`
+    if (lastCutOsDiagnosticsKeyRef.current === diagnosticsKey) {
+      return
+    }
+
+    lastCutOsDiagnosticsKeyRef.current = diagnosticsKey
+    void recordDiagnosticsEvent({
+      eventType: 'cut_os.command_generated',
+      severity: cutOsSnapshot.command.state === 'blocked' ? 'warning' : 'info',
+      scope: 'diagnostics',
+      recordKey: cutOsSnapshot.command.diagnosisId,
+      message: `Cut OS command generated: ${cutOsSnapshot.command.primaryAction}`,
+      payload: {
+        state: cutOsSnapshot.command.state,
+        diagnosisVerdict: cutOsSnapshot.diagnosis.verdict,
+        scaleVerdict: cutOsSnapshot.diagnosis.scaleVerdict,
+        trainingVerdict: cutOsSnapshot.diagnosis.trainingVerdict,
+        phaseVerdict: cutOsSnapshot.diagnosis.phaseVerdict,
+        foodTrustVerdict: cutOsSnapshot.diagnosis.foodTrustVerdict,
+      },
+    })
+
+    if (cutOsSnapshot.diagnosis.trainingVerdict === 'leaking') {
+      void recordDiagnosticsEvent({
+        eventType: 'cut_os.training_precedence',
+        severity: 'info',
+        scope: 'diagnostics',
+        recordKey: cutOsSnapshot.command.diagnosisId,
+        message: 'Training protection outranked cut escalation in the Cut OS command.',
+      })
+    }
+  }, [cutOsSnapshot])
   const dashboardMeal = useMemo<MealType>(() => {
     const hour = new Date().getHours()
     if (hour < 11) {
@@ -2058,6 +2150,179 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     guardedTabChange('settings')
   }
 
+  function openSettingsTabWithFocus(request: SettingsFocusRequest): void {
+    pushSettingsFocusRequest(request)
+    guardedTabChange('settings')
+  }
+
+  function handleStartCutOsDemo(): void {
+    const now = new Date().toISOString()
+    const result = saveCutOsActivationState({
+      ...cutOsActivationState,
+      demoActive: true,
+      updatedAt: now,
+    })
+    if (!result.ok) {
+      reportError(result.error)
+      return
+    }
+
+    void recordDiagnosticsEvent({
+      eventType: 'cut_os.activation_demo_started',
+      severity: 'info',
+      scope: 'diagnostics',
+      recordKey: `cut-os-demo:${todayDateKey}`,
+      message: 'Cut OS sealed demo started from activation.',
+    })
+    reportError(null)
+  }
+
+  function handleExitCutOsDemo(): void {
+    const now = new Date().toISOString()
+    const result = saveCutOsActivationState({
+      ...cutOsActivationState,
+      demoActive: false,
+      updatedAt: now,
+    })
+    if (!result.ok) {
+      reportError(result.error)
+      return
+    }
+
+    void recordDiagnosticsEvent({
+      eventType: 'cut_os.activation_demo_exited',
+      severity: 'info',
+      scope: 'diagnostics',
+      recordKey: `cut-os-demo:${todayDateKey}`,
+      message: 'Cut OS sealed demo exited.',
+    })
+    reportError(null)
+  }
+
+  function persistCutOsAction(
+    model: CutOsSurfaceModel | null,
+    actionTarget: CutOsActionTarget,
+    nextStatus: 'proposed' | 'applied' | 'deferred' | 'failed',
+    failure?: { code: string; message: string },
+  ): void {
+    if (!model) {
+      return
+    }
+
+    const baseRecord =
+      model.activeAction ??
+      createCutOsActionRecord({
+        command: model.command,
+        actionTarget,
+      })
+    const nextRecord =
+      nextStatus === 'applied'
+        ? markCutOsActionApplied(baseRecord)
+        : nextStatus === 'deferred'
+          ? markCutOsActionDeferred(baseRecord)
+          : nextStatus === 'failed'
+            ? markCutOsActionFailed(baseRecord, failure ?? { code: 'unknown', message: 'Action failed.' })
+            : baseRecord
+    const result = upsertCutOsAction(nextRecord)
+    if (!result.ok) {
+      reportError(result.error)
+      return
+    }
+
+    const eventType =
+      nextStatus === 'applied'
+        ? 'cut_os.action_applied'
+        : nextStatus === 'deferred'
+          ? 'cut_os.action_deferred'
+          : nextStatus === 'failed'
+            ? 'cut_os.action_failed'
+            : 'cut_os.action_proposed'
+    void recordDiagnosticsEvent({
+      eventType,
+      severity: nextStatus === 'failed' ? 'warning' : 'info',
+      scope: 'diagnostics',
+      recordKey: nextRecord.id,
+      message: `Cut OS action ${nextStatus}: ${model.command.primaryAction}`,
+      payload: {
+        diagnosisId: model.command.diagnosisId,
+        actionTarget,
+        status: nextStatus,
+        failureCode: nextRecord.failureCode,
+      },
+    })
+  }
+
+  function handleCutOsAction(target: CutOsActionTarget, focusRequest?: SettingsFocusRequest): void {
+    const commandModel = effectiveCutOsSnapshot
+    if (!cutOsActivationState.demoActive) {
+      persistCutOsAction(cutOsSnapshot, target, 'proposed')
+    }
+
+    if (target === 'train') {
+      setActiveTab('workouts')
+      return
+    }
+
+    if (target === 'coach' || target === 'hold') {
+      setActiveTab('coach')
+      return
+    }
+
+    if (target === 'weigh_in' || target === 'body_progress') {
+      setActiveTab('weight')
+      return
+    }
+
+    if (target === 'phase' || target === 'settings') {
+      if (focusRequest) {
+        openSettingsTabWithFocus(focusRequest)
+        return
+      }
+
+      openSettingsTab()
+      return
+    }
+
+    if (target === 'review_food') {
+      const pendingReviewItem = foodReviewQueue.find((item) => item.status === 'pending')
+      if (pendingReviewItem?.linkedEntryDate) {
+        setSelectedDate(pendingReviewItem.linkedEntryDate)
+        setActiveTab('log')
+        return
+      }
+
+      openSettingsTab()
+      return
+    }
+
+    setSelectedDate(commandModel?.command.date ?? todayDateKey)
+    setActiveTab('log')
+    foodEntryController.openAddFood(dashboardMeal)
+  }
+
+  function handleCutOsActivationAction(action: CutOsActivationAction): void {
+    if (!action.target) {
+      return
+    }
+
+    if (
+      action.target === 'settings' &&
+      action.settingsFocusTarget &&
+      FEATURE_FLAGS.cutOsImportFocusV1
+    ) {
+      handleCutOsAction(action.target, {
+        id: `settings-focus-${action.id}-${Date.now()}`,
+        target: action.settingsFocusTarget,
+        autoOpenFilePicker: Boolean(action.autoOpenFilePicker),
+        createdAt: new Date().toISOString(),
+        source: 'cut_os_activation',
+      })
+      return
+    }
+
+    handleCutOsAction(action.target)
+  }
+
   function resolvePhaseReviewIntent(record: NonNullable<typeof currentCheckIn>): PhaseReviewIntent | null {
     const nextEvent =
       [...dietPhaseEvents]
@@ -2363,6 +2628,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
         dailyStepTarget: currentCheckIn.recommendedStepTarget,
       })
       if (!settingsResult.ok) {
+        persistCutOsAction(cutOsSnapshot, 'coach', 'failed', settingsResult.error)
         reportError(settingsResult.error)
         return
       }
@@ -2370,6 +2636,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       const historyResult = markApplied()
       if (!historyResult.ok) {
         void updateSettings(settings)
+        persistCutOsAction(cutOsSnapshot, 'coach', 'failed', historyResult.error)
         reportError(historyResult.error)
         return
       }
@@ -2387,6 +2654,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
         },
       })
 
+      persistCutOsAction(cutOsSnapshot, 'coach', 'applied')
       reportError(null)
       return
     }
@@ -2394,6 +2662,10 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     if (currentCheckIn.decisionType === 'review_phase_structure') {
       const intent = resolvePhaseReviewIntent(currentCheckIn)
       if (!intent) {
+        persistCutOsAction(cutOsSnapshot, 'phase', 'failed', {
+          code: 'phaseReviewMissing',
+          message: 'No upcoming refeed or high-carb day is available to review in the next 14 days.',
+        })
         reportError('No upcoming refeed or high-carb day is available to review in the next 14 days.')
         return
       }
@@ -2402,6 +2674,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       guardedTabChange('settings')
       const historyResult = markApplied()
       if (!historyResult.ok) {
+        persistCutOsAction(cutOsSnapshot, 'phase', 'failed', historyResult.error)
         reportError(historyResult.error)
         return
       }
@@ -2418,6 +2691,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
         },
       })
 
+      persistCutOsAction(cutOsSnapshot, 'phase', 'applied')
       reportError(null)
       return
     }
@@ -2437,6 +2711,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       fatTarget: currentCheckIn.recommendedMacroTargets.fat,
     })
     if (!settingsResult.ok) {
+      persistCutOsAction(cutOsSnapshot, 'coach', 'failed', settingsResult.error)
       reportError(settingsResult.error)
       return
     }
@@ -2444,6 +2719,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     const historyResult = markApplied()
     if (!historyResult.ok) {
       void updateSettings(settings)
+      persistCutOsAction(cutOsSnapshot, 'coach', 'failed', historyResult.error)
       reportError(historyResult.error)
       return
     }
@@ -2461,6 +2737,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       },
     })
 
+    persistCutOsAction(cutOsSnapshot, 'coach', 'applied')
     reportError(null)
   }
 
@@ -2477,10 +2754,12 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   function handleDeferCutReview(): void {
     const result = markDeferred()
     if (!result.ok) {
+      persistCutOsAction(cutOsSnapshot, 'coach', 'failed', result.error)
       reportError(result.error)
       return
     }
 
+    persistCutOsAction(cutOsSnapshot, 'coach', 'deferred')
     reportError(null)
   }
 
@@ -2762,6 +3041,8 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     getDayStatus,
     buildSnapshot,
     queueQuestion,
+    answerQuestionWithProof,
+    cutOsSurface: effectiveCutOsSnapshot,
     updateUiPrefs,
     updateSettings,
     updateCoachConfig,
@@ -3242,6 +3523,8 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
               garminSurface={garminSurface}
               workoutSnapshot={effectiveWorkoutSnapshot}
               cutCockpit={cutCockpit}
+              cutOsSnapshot={effectiveCutOsSnapshot}
+              cutOsActivation={cutOsActivation}
               settings={settings}
               cutModeEnabled={FEATURE_FLAGS.cutModeV1}
               morningSnapshot={morningPhoneSnapshot}
@@ -3266,6 +3549,10 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
               onDismissReviewItem={handleDismissReviewItem}
               onUpdateSettings={handleManualSettingsUpdate}
               onOpenAdaptiveReview={() => guardedTabChange('coach')}
+              onActivateCutOsTarget={handleCutOsAction}
+              onActivateCutOsAction={handleCutOsActivationAction}
+              onStartCutOsDemo={handleStartCutOsDemo}
+              onExitCutOsDemo={handleExitCutOsDemo}
             />
           ) : null}
 
@@ -3285,6 +3572,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
               recommendationDismissed={recommendationDismissed}
               settings={settings}
               cutDayPlan={selectedDateCutDayPlan}
+              cutOsSnapshot={selectedDate === todayDateKey ? effectiveCutOsSnapshot : null}
               onChangeDate={setSelectedDate}
               onChangeDayStatus={handleChangeDayStatus}
               onToggleDayMarker={handleToggleDayMarker}
@@ -3310,6 +3598,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
               onAdjustEntryServings={foodEntryController.handleAdjustEntryServings}
               onDeleteEntry={foodEntryController.handleDeleteEntry}
               onOpenSettings={openSettingsTab}
+              onActivateCutOsTarget={handleCutOsAction}
             />
           ) : null}
 
@@ -3331,6 +3620,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 }
                 cutDayPlan={todayCutDayPlan}
                 previewPsmfGarminUiState={previewPsmfGarminUiState}
+                cutOsSnapshot={effectiveCutOsSnapshot}
                 onSaveWeight={(date, weight, unit) => {
                   const result = saveWeight(date, weight, unit)
                   if (!result.ok) {
@@ -3360,6 +3650,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 }
                 onOpenCoach={() => setActiveTab('coach')}
                 onOpenSettings={openSettingsTab}
+                onActivateCutOsTarget={handleCutOsAction}
               />
             </Suspense>
           ) : null}
@@ -3405,6 +3696,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 onToggleCitationsExpanded={coachController.handleToggleCitationsExpanded}
                 onSetProvider={coachController.handleSetProvider}
                 currentCheckIn={visibleCurrentCheckIn}
+                cutOsSnapshot={effectiveCutOsSnapshot}
                 fastCheckInEnabled={settings.fastCheckInPreference?.enabled ?? true}
                 lastFastCheckInRun={settings.lastFastCheckInRun}
                 onRunFastCheckIn={() => handleRunFastCheckIn('coach')}
@@ -3471,8 +3763,10 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
                 recoveryCheckInToday={todayRecoveryCheckIn}
                 garminBusy={garmin.busy}
                 initializationError={initializationError}
+                settingsFocusRequest={settingsFocusRequest}
                 getFoodReferenceCount={getFoodReferenceCount}
                 onUpdateSettings={handleManualSettingsUpdate}
+                onConsumeSettingsFocusRequest={consumeSettingsFocusRequest}
                 phaseReviewIntent={phaseReviewIntent}
                 onClearPhaseReviewIntent={() => setPhaseReviewIntent(null)}
                 onStartPsmfPhase={handleStartPsmfPhase}
@@ -3613,6 +3907,11 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
               foodEntryController.foodSheetContext.kind === 'add'
                 ? foodEntryController.foodSheetContext.captureSource ?? null
                 : null
+            }
+            initialMode={
+              foodEntryController.foodSheetContext.kind === 'add'
+                ? foodEntryController.foodSheetContext.initialMode ?? 'browse'
+                : 'browse'
             }
             isOnline={networkStatus === 'online'}
             captureConvenienceEnabled={FEATURE_FLAGS.captureConvenienceV1}

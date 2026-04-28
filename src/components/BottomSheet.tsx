@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { recordDiagnosticsEvent } from '../utils/diagnostics'
 
 interface BottomSheetProps {
   open: boolean
@@ -42,6 +43,16 @@ export function BottomSheet({
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false)
   const sheetRef = useRef<HTMLDivElement | null>(null)
   const discardDialogRef = useRef<HTMLDivElement | null>(null)
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+
+  const requestClose = useCallback(() => {
+    if (isDirty) {
+      setShowDiscardConfirm(true)
+      return
+    }
+
+    onClose()
+  }, [isDirty, onClose])
 
   useEffect(() => {
     if (!open) {
@@ -49,10 +60,13 @@ export function BottomSheet({
     }
 
     const previousOverflow = document.body.style.overflow
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     document.body.style.overflow = 'hidden'
 
     return () => {
       document.body.style.overflow = previousOverflow
+      previousFocusRef.current?.focus()
+      previousFocusRef.current = null
     }
   }, [open])
 
@@ -72,6 +86,17 @@ export function BottomSheet({
     }
 
     function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (showDiscardConfirm) {
+          setShowDiscardConfirm(false)
+          return
+        }
+
+        requestClose()
+        return
+      }
+
       if (event.key !== 'Tab') {
         return
       }
@@ -110,16 +135,7 @@ export function BottomSheet({
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open, showDiscardConfirm])
-
-  function requestClose(): void {
-    if (isDirty) {
-      setShowDiscardConfirm(true)
-      return
-    }
-
-    onClose()
-  }
+  }, [open, requestClose, showDiscardConfirm])
 
   if (!open) {
     return null
@@ -133,11 +149,13 @@ export function BottomSheet({
     >
       <div
         ref={sheetRef}
-        className="max-h-[92vh] w-full max-w-[480px] overflow-hidden rounded-[32px] border border-white/10 bg-white/95 shadow-2xl dark:bg-slate-950/95"
+        className="relative z-0 max-h-[92vh] w-full max-w-[480px] overflow-hidden rounded-[32px] border border-white/10 bg-white/95 shadow-2xl dark:bg-slate-950/95"
         onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        aria-hidden={showDiscardConfirm ? true : undefined}
+        inert={showDiscardConfirm ? true : undefined}
       >
         <div className="flex justify-center py-3">
           <div className="h-1.5 w-14 rounded-full bg-slate-300 dark:bg-slate-700" />
@@ -162,7 +180,7 @@ export function BottomSheet({
       </div>
 
       {showDiscardConfirm ? (
-        <div className="fixed inset-0 z-10 flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
           <div
             ref={discardDialogRef}
             className="w-full max-w-sm rounded-[28px] border border-white/10 bg-white/95 p-5 shadow-2xl dark:bg-slate-950/95"
@@ -184,6 +202,13 @@ export function BottomSheet({
                 className="action-button flex-1"
                 onClick={() => {
                   setShowDiscardConfirm(false)
+                  void recordDiagnosticsEvent({
+                    eventType: 'ui.bottom_sheet.discard_confirmed',
+                    severity: 'info',
+                    scope: 'diagnostics',
+                    recordKey: title,
+                    message: `Discarded dirty bottom sheet: ${title}`,
+                  })
                   onClose()
                 }}
               >

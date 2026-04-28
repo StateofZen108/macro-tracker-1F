@@ -35,6 +35,7 @@ export default defineConfig(({ mode }) => {
       __APP_BUILD_ID__: JSON.stringify(appBuildId),
     },
     build: {
+      chunkSizeWarningLimit: 1400,
       rollupOptions: {
         output: {
           manualChunks(id) {
@@ -47,6 +48,14 @@ export default defineConfig(({ mode }) => {
 
             if (id.includes('src/components/FoodForm')) {
               return 'food-form'
+            }
+
+            if (id.includes('src/domain/coachProofAnswer')) {
+              return 'coach-proof-answer'
+            }
+
+            if (id.includes('src/domain/cutOsActivation')) {
+              return 'cut-os-activation'
             }
 
             if (
@@ -119,6 +128,7 @@ export default defineConfig(({ mode }) => {
         },
         injectManifest: {
           globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+          globIgnores: ['**/heic2any-*.js'],
         },
       }),
     ],

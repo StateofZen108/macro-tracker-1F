@@ -69,6 +69,10 @@ export interface FeatureFlags {
   motionSystemV1: boolean
   adaptiveCutIntelligenceV1: boolean
   adaptiveCutReviewSurfaceV1: boolean
+  paidCutOsV1: boolean
+  cutOsImportFocusV1: boolean
+  coachProofAnswerV1: boolean
+  macroFactorCorpusGateV1: boolean
 }
 
 export function resolveFeatureFlag(
@@ -167,6 +171,10 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     motionSystemV1: resolveFeatureFlag(env.VITE_FF_MOTION_SYSTEM_V1, mode),
     adaptiveCutIntelligenceV1: resolveFeatureFlag(env.VITE_FF_ADAPTIVE_CUT_INTELLIGENCE_V1, mode),
     adaptiveCutReviewSurfaceV1: resolveFeatureFlag(env.VITE_FF_ADAPTIVE_CUT_REVIEW_SURFACE_V1, mode),
+    paidCutOsV1: resolveFeatureFlag(env.VITE_FF_PAID_CUT_OS_V1, mode),
+    cutOsImportFocusV1: resolveFeatureFlag(env.VITE_FF_CUT_OS_IMPORT_FOCUS_V1, mode),
+    coachProofAnswerV1: resolveFeatureFlag(env.VITE_FF_COACH_PROOF_ANSWER_V1, mode),
+    macroFactorCorpusGateV1: resolveFeatureFlag(env.VITE_FF_MACRO_FACTOR_CORPUS_GATE_V1, mode),
   }
 
   if (!resolvedFlags.catalogProviderV2) {
@@ -364,6 +372,23 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
 
   if (!resolvedFlags.adaptiveCutIntelligenceV1) {
     resolvedFlags.adaptiveCutReviewSurfaceV1 = false
+  }
+
+  if (
+    !resolvedFlags.commandSurfaceV2 ||
+    !resolvedFlags.adaptiveCutIntelligenceV1 ||
+    !resolvedFlags.trainingPreservationV1 ||
+    !resolvedFlags.progressProofV2 ||
+    !resolvedFlags.foodTruthV2 ||
+    !resolvedFlags.cutDayOsV1
+  ) {
+    resolvedFlags.paidCutOsV1 = false
+  }
+
+  if (!resolvedFlags.paidCutOsV1) {
+    resolvedFlags.cutOsImportFocusV1 = false
+    resolvedFlags.coachProofAnswerV1 = false
+    resolvedFlags.macroFactorCorpusGateV1 = false
   }
 
   return resolvedFlags

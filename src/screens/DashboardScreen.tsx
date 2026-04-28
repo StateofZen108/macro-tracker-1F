@@ -2,6 +2,8 @@ import { ArrowDown, ArrowUp, EyeOff, Settings2 } from 'lucide-react'
 import { CutReviewCard } from '../components/CutReviewCard'
 import { useMemo, useState } from 'react'
 import { ScreenHeader } from '../components/ScreenHeader'
+import { CutOsActivationCard } from '../components/cut-os/CutOsActivationCard'
+import { CutOsCommandCard } from '../components/cut-os/CutOsCommandCard'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import type {
   ActionResult,
@@ -9,9 +11,12 @@ import type {
   BodyProgressSnapshot,
   CaptureConvenienceSource,
   CheckInRecord,
-  CommandConfidence,
   CoreClaimSnapshot,
   CutCockpitSnapshot,
+  CutOsActivationAction,
+  CutOsActivationModel,
+  CutOsActionTarget,
+  CutOsSurfaceModel,
   DashboardInsightSetting,
   DashboardSectionId,
   DashboardSectionLayout,
@@ -32,6 +37,8 @@ interface DashboardScreenProps {
   garminSurface: GarminSurfaceSnapshot
   workoutSnapshot: WorkoutDashboardSnapshot
   cutCockpit: CutCockpitSnapshot | null
+  cutOsSnapshot?: CutOsSurfaceModel | null
+  cutOsActivation?: CutOsActivationModel | null
   settings: UserSettings
   cutModeEnabled?: boolean
   morningSnapshot?: MorningPhoneSnapshot | null
@@ -50,6 +57,10 @@ interface DashboardScreenProps {
   onDismissReviewItem: (reviewItemId: string) => void
   onUpdateSettings: (settings: UserSettings) => ActionResult<void>
   onOpenAdaptiveReview?: () => void
+  onActivateCutOsTarget?: (target: CutOsActionTarget) => void
+  onActivateCutOsAction?: (action: CutOsActivationAction) => void
+  onStartCutOsDemo?: () => void
+  onExitCutOsDemo?: () => void
 }
 
 const DEFAULT_ORDER: DashboardSectionId[] = ['coach', 'nutrition', 'food_review', 'garmin', 'workouts', 'body_progress', 'benchmark']
@@ -61,6 +72,8 @@ export function DashboardScreen({
   garminSurface,
   workoutSnapshot,
   cutCockpit,
+  cutOsSnapshot = null,
+  cutOsActivation = null,
   settings,
   cutModeEnabled = false,
   morningSnapshot = null,
@@ -79,6 +92,10 @@ export function DashboardScreen({
   onDismissReviewItem,
   onUpdateSettings,
   onOpenAdaptiveReview,
+  onActivateCutOsTarget,
+  onActivateCutOsAction,
+  onStartCutOsDemo,
+  onExitCutOsDemo,
 }: DashboardScreenProps) {
   const [manageMode, setManageMode] = useState(false)
   const [showWhyToday, setShowWhyToday] = useState(false)
@@ -106,7 +123,7 @@ export function DashboardScreen({
     }
     return morningSnapshot.surfaceDensity
   }, [morningSnapshot])
-  const dashboardInsights = settings.dashboardInsights ?? []
+  const dashboardInsights = useMemo(() => settings.dashboardInsights ?? [], [settings.dashboardInsights])
   const insightMap = useMemo(() => {
     const map = new Map<DashboardSectionId, DashboardInsightSetting[]>()
     for (const insight of dashboardInsights) {
@@ -194,7 +211,7 @@ export function DashboardScreen({
     return dashboardInsights.find((insight) => insight.id === id)?.visible ?? true
   }
 
-  function confidenceBadgeTone(confidence: CommandConfidence): string {
+  function confidenceBadgeTone(confidence: MorningPhoneSnapshot['confidence']): string {
     switch (confidence) {
       case 'high':
         return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200'
@@ -276,6 +293,51 @@ export function DashboardScreen({
     return 'Open body progress review'
   }
 
+  function openCutOsAction(target: CutOsActionTarget): void {
+    if (onActivateCutOsTarget) {
+      onActivateCutOsTarget(target)
+      return
+    }
+
+    if (target === 'train') {
+      onOpenWorkouts()
+      return
+    }
+
+    if (target === 'coach') {
+      onOpenCoach()
+      return
+    }
+
+    if (target === 'weigh_in' || target === 'body_progress') {
+      onOpenWeight()
+      return
+    }
+
+    if (target === 'phase' || target === 'settings') {
+      onOpenSettings()
+      return
+    }
+
+    if (target === 'review_food') {
+      const firstPendingReviewItem = pendingReviewItems[0]
+      if (firstPendingReviewItem?.linkedEntryDate) {
+        onOpenLogDate(firstPendingReviewItem.linkedEntryDate)
+        return
+      }
+
+      onOpenSettings()
+      return
+    }
+
+    if (target === 'log') {
+      onOpenLogDate(cutOsSnapshot?.command.date ?? new Date().toISOString().slice(0, 10))
+      return
+    }
+
+    onOpenCoach()
+  }
+
   function renderSectionControls(sectionId: DashboardSectionId): React.ReactNode {
     if (!manageMode) {
       return null
@@ -333,6 +395,31 @@ export function DashboardScreen({
           </>
         }
       />
+
+      {cutOsActivation && onStartCutOsDemo && onExitCutOsDemo ? (
+        <CutOsActivationCard
+          model={cutOsActivation}
+          onActivateAction={
+            onActivateCutOsAction ??
+            ((action) => {
+              if (action.target) {
+                openCutOsAction(action.target)
+              }
+            })
+          }
+          onStartDemo={onStartCutOsDemo}
+          onExitDemo={onExitCutOsDemo}
+        />
+      ) : null}
+
+      {cutOsSnapshot && cutOsActivation?.state !== 'needs_proof' ? (
+        <CutOsCommandCard
+          model={cutOsSnapshot}
+          surface="dashboard"
+          onActivateTarget={openCutOsAction}
+          showHistory
+        />
+      ) : null}
 
       {morningSnapshot && commandHomeEnabled ? (
         <section className="app-card space-y-4 px-4 py-4">

@@ -71,6 +71,10 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - 7-day trend line and recent trend summary
 - Delete with undo
 - Ask Coach entry point from the weight view
+- Cut OS weekly decision bridge:
+  - one clean slow week holds with no apply action
+  - two clean slow weeks propose the step lever before a calorie cut
+  - Weight, Dashboard, Log, and Coach share the same command/proof/action model
 
 ### Local coaching
 
@@ -103,14 +107,16 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - provider scaffold selector
 - Current default behavior:
   - no provider is configured
-  - questions are stored locally
-  - the UI explains that the coach surface is ready but not connected
+  - proof-bound Cut OS answers are generated locally when a command/proof packet exists
+  - setup-incomplete questions get an insufficient-data answer instead of generic fat-loss advice
+  - live-provider questions can still be queued once provider fallback mode is used
 - Supported scaffold targets:
   - `none`
   - `gemini`
   - `openai`
   - `anthropic`
 - Backend scaffold exists under `server/coach`, but live model responses are not active until a provider is connected later
+- Cut OS evidence packet exports the same command, diagnosis, proof stack, setup checklist, active action, and action history shown elsewhere in the app
 
 ### Settings and recovery
 
@@ -138,6 +144,32 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - `replace` import
   - `merge` import
   - rollback backup before replace
+- Third-party history import:
+  - MacroFactor food-row and weight preview without storage initialization
+  - Cut OS activation deep-link into the MacroFactor import card with focus/file-picker handoff
+  - anonymized MacroFactor corpus fixtures for food+weight, weights-only, and unsupported day-total export shapes
+  - Renpho weight preview
+  - supplied local date overlap detection
+  - rollback snapshot required before apply
+
+### Cut OS command layer
+
+- Shared domain selector: `src/domain/cutOs.ts`
+- Action state machine: `src/domain/cutOsActions.ts`
+- Local action history repository: `src/utils/storage/cutOsActions.ts`
+- Cold-user activation model: `src/domain/cutOsActivation.ts`
+- Sealed demo activation state: `src/utils/storage/cutOsActivation.ts`
+- React surface model: `src/hooks/useCutOsSurface.ts`
+- Shared renderers:
+  - `src/components/cut-os/CutOsActivationCard.tsx`
+  - `src/components/cut-os/CutOsCommandCard.tsx`
+  - `src/components/cut-os/CutOsProofStack.tsx`
+  - `src/components/cut-os/CutOsSetupChecklist.tsx`
+  - `src/components/cut-os/CutOsActionHistory.tsx`
+- One model is rendered across Dashboard, Log, Weight, and Coach so the command, diagnosis ID, proof IDs, CTA target, and action status stay aligned.
+- Cold users see a first-viewport "Build your Cut OS in 10 minutes" activation card. It prioritizes MacroFactor import, a sealed sample-athlete demo, and the next proof needed before standard setup detail.
+- Tapping the MacroFactor import activation CTA opens Settings directly on the MacroFactor import control. If the browser blocks automatic file-picker open, the import button remains focused and visible.
+- Demo mode is read-only against real stores: it renders a synthetic `CutOsSurfaceModel` across the app and only writes `mt_cut_os_activation`.
 
 ### Reliability and platform behavior
 
@@ -161,7 +193,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 
 - Garmin or other wearable integrations
 - Open Food Facts text search
-- Live Ask Coach answers from a configured AI provider
+- Live Ask Coach answers from a configured AI provider. Local proof-bound Cut OS answers ship without provider setup.
 - Offline nutrition-label OCR
 
 Cross-device sync intentionally does **not** yet include:
@@ -207,6 +239,7 @@ Persistent keys currently include:
 - `mt_sync_state`
 - `mt_sync_queue`
 - `mt_sync_dead_letter`
+- `mt_cut_os_actions`
 - `mt_device_id`
 - `mt_log_YYYY-MM-DD`
 - `mt_recovery_backup`
@@ -287,6 +320,8 @@ Run lint:
 npm run lint
 ```
 
+`npm run lint` is configured with `--max-warnings=0`; warnings fail release just like errors.
+
 Run the generic dev-server mobile regression suite:
 
 ```bash
@@ -324,6 +359,31 @@ Run the release signoff gate:
 ```bash
 npm run test:release
 ```
+
+The Cut OS 10/10 release predicate is stricter than a plain build:
+
+```powershell
+npm run lint
+$env:VITE_APP_BUILD_ID='cut-os-10-final'; npm run build
+npm run test:bundle
+npm run test:history-import:corpus
+npm run test:unit
+npx playwright test tests/e2e --config=playwright.config.ts
+npm run test:release
+```
+
+Required release qualities:
+
+- `npm run lint` prints 0 warnings.
+- `npm run build` prints 0 Vite chunk warnings.
+- `npm run test:bundle` enforces first-load, food acquisition, main gzip, and HEIC chunk budgets.
+- `npm run test:history-import:corpus` proves anonymized MacroFactor food+weight, weights-only, and unsupported export shapes.
+- HEIC conversion stays out of the PWA app-shell precache.
+- Full Playwright E2E has 0 failures and no max-update-depth console errors.
+- `docs/device-qa-runbook.md` must be completed on a physical Android or iOS device before paid release signoff.
+- Release hygiene requires unknown untracked source files to be staged, ignored, or explicitly documented; local `tmp/` scratch is ignored.
+
+See `docs/cut-os-runbook.md`, `docs/device-qa-runbook.md`, and `docs/qa-10-scorecard.md` for the handoff runbook and scorecard.
 
 ## Environment variables
 

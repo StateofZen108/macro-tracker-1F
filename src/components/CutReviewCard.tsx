@@ -52,7 +52,7 @@ export function CutReviewCard({
   onDefer,
   onOpenCoach,
 }: CutReviewCardProps) {
-  const showCoachActions = variant === 'coach'
+  const showReviewActions = variant === 'coach' || variant === 'weight'
   const showCoachLink = variant === 'dashboard' && onOpenCoach
 
   return (
@@ -109,11 +109,11 @@ export function CutReviewCard({
         ))}
       </div>
 
-      {showCoachActions ? (
+      {showReviewActions ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {card.state !== 'accepted' && onApply ? (
+          {card.state !== 'accepted' && card.applyLabel && onApply ? (
             <button type="button" className="action-button" onClick={onApply}>
-              {card.applyLabel ?? 'Apply review'}
+              {card.applyLabel}
             </button>
           ) : null}
           {card.state !== 'accepted' && onDefer ? (

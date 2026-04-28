@@ -1,0 +1,4 @@
+Date,Meal,Food Name,Brand,Serving Quantity,Serving Unit,Servings,Calories,Protein,Carbs,Fat,Fiber,Barcode,Logged At
+2026-03-01,Breakfast,Skyr Plain,Anon Dairy,170,g,1,120,22,7,0,0,,2026-03-01T08:03:00Z
+2026-03-01,Lunch,Chicken Breast,Anon Kitchen,100,g,1.75,165,31,0,3.6,0,123456789012,2026-03-01T12:41:00Z
+2026-03-02,Dinner,Potato,Anon Produce,250,g,1,190,5,43,0.2,4.5,,2026-03-02T19:12:00Z

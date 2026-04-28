@@ -282,6 +282,10 @@ async function goToLog(page: Page) {
   await clickNavButton(page, /^log$/i)
 }
 
+async function goToHome(page: Page) {
+  await clickNavButton(page, /^home$/i)
+}
+
 function entryRow(page: Page, name: string) {
   return page.locator('[data-entry-id]').filter({ hasText: name }).first()
 }
@@ -299,6 +303,7 @@ export {
   getSelectedFoodServingMeta,
   getSettingsCalorieTargetInput,
   getSettingsTargetsForm,
+  goToHome,
   goToLog,
   goToSettings,
   goToWeight,

@@ -3,6 +3,7 @@ import { goToLog } from './app'
 
 type CoachWave1Scenario =
   | 'standard_cut_actionable'
+  | 'standard_cut_one_clean_hold'
   | 'standard_cut_personal_floor_clamp'
   | 'psmf_no_further_decrease'
   | 'fat_loss_mode_stabilization_hold'
@@ -418,6 +419,11 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
       nextDate.setDate(weekEnd.getDate() - (20 - index))
       return formatDateKey(nextDate)
     })
+    const proofWindowDates = Array.from({ length: 28 }, (_, index) => {
+      const nextDate = new Date(weekEnd)
+      nextDate.setDate(weekEnd.getDate() - (27 - index))
+      return formatDateKey(nextDate)
+    })
 
     const clearStorage = () => {
       for (const key of Object.keys(window.localStorage)) {
@@ -431,6 +437,9 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
       window.localStorage.removeItem('mt_checkin_history')
       window.localStorage.removeItem('mt_coach_decisions')
       window.localStorage.removeItem('mt_preview_psmf_garmin_ui')
+      window.localStorage.removeItem('mt_workout_programs')
+      window.localStorage.removeItem('mt_workout_sessions')
+      window.localStorage.removeItem('mt_progression_decisions')
     }
 
     const settings = JSON.parse(window.localStorage.getItem('mt_settings') ?? '{}')
@@ -464,6 +473,7 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
     const scenarioSettings = (() => {
       switch (selectedScenario) {
         case 'standard_cut_actionable':
+        case 'standard_cut_one_clean_hold':
           return baseSettings
         case 'standard_cut_personal_floor_clamp':
           return {
@@ -505,6 +515,7 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
     const previewState: PsmfGarminPreviewUiState = (() => {
       switch (selectedScenario) {
         case 'standard_cut_actionable':
+        case 'standard_cut_one_clean_hold':
           return {
             dietPhase: { kind: 'no_active_phase' },
             recovery: { severity: 'green' },
@@ -592,10 +603,84 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
     })()
 
     const phaseEventSeed: Array<Record<string, unknown>> = []
+    const workoutProgramSeed = [
+      {
+        id: 'seed-strength-program',
+        name: 'Cut strength contract',
+        goal: 'strength_preservation',
+        templates: [
+          {
+            id: 'seed-upper-template',
+            programId: 'seed-strength-program',
+            name: 'Upper anchor',
+            slotKey: 'upper-a',
+            exercises: [
+              {
+                id: 'seed-bench-press',
+                name: 'Bench press',
+                muscleGroup: 'chest',
+                targetSets: 3,
+                targetReps: 5,
+                targetLoad: 225,
+                rir: 2,
+                restSeconds: 180,
+              },
+              {
+                id: 'seed-row',
+                name: 'Chest-supported row',
+                muscleGroup: 'back',
+                targetSets: 3,
+                targetReps: 8,
+                targetLoad: 185,
+                rir: 2,
+                restSeconds: 150,
+              },
+            ],
+            createdAt: `${windowDates[13]}T09:00:00.000Z`,
+            updatedAt: `${windowDates[20]}T09:00:00.000Z`,
+          },
+        ],
+        createdAt: `${windowDates[13]}T09:00:00.000Z`,
+        updatedAt: `${windowDates[20]}T09:00:00.000Z`,
+      },
+    ]
+    const workoutSessionSeed = [
+      {
+        id: `seed-strength-session-${windowDates[20]}`,
+        programId: 'seed-strength-program',
+        templateId: 'seed-upper-template',
+        slotKey: 'upper-a',
+        date: windowDates[20],
+        createdAt: `${windowDates[20]}T18:00:00.000Z`,
+        updatedAt: `${windowDates[20]}T19:00:00.000Z`,
+        completedAt: `${windowDates[20]}T19:00:00.000Z`,
+        exercises: [
+          {
+            templateExerciseId: 'seed-bench-press',
+            name: 'Bench press',
+            sets: [
+              { reps: 5, load: 225, rir: 2 },
+              { reps: 5, load: 225, rir: 2 },
+              { reps: 5, load: 225, rir: 2 },
+            ],
+          },
+          {
+            templateExerciseId: 'seed-row',
+            name: 'Chest-supported row',
+            sets: [
+              { reps: 8, load: 185, rir: 2 },
+              { reps: 8, load: 185, rir: 2 },
+              { reps: 8, load: 185, rir: 2 },
+            ],
+          },
+        ],
+      },
+    ]
 
     const weightForScenario = () => {
       switch (selectedScenario) {
         case 'standard_cut_actionable':
+        case 'standard_cut_one_clean_hold':
         case 'standard_cut_personal_floor_clamp':
         case 'psmf_no_further_decrease':
         case 'fat_loss_mode_stabilization_hold':
@@ -623,27 +708,105 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
       },
     })
 
-    const dayMeta = windowDates.map((dateKey, index) => ({
+    const eligibleProofDates =
+      selectedScenario === 'standard_cut_one_clean_hold' ? proofWindowDates.slice(7) : proofWindowDates
+    const dayMeta = eligibleProofDates.map((dateKey, index) => ({
       date: dateKey,
       status: 'complete',
       updatedAt: new Date(today.getTime() - index * 15000).toISOString(),
     }))
-    const activityLog = windowDates.map((dateKey, index) => ({
+    const activityLog = eligibleProofDates.map((dateKey, index) => ({
       date: dateKey,
       steps: 9000,
       cardioMinutes: 20,
       cardioType: 'walk',
       updatedAt: new Date(today.getTime() - index * 10000).toISOString(),
     }))
-    const weights = windowDates.map((dateKey) => ({
+    const weights = eligibleProofDates.map((dateKey) => ({
       id: `${selectedScenario}-weight-${dateKey}`,
       date: dateKey,
       weight: weightForScenario(),
       unit: 'lb',
       createdAt: `${dateKey}T07:00:00.000Z`,
     }))
+    const cleanDataQuality = {
+      score: 96,
+      band: 'high',
+      eligibleDays: 7,
+      weighInDays: 7,
+      explicitEligibleDays: 7,
+      completeDays: 7,
+      partialDays: 0,
+      fastingDays: 0,
+      unmarkedLoggedDays: 0,
+      markedConfounderDays: 0,
+      recentlyImported: false,
+      recoveryIssueCount: 0,
+    }
+    const cleanAdherence = {
+      isAdequate: true,
+      calorieDeviationPercent: 0,
+      proteinHitRate: 1,
+      stepAdherencePercent: 112,
+      cardioAdherencePercent: 117,
+      reasons: [],
+    }
+    const cleanConfounders = {
+      reasons: [],
+      explicitMarkers: [],
+      hasRecentImport: false,
+      hasInterventionChange: false,
+      hasRecoveryIssues: false,
+      hasPartialLogging: false,
+      hasMissingWeighIns: false,
+      hasTravel: false,
+      hasIllness: false,
+      hasHighCalorieEvent: false,
+      highCalorieEventDays: 0,
+    }
+    const checkInHistory =
+      selectedScenario === 'standard_cut_actionable'
+        ? [
+            {
+              id: `checkin:${windowDates[13]}`,
+              weekEndDate: windowDates[13],
+              weekStartDate: windowDates[7],
+              nextCheckInDate: windowDates[20],
+              priorWeekStartDate: windowDates[0],
+              priorWeekEndDate: windowDates[6],
+              goalMode: 'lose',
+              targetWeeklyRatePercent: scenarioSettings.targetWeeklyRatePercent,
+              actualWeeklyRatePercent: -0.12,
+              avgCalories: scenarioSettings.calorieTarget,
+              avgProtein: scenarioSettings.proteinTarget,
+              avgSteps: 9000,
+              weeklyCardioMinutes: 140,
+              stepAdherencePercent: 112,
+              cardioAdherencePercent: 117,
+              avgWeight: weightForScenario(),
+              priorAvgWeight: weightForScenario(),
+              recommendedStepDelta: 1500,
+              recommendedStepTarget: 9500,
+              recommendationReason: 'Prior clean slow week confirmed a stall.',
+              recommendationExplanation:
+                'The previous proof window was clean, adherence was inside bounds, and weight loss was materially below target.',
+              confidenceBand: 'high',
+              confidenceScore: 92,
+              decisionType: 'increase_steps',
+              reviewVerdict: 'true_stall',
+              reasonCodes: ['true_stall', 'raise_steps_first'],
+              blockedReasons: [],
+              dataQuality: cleanDataQuality,
+              adherence: cleanAdherence,
+              confounders: cleanConfounders,
+              status: 'ready',
+              createdAt: `${windowDates[13]}T09:00:00.000Z`,
+              updatedAt: `${windowDates[13]}T09:00:00.000Z`,
+            },
+          ]
+        : []
 
-    for (const [index, dateKey] of windowDates.entries()) {
+    for (const [index, dateKey] of eligibleProofDates.entries()) {
       window.localStorage.setItem(`mt_log_${dateKey}`, JSON.stringify([buildLogEntry(dateKey, index)]))
     }
 
@@ -651,9 +814,13 @@ async function seedCoachWave1Scenario(page: Page, scenario: CoachWave1Scenario) 
     window.localStorage.setItem('mt_day_meta', JSON.stringify(dayMeta))
     window.localStorage.setItem('mt_activity_log', JSON.stringify(activityLog))
     window.localStorage.setItem('mt_weights', JSON.stringify(weights))
+    window.localStorage.setItem('mt_checkin_history', JSON.stringify(checkInHistory))
     window.localStorage.setItem('mt_diet_phases', JSON.stringify(phaseSeed))
     window.localStorage.setItem('mt_diet_phase_events', JSON.stringify(phaseEventSeed))
     window.localStorage.setItem('mt_preview_psmf_garmin_ui', JSON.stringify(previewState))
+    window.localStorage.setItem('mt_workout_programs', JSON.stringify(workoutProgramSeed))
+    window.localStorage.setItem('mt_workout_sessions', JSON.stringify(workoutSessionSeed))
+    window.localStorage.setItem('mt_progression_decisions', JSON.stringify([]))
   }, scenario)
 
   await clearSeededPersistentStores(page)

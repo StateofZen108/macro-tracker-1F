@@ -40,13 +40,14 @@ import {
 } from '../utils/ocrReview'
 import { BottomSheet } from './BottomSheet'
 import { BrowsePane } from './add-food/BrowsePane'
-import { describeFood } from './add-food/helpers'
 import type { RepeatMealCandidate } from './add-food/types'
 import type { LabelReviewValues } from './LabelReviewSheet'
 
 type ScannerControls = {
   stop: () => void
 }
+
+type AddFoodInitialMode = 'browse' | 'scanner' | 'ocr' | 'custom'
 
 const FoodForm = lazy(async () => {
   const module = await import('./FoodForm')
@@ -69,6 +70,7 @@ interface AddFoodSheetProps {
   mealLabel?: MealType
   entryContext?: 'meal_slot' | 'global_add'
   initialCaptureSource?: CaptureConvenienceSource | null
+  initialMode?: AddFoodInitialMode
   foods: Food[]
   foodCatalogSearchEnabled?: boolean
   savedMeals: SavedMeal[]
@@ -299,6 +301,7 @@ export function AddFoodSheet({
   mealLabel,
   entryContext = 'meal_slot',
   initialCaptureSource = null,
+  initialMode = 'browse',
   foods,
   foodCatalogSearchEnabled = true,
   savedMeals,
@@ -340,6 +343,7 @@ export function AddFoodSheet({
   const mealPhotoInputRef = useRef<HTMLInputElement | null>(null)
   const pendingBrowseRestoreRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
   const handledInitialCaptureRef = useRef<string | null>(null)
+  const handledInitialModeRef = useRef<string | null>(null)
 
   const [sheetMode, setSheetMode] = useState<SheetMode>('browse')
   const [query, setQuery] = useState('')
@@ -380,7 +384,7 @@ export function AddFoodSheet({
   const personalLibraryEnabled = FEATURE_FLAGS.personalLibraryV1 && foodCatalogSearchEnabled
   const searchResults = searchFoods(debouncedQuery)
   const describeFoodEnabled = FEATURE_FLAGS.describeFood && foodCatalogSearchEnabled
-  const favoriteIdSet = new Set(favoriteFoodIds)
+  const favoriteIdSet = useMemo(() => new Set(favoriteFoodIds), [favoriteFoodIds])
   const shortQuery = debouncedQuery.trim().length < 3
   const quickFoods = useMemo(() => {
     if (debouncedQuery) {
@@ -1486,6 +1490,40 @@ export function AddFoodSheet({
     void runBarcodeLookup(barcode)
   })
 
+  const runInitialCaptureSource = useEffectEvent((source: CaptureConvenienceSource) => {
+    window.setTimeout(() => {
+      if (source === 'voice') {
+        handleStartVoiceCapture()
+        return
+      }
+
+      handleOpenMealPhotoCapture()
+    }, 0)
+  })
+
+  const runInitialMode = useEffectEvent((nextMode: AddFoodInitialMode) => {
+    window.setTimeout(() => {
+      if (nextMode === 'scanner') {
+        startFreshScanner()
+        return
+      }
+
+      if (nextMode === 'ocr') {
+        startFreshLabelCapture()
+        return
+      }
+
+      if (nextMode === 'custom') {
+        openFoodForm({
+          title: 'Create custom food',
+          submitLabel: 'Save custom food',
+          source: 'custom',
+          returnMode: 'browse',
+        })
+      }
+    }, 0)
+  })
+
   useEffect(() => {
     if (!open || sheetMode !== 'scanner' || lookupResult || isLookingUp || !videoRef.current) {
       return
@@ -1569,17 +1607,27 @@ export function AddFoodSheet({
     }
 
     handledInitialCaptureRef.current = captureKey
-    if (initialCaptureSource === 'voice') {
-      window.setTimeout(() => {
-        handleStartVoiceCapture()
-      }, 0)
+    runInitialCaptureSource(initialCaptureSource)
+  }, [captureConvenienceEnabled, entryContext, initialCaptureSource, mealLabel, mode, open])
+
+  useEffect(() => {
+    if (!open) {
+      handledInitialModeRef.current = null
       return
     }
 
-    window.setTimeout(() => {
-      handleOpenMealPhotoCapture()
-    }, 0)
-  }, [captureConvenienceEnabled, entryContext, initialCaptureSource, mealLabel, mode, open])
+    if (mode !== 'add' || initialMode === 'browse') {
+      return
+    }
+
+    const modeKey = `${initialMode}:${entryContext}:${mealLabel ?? 'none'}`
+    if (handledInitialModeRef.current === modeKey) {
+      return
+    }
+
+    handledInitialModeRef.current = modeKey
+    runInitialMode(initialMode)
+  }, [entryContext, initialMode, mealLabel, mode, open])
 
   function closeSheet(): void {
     stopScanner()
@@ -2287,234 +2335,6 @@ export function AddFoodSheet({
         </div>
       ) : (
         <div className="space-y-4">
-          {phaseTemplateLaneVisible ? (
-            <section className="space-y-3">
-              <SectionHeader
-                title="Phase template"
-                detail={`${phaseTemplateLane.dayTypeLabel} ready`}
-              />
-              <div className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-slate-900 dark:text-white">
-                      {phaseTemplateLane.templateLabel}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
-                      {phaseTemplateLane.state === 'pending_review'
-                        ? `Suggestion for ${phaseTemplateLane.seedSuggestion?.meal ?? mealLabel ?? 'today'}.`
-                        : phaseTemplateLane.state === 'empty'
-                          ? 'No accepted meal template exists yet for this cut day.'
-                          : `${phaseTemplateLane.mealCount} mapped meal${
-                              phaseTemplateLane.mealCount === 1 ? '' : 's'
-                            } for this cut day.`}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
-                    {phaseTemplateLane.dayTypeLabel}
-                  </span>
-                </div>
-                {phaseTemplateLane.state === 'pending_review' && phaseTemplateLane.seedSuggestion ? (
-                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
-                    Suggested seed: {phaseTemplateLane.seedSuggestion.savedMealName} for{' '}
-                    {phaseTemplateLane.seedSuggestion.meal}.
-                  </p>
-                ) : phaseTemplateLane.currentMeal ? (
-                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
-                    {phaseTemplateLane.currentMeal.meal}: {phaseTemplateLane.currentMeal.savedMealName}
-                  </p>
-                ) : (
-                  <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">
-                    Mapped for {phaseTemplateLane.meals.map((entry) => entry.meal).join(', ')}.
-                  </p>
-                )}
-                {phaseTemplateLane.secondaryHint ? (
-                  <p className="mt-2 text-xs uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
-                    {phaseTemplateLane.secondaryHint}
-                  </p>
-                ) : null}
-                {mode === 'add' ? (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {phaseTemplateLane.state === 'pending_review' ? (
-                      <>
-                        <button
-                          type="button"
-                          className="action-button w-full"
-                          onClick={() => handleReviewPhaseTemplateSeed('accept')}
-                        >
-                          Accept suggestion
-                        </button>
-                        <button
-                          type="button"
-                          className="action-button-secondary w-full"
-                          onClick={() => handleReviewPhaseTemplateSeed('reject')}
-                        >
-                          Not now
-                        </button>
-                      </>
-                    ) : phaseTemplateLane.state === 'empty' ? (
-                      <button
-                        type="button"
-                        className="action-button-secondary w-full sm:col-span-2"
-                        onClick={() => {
-                          onOpenPhaseTemplateSettings?.()
-                          closeSheet()
-                        }}
-                      >
-                        Choose saved meal
-                      </button>
-                    ) : phaseTemplateLane.currentMeal ? (
-                      <button
-                        type="button"
-                        className="action-button w-full"
-                        onClick={() => handleApplyPhaseTemplate('fill_meal')}
-                      >
-                        Fill {phaseTemplateLane.currentMeal.meal}
-                      </button>
-                    ) : null}
-                    {phaseTemplateLane.mealCount > 1 ? (
-                      <button
-                        type="button"
-                        className="action-button-secondary w-full"
-                        onClick={() => handleApplyPhaseTemplate('fill_day')}
-                      >
-                        Fill full day
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </section>
-          ) : null}
-          {mealAwareLaneVisible ? (
-            <section className="space-y-3">
-              <SectionHeader
-                title="Meal-aware quick log"
-                detail="Saved meals, repeats, favorites, and recents"
-              />
-              <div className="grid gap-3">
-                {mealAwareQuickLogItems.map((item) => {
-                  if (item.kind === 'saved_meal') {
-                    return (
-                      <div
-                        key={item.key}
-                        className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900 dark:text-white">{item.result.name}</p>
-                            <p className="text-sm text-slate-500 dark:text-slate-300">
-                              {Math.round(item.result.calories ?? 0)} cal | {Math.round(item.result.protein ?? 0)}P |{' '}
-                              {Math.round(item.result.carbs ?? 0)}C | {Math.round(item.result.fat ?? 0)}F
-                            </p>
-                          </div>
-                          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
-                            saved meal
-                          </span>
-                        </div>
-                        {mode === 'add' ? (
-                          <button
-                            type="button"
-                            className="action-button mt-3 w-full"
-                            onClick={() => handleApplySavedMealSelection(item.result.id)}
-                          >
-                            Review and apply
-                          </button>
-                        ) : null}
-                      </div>
-                    )
-                  }
-
-                  if (item.kind === 'repeat') {
-                    return (
-                      <div
-                        key={item.key}
-                        className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-900 dark:text-white">{item.food.name}</p>
-                            <p className="text-sm text-slate-500 dark:text-slate-300">
-                              {item.food.brand ? `${item.food.brand} - ` : ''}
-                              {item.food.servingSize}
-                              {item.food.servingUnit}
-                            </p>
-                          </div>
-                          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-teal-700 dark:bg-teal-500/10 dark:text-teal-200">
-                            repeat
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                          {describeFood(item.food)}
-                        </p>
-                        {mode === 'add' ? (
-                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            <button
-                              type="button"
-                              className="action-button w-full"
-                              onClick={() => submitFood(item.food, item.servings, true)}
-                            >
-                              Use last amount
-                            </button>
-                            <button
-                              type="button"
-                              className="action-button-secondary w-full"
-                              onClick={() => handleBrowseSelectFood(item.food.id)}
-                            >
-                              Review details
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div
-                      key={item.key}
-                      className="rounded-[24px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-900 dark:text-white">{item.food.name}</p>
-                          <p className="text-sm text-slate-500 dark:text-slate-300">
-                            {item.food.brand ? `${item.food.brand} - ` : ''}
-                            {item.food.servingSize}
-                            {item.food.servingUnit}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {favoriteIdSet.has(item.food.id) ? 'favorite' : 'recent'}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
-                        {describeFood(item.food)}
-                      </p>
-                      {mode === 'add' ? (
-                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                          <button
-                            type="button"
-                            className="action-button w-full"
-                            onClick={() => submitFood(item.food, 1, true)}
-                          >
-                            Add 1x
-                          </button>
-                          {canUseLastAmount(item.food) ? (
-                            <button
-                              type="button"
-                              className="action-button-secondary w-full"
-                              onClick={() => submitFood(item.food, item.food.lastServings ?? 1, true)}
-                            >
-                              Use last amount
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
-              </div>
-            </section>
-          ) : null}
           <BrowsePane
             mode={mode}
             query={query}
@@ -2638,6 +2458,75 @@ export function AddFoodSheet({
             discardMessage={discardMessage}
             onCancelDiscard={() => setDiscardAction(null)}
           />
+          {phaseTemplateLaneVisible ? (
+            <section className="space-y-3 rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
+              <SectionHeader title="Phase template" detail={`${phaseTemplateLane.dayTypeLabel} ready`} />
+              <div>
+                <p className="font-semibold text-slate-900 dark:text-white">
+                  {phaseTemplateLane.templateLabel}
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {phaseTemplateLane.state === 'pending_review'
+                    ? `Suggestion for ${phaseTemplateLane.seedSuggestion?.meal ?? mealLabel ?? 'today'}.`
+                    : phaseTemplateLane.state === 'empty'
+                      ? 'Choose a saved meal template when you want to speed up cut-day logging.'
+                      : `${phaseTemplateLane.mealCount} mapped meal${
+                          phaseTemplateLane.mealCount === 1 ? '' : 's'
+                        } for this cut day.`}
+                </p>
+              </div>
+              {mode === 'add' ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {phaseTemplateLane.state === 'pending_review' ? (
+                    <>
+                      <button
+                        type="button"
+                        className="action-button w-full"
+                        onClick={() => handleReviewPhaseTemplateSeed('accept')}
+                      >
+                        Accept suggestion
+                      </button>
+                      <button
+                        type="button"
+                        className="action-button-secondary w-full"
+                        onClick={() => handleReviewPhaseTemplateSeed('reject')}
+                      >
+                        Not now
+                      </button>
+                    </>
+                  ) : phaseTemplateLane.state === 'empty' ? (
+                    <button
+                      type="button"
+                      className="action-button-secondary w-full sm:col-span-2"
+                      onClick={() => {
+                        onOpenPhaseTemplateSettings?.()
+                        closeSheet()
+                      }}
+                    >
+                      Choose saved meal
+                    </button>
+                  ) : phaseTemplateLane.currentMeal ? (
+                    <button
+                      type="button"
+                      className="action-button w-full"
+                      onClick={() => handleApplyPhaseTemplate('fill_meal')}
+                    >
+                      Fill {phaseTemplateLane.currentMeal.meal}
+                    </button>
+                  ) : null}
+                  {phaseTemplateLane.mealCount > 1 ? (
+                    <button
+                      type="button"
+                      className="action-button-secondary w-full"
+                      onClick={() => handleApplyPhaseTemplate('fill_day')}
+                    >
+                      Fill full day
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
         </div>
       )}
     </BottomSheet>

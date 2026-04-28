@@ -4,11 +4,13 @@ import type {
   FoodSnapshot,
   HistoryImportFileKind,
   HistoryImportPreview,
+  HistoryImportPreviewOptions,
   HistoryImportProvider,
   HistoryImportWarning,
   ParsedHistoryPayload,
   WeightEntry,
 } from '../../types'
+import { buildMacrofactorReplayReport } from '../../domain/cutOs'
 import { formatDateKey } from '../dates'
 import { parseCsv } from '../import/csv'
 import { loadAllFoodLogs, saveFoodLog } from './logs'
@@ -561,6 +563,10 @@ function buildUnsupportedFileWarning(provider: HistoryImportProvider, fileName: 
 export async function previewHistoryImport(
   provider: HistoryImportProvider,
   files: HistoryImportSourceFile[],
+  options: HistoryImportPreviewOptions = {
+    localDates: new Set<string>(),
+    includeMacrofactorReplay: true,
+  },
 ): Promise<ActionResult<HistoryImportPreview>> {
   if (!files.length) {
     return fail('invalidHistoryImport', 'Select at least one file to preview.')
@@ -647,7 +653,7 @@ export async function previewHistoryImport(
     })
   }
 
-  return ok({
+  const preview: HistoryImportPreview = {
     provider,
     fileKinds: [...fileKinds.values()],
     counts: {
@@ -661,7 +667,16 @@ export async function previewHistoryImport(
     dateRange: summarizeDateRange(payload),
     warnings,
     payload,
-  })
+  }
+
+  if (provider === 'macrofactor' && options.includeMacrofactorReplay) {
+    preview.macrofactorReplayReport = buildMacrofactorReplayReport({
+      preview,
+      localDates: new Set(options.localDates),
+    }) ?? undefined
+  }
+
+  return ok(preview)
 }
 
 function mergeFoodEntries(

@@ -5,13 +5,16 @@ import type {
   CoachContextSnapshot,
   CoachFeedbackRating,
   CoachMode,
+  CoachProofAnswer,
   CoachProviderConfig,
   CoachQueuedQuestion,
   CoachState,
   CoachThreadState,
   CoachMessage,
   CoachFeedback,
+  CutOsSurfaceModel,
 } from '../types'
+import { buildCoachProofAnswer } from '../domain/coachProofAnswer'
 import {
   loadCoachConfig,
   loadCoachFeedback,
@@ -23,6 +26,7 @@ import {
   saveCoachThread,
 } from '../utils/storage/coach'
 import { subscribeToStorage } from '../utils/storage/core'
+import { recordDiagnosticsEvent } from '../utils/diagnostics'
 
 const STARTER_PROMPTS = [
   'Why did my weight jump today?',
@@ -171,6 +175,117 @@ export function useCoach(isOnline: boolean) {
     return ok(queuedQuestion)
   }
 
+  function answerQuestionWithProof(
+    question: string,
+    mode: CoachMode,
+    snapshot: CoachContextSnapshot,
+    cutOsSurface: CutOsSurfaceModel | null,
+  ): ActionResult<CoachProofAnswer> {
+    const trimmedQuestion = question.trim()
+    if (!trimmedQuestion) {
+      const result: ActionResult<CoachProofAnswer> = {
+        ok: false,
+        error: {
+          code: 'emptyQuestion',
+          message: 'Enter a coach question before sending it.',
+        },
+      }
+      setLastError(result.error)
+      return result
+    }
+
+    recordDiagnosticsEvent({
+      eventType: 'coach.proof_answer_snapshot_captured',
+      severity: 'info',
+      scope: 'diagnostics',
+      message: 'Coach proof answer captured a submit-time Cut OS snapshot.',
+      payload: {
+        selectedDate: snapshot.selectedDate,
+        diagnosisId: cutOsSurface?.command.diagnosisId ?? null,
+        commandState: cutOsSurface?.command.state ?? null,
+      },
+    })
+
+    const proofAnswer = buildCoachProofAnswer({
+      question: trimmedQuestion,
+      mode,
+      contextSnapshot: snapshot,
+      cutOsSurface,
+    })
+
+    const userMessage = buildMessage({
+      role: 'user',
+      content: trimmedQuestion,
+      mode,
+      state: 'ready',
+      contextUsed: [
+        `Selected date ${snapshot.selectedDate}`,
+        `${snapshot.recentDailyCalories.length} daily summaries`,
+        `${snapshot.recentWeights.length} recent weights`,
+        cutOsSurface ? 'Cut OS proof packet captured' : 'Cut OS proof packet missing',
+      ],
+    })
+
+    const assistantMessage = buildMessage({
+      role: 'assistant',
+      content: proofAnswer.answer,
+      mode,
+      state: 'ready',
+      answerType: proofAnswer.answerType,
+      citations: proofAnswer.citations,
+      proposals: proofAnswer.proposals,
+      safetyFlags: proofAnswer.safetyFlags,
+      contextUsed: proofAnswer.contextUsed,
+    })
+
+    const threadResult = appendThreadMessages(coachThread, [userMessage, assistantMessage])
+    if (!threadResult.ok) {
+      setLastError(threadResult.error)
+      recordDiagnosticsEvent({
+        eventType: 'coach.proof_answer_failed',
+        severity: 'error',
+        scope: 'diagnostics',
+        message: 'Coach proof answer could not be written to the thread.',
+        payload: {
+          error: threadResult.error.message,
+        },
+      })
+      return threadResult as ActionResult<CoachProofAnswer>
+    }
+
+    if (proofAnswer.safetyFlags.some((flag) => flag.id === 'cut-os-proof-citation-missing')) {
+      recordDiagnosticsEvent({
+        eventType: 'coach.proof_citation_missing',
+        severity: 'warning',
+        scope: 'diagnostics',
+        message: 'Coach proof answer omitted an unsupported proof claim.',
+        payload: {
+          diagnosisId: cutOsSurface?.command.diagnosisId ?? null,
+        },
+      })
+    }
+
+    recordDiagnosticsEvent({
+      eventType:
+        proofAnswer.answerType === 'insufficient-data'
+          ? 'coach.proof_answer_blocked'
+          : 'coach.proof_answer_generated',
+      severity: proofAnswer.answerType === 'insufficient-data' ? 'warning' : 'info',
+      scope: 'diagnostics',
+      message:
+        proofAnswer.answerType === 'insufficient-data'
+          ? 'Coach proof answer blocked escalation because proof was incomplete.'
+          : 'Coach proof answer generated from the Cut OS packet.',
+      payload: {
+        diagnosisId: cutOsSurface?.command.diagnosisId ?? null,
+        answerType: proofAnswer.answerType,
+      },
+    })
+
+    setLastError(null)
+    return ok(proofAnswer)
+  }
+
   function clearQueuedQuestion(questionId: string): ActionResult<void> {
     const result = saveCoachQueue(coachQueue.filter((entry) => entry.id !== questionId))
     setLastError(result.ok ? null : result.error)
@@ -226,6 +341,7 @@ export function useCoach(isOnline: boolean) {
     coachState,
     starterPrompts: [...STARTER_PROMPTS],
     queueQuestion,
+    answerQuestionWithProof,
     clearQueuedQuestion,
     clearThread,
     rateMessage,

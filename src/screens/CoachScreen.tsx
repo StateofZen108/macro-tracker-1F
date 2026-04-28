@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { ScreenHeader } from '../components/ScreenHeader'
 import { CoachMessageCard } from '../components/coach/CoachMessageCard'
 import { CutReviewCard } from '../components/CutReviewCard'
+import { CutOsActionHistory } from '../components/cut-os/CutOsActionHistory'
+import { CutOsProofStack } from '../components/cut-os/CutOsProofStack'
 import type {
   CoachActionProposal,
   CoachFeedback,
@@ -11,6 +13,7 @@ import type {
   CoachQueuedQuestion,
   CoachState,
   CheckInRecord,
+  CutOsSurfaceModel,
   CutDayPlan,
   FastCheckInRun,
   WorkoutActionCard,
@@ -43,6 +46,7 @@ interface CoachScreenProps {
   onOpenSettings?: () => void
   onApplyCutReview?: () => void
   onDeferCutReview?: () => void
+  cutOsSnapshot?: CutOsSurfaceModel | null
 }
 
 function stateCopy(state: CoachState): { title: string; description: string } {
@@ -124,6 +128,7 @@ export function CoachScreen({
   onOpenSettings,
   onApplyCutReview,
   onDeferCutReview,
+  cutOsSnapshot = null,
 }: CoachScreenProps) {
   const [question, setQuestion] = useState('')
   const feedbackByMessageId = useMemo(
@@ -131,6 +136,33 @@ export function CoachScreen({
     [feedback],
   )
   const stateBanner = stateCopy(coachState)
+
+  function exportCutOsPacket(): void {
+    if (!cutOsSnapshot) {
+      return
+    }
+
+    const content = JSON.stringify(
+      {
+        exportedAt: new Date().toISOString(),
+        command: cutOsSnapshot.command,
+        diagnosis: cutOsSnapshot.diagnosis,
+        proofs: cutOsSnapshot.proofs,
+        setup: cutOsSnapshot.setup,
+        actionHistory: cutOsSnapshot.actionHistory,
+        activeAction: cutOsSnapshot.activeAction,
+      },
+      null,
+      2,
+    )
+    const blob = new Blob([content], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `cut-os-packet-${cutOsSnapshot.command.date}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="space-y-4 pb-6">
@@ -140,6 +172,39 @@ export function CoachScreen({
         description={stateBanner.description}
         onOpenSettings={onOpenSettings}
       />
+
+      {cutOsSnapshot ? (
+        <section
+          className="app-card space-y-4 px-4 py-4"
+          data-testid="cut-os-coach-packet"
+          data-cut-os-diagnosis-id={cutOsSnapshot.command.diagnosisId}
+          data-cut-os-primary-action={cutOsSnapshot.command.primaryAction}
+          data-cut-os-proof-ids={cutOsSnapshot.command.proofIds.join(',')}
+          data-cut-os-action-status={cutOsSnapshot.activeAction?.status ?? 'none'}
+        >
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+                Cut OS evidence packet
+              </p>
+              <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">
+                {cutOsSnapshot.command.primaryAction}
+              </p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                {cutOsSnapshot.diagnosis.reasonCodes.length
+                  ? cutOsSnapshot.diagnosis.reasonCodes.join(', ').replaceAll('_', ' ')
+                  : 'No blockers in the current command.'}
+              </p>
+            </div>
+            <button type="button" className="action-button-secondary" onClick={exportCutOsPacket}>
+              Export packet
+            </button>
+          </div>
+
+          <CutOsProofStack proofs={cutOsSnapshot.proofs} />
+          <CutOsActionHistory records={cutOsSnapshot.actionHistory} />
+        </section>
+      ) : null}
 
       <section className="app-card space-y-4 px-4 py-4">
         {fastCheckInEnabled && currentCheckIn ? (

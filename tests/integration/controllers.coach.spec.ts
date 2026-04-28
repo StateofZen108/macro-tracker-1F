@@ -27,8 +27,19 @@ const uiPrefs: UiPrefs = {
 }
 
 describe('useCoachController', () => {
-  it('queues a question with a built snapshot and updates provider scaffold', () => {
+  it('answers with proof-bound local path and updates provider scaffold', () => {
     const queueQuestion = vi.fn(() => ({ ok: true as const, data: { id: 'queued', question: 'Why?', mode: 'standard', createdAt: '2026-04-11T10:00:00.000Z' } }))
+    const answerQuestionWithProof = vi.fn(() => ({
+      ok: true as const,
+      data: {
+        answer: 'Use the Cut OS packet.',
+        answerType: 'data-aware' as const,
+        citations: [],
+        proposals: [],
+        safetyFlags: [],
+        contextUsed: [],
+      },
+    }))
     const updateCoachConfig = vi.fn(() => ({ ok: true as const, data: undefined }))
     const buildSnapshot = vi.fn((snapshot: CoachContextSnapshot) => snapshot)
 
@@ -74,6 +85,8 @@ describe('useCoachController', () => {
         getDayStatus: () => 'complete',
         buildSnapshot,
         queueQuestion,
+        answerQuestionWithProof,
+        cutOsSurface: null,
         updateUiPrefs: vi.fn(() => ({ ok: true as const, data: undefined })),
         updateSettings: vi.fn(() => ({ ok: true as const, data: undefined })),
         updateCoachConfig,
@@ -93,7 +106,8 @@ describe('useCoachController', () => {
       result.current.handleCoachQuestion('Why?', 'standard')
     })
 
-    expect(queueQuestion).toHaveBeenCalled()
+    expect(answerQuestionWithProof).toHaveBeenCalled()
+    expect(queueQuestion).not.toHaveBeenCalled()
     expect(buildSnapshot).toHaveBeenCalled()
 
     act(() => {

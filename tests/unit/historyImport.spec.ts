@@ -37,10 +37,40 @@ describe('history import', () => {
       unsupportedFiles: 1,
     })
     expect(result.data.warnings.some((warning) => warning.fileName === 'macrofactor-summary.csv')).toBe(true)
+    expect(result.data.macrofactorReplayReport?.decisionDiffs).toEqual([])
 
     const yogurtEntry = result.data.payload.foodLogEntries.find((entry) => entry.snapshot.name === 'Greek Yogurt')
     expect(yogurtEntry?.servings).toBe(1.5)
     expect(yogurtEntry?.snapshot.brand).toBe('Fage')
+  })
+
+  it('previews MacroFactor replay overlap from supplied local dates without storage initialization', async () => {
+    const { previewHistoryImport } = await import('../../src/utils/storage/historyImport')
+
+    const result = await previewHistoryImport(
+      'macrofactor',
+      [
+        { name: 'macrofactor-food-rows.csv', text: readFixture('macrofactor-food-rows.csv') },
+        { name: 'macrofactor-weights.csv', text: readFixture('macrofactor-weights.csv') },
+      ],
+      {
+        localDates: new Set(['2026-04-10']),
+        includeMacrofactorReplay: true,
+      },
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+
+    expect(result.data.macrofactorReplayReport?.decisionDiffs).toEqual([
+      {
+        date: '2026-04-10',
+        localWins: true,
+        summary: 'Local records already exist for this date; replay marks imported rows as secondary evidence.',
+      },
+    ])
   })
 
   it('previews Renpho weights and warns that body-composition columns are ignored', async () => {

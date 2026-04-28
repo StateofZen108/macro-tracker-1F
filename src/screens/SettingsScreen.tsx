@@ -52,6 +52,7 @@ import type {
   RecoverableDataIssue,
   RecoveryCheckIn,
   SettingsHubSectionId,
+  SettingsFocusRequest,
   SyncCounts,
   SyncState,
   ToolbarColorToken,
@@ -60,6 +61,7 @@ import type {
 } from '../types'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import { formatShortDate, getTodayDateKey } from '../utils/dates'
+import { recordDiagnosticsEvent } from '../utils/diagnostics'
 
 interface SettingsScreenProps {
   settings: UserSettings
@@ -93,8 +95,10 @@ interface SettingsScreenProps {
   recoveryCheckInToday?: RecoveryCheckIn | null
   garminBusy?: boolean
   initializationError: AppActionError | null
+  settingsFocusRequest?: SettingsFocusRequest | null
   getFoodReferenceCount: (foodId: string) => number
   onUpdateSettings: (settings: UserSettings) => ActionResult<void>
+  onConsumeSettingsFocusRequest?: (id: string) => void
   phaseReviewIntent?: PhaseReviewIntent | null
   onClearPhaseReviewIntent?: () => void
   onStartPsmfPhase?: (startDate: string, plannedEndDate: string, notes?: string) => ActionResult<DietPhase>
@@ -627,8 +631,10 @@ function SettingsScreen({
   recoveryCheckInToday,
   garminBusy,
   initializationError,
+  settingsFocusRequest = null,
   getFoodReferenceCount,
   onUpdateSettings,
+  onConsumeSettingsFocusRequest,
   phaseReviewIntent = null,
   onClearPhaseReviewIntent,
   onStartPsmfPhase,
@@ -678,8 +684,15 @@ function SettingsScreen({
   const { applyImport: applyHistoryImport, previewImport } = useHistoryImport()
   const { summary: safetySummary, captureSnapshot } = useSafetySnapshots()
   const importInputRef = useRef<HTMLInputElement | null>(null)
+  const thirdPartyHistoryImportSectionRef = useRef<HTMLElement | null>(null)
+  const macroFactorImportCardRef = useRef<HTMLDivElement | null>(null)
+  const macroFactorImportButtonRef = useRef<HTMLButtonElement | null>(null)
   const macroFactorImportInputRef = useRef<HTMLInputElement | null>(null)
+  const renphoImportCardRef = useRef<HTMLDivElement | null>(null)
+  const renphoImportButtonRef = useRef<HTMLButtonElement | null>(null)
   const renphoImportInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingAutoOpenRequestIdRef = useRef<string | null>(null)
+  const consumedFocusRequestIdRef = useRef<string | null>(null)
   const [settingsForm, setSettingsForm] = useState<SettingsFormState>(buildSettingsFormState(settings))
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [foodError, setFoodError] = useState<string | null>(null)
@@ -758,6 +771,113 @@ function SettingsScreen({
       },
     })
   }, [foodEditor, foodEditorDirty, onFoodEditorStateChange])
+
+  useEffect(() => {
+    if (!settingsFocusRequest || consumedFocusRequestIdRef.current === settingsFocusRequest.id) {
+      return
+    }
+
+    const focusTarget =
+      settingsFocusRequest.target === 'macrofactor_history_import'
+        ? {
+            card: macroFactorImportCardRef.current,
+            button: macroFactorImportButtonRef.current,
+            input: macroFactorImportInputRef.current,
+          }
+        : settingsFocusRequest.target === 'renpho_history_import'
+          ? {
+              card: renphoImportCardRef.current,
+              button: renphoImportButtonRef.current,
+              input: renphoImportInputRef.current,
+            }
+          : {
+              card: thirdPartyHistoryImportSectionRef.current,
+              button: macroFactorImportButtonRef.current,
+              input: macroFactorImportInputRef.current,
+            }
+
+    if (!focusTarget.card || !focusTarget.button) {
+      recordDiagnosticsEvent({
+        eventType: 'cut_os.import_focus_failed',
+        severity: 'warning',
+        scope: 'diagnostics',
+        message: `Settings focus target ${settingsFocusRequest.target} was not mounted.`,
+        payload: {
+          requestId: settingsFocusRequest.id,
+          source: settingsFocusRequest.source,
+        },
+      })
+      onConsumeSettingsFocusRequest?.(settingsFocusRequest.id)
+      return
+    }
+
+    const focusCard = focusTarget.card
+    const focusButton = focusTarget.button
+    const focusInput = focusTarget.input
+    consumedFocusRequestIdRef.current = settingsFocusRequest.id
+    pendingAutoOpenRequestIdRef.current = settingsFocusRequest.autoOpenFilePicker
+      ? settingsFocusRequest.id
+      : null
+    focusCard.scrollIntoView({ behavior: 'smooth', block: 'center' })
+
+    const timer = window.setTimeout(() => {
+      focusButton.focus({ preventScroll: true })
+      recordDiagnosticsEvent({
+        eventType: 'cut_os.import_focus_consumed',
+        severity: 'info',
+        scope: 'diagnostics',
+        message: `Settings focus request consumed for ${settingsFocusRequest.target}.`,
+        payload: {
+          requestId: settingsFocusRequest.id,
+          source: settingsFocusRequest.source,
+          autoOpenFilePicker: settingsFocusRequest.autoOpenFilePicker,
+        },
+      })
+
+      if (
+        settingsFocusRequest.autoOpenFilePicker &&
+        pendingAutoOpenRequestIdRef.current === settingsFocusRequest.id
+      ) {
+        try {
+          focusInput?.click()
+          recordDiagnosticsEvent({
+            eventType: 'cut_os.import_picker_opened',
+            severity: 'info',
+            scope: 'diagnostics',
+            message: `Import file picker requested for ${settingsFocusRequest.target}.`,
+            payload: {
+              requestId: settingsFocusRequest.id,
+              source: settingsFocusRequest.source,
+            },
+          })
+          window.setTimeout(() => {
+            focusButton.focus({ preventScroll: true })
+          }, 0)
+        } catch (error) {
+          focusButton.focus({ preventScroll: true })
+          recordDiagnosticsEvent({
+            eventType: 'cut_os.import_picker_blocked',
+            severity: 'warning',
+            scope: 'diagnostics',
+            message: 'Browser blocked automatic import file picker.',
+            payload: {
+              requestId: settingsFocusRequest.id,
+              source: settingsFocusRequest.source,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          })
+        } finally {
+          pendingAutoOpenRequestIdRef.current = null
+        }
+      }
+
+      onConsumeSettingsFocusRequest?.(settingsFocusRequest.id)
+    }, 160)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [onConsumeSettingsFocusRequest, settingsFocusRequest])
 
   const visibleFoods = useMemo(
     () =>
@@ -2837,7 +2957,11 @@ function SettingsScreen({
         </section>
       ) : null}
 
-      <section className="app-card space-y-4 px-4 py-4">
+      <section
+        ref={thirdPartyHistoryImportSectionRef}
+        className="app-card space-y-4 px-4 py-4"
+        data-testid="third-party-history-import-section"
+      >
         <div ref={setSettingsHubSectionRef('data_sync')} />
         <div className="space-y-1">
           <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
@@ -4009,7 +4133,11 @@ function SettingsScreen({
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-3 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
+          <div
+            ref={macroFactorImportCardRef}
+            className="space-y-3 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
+            data-testid="macrofactor-history-import-card"
+          >
             <div className="space-y-1">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Import MacroFactor history</p>
               <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -4017,9 +4145,26 @@ function SettingsScreen({
               </p>
             </div>
             <button
+              ref={macroFactorImportButtonRef}
               type="button"
               className="action-button-secondary w-full gap-2"
-              onClick={() => macroFactorImportInputRef.current?.click()}
+              data-testid="macrofactor-history-import-button"
+              onClick={() => {
+                if (pendingAutoOpenRequestIdRef.current) {
+                  recordDiagnosticsEvent({
+                    eventType: 'cut_os.import_focus_user_preempted',
+                    severity: 'info',
+                    scope: 'diagnostics',
+                    message: 'User manually opened MacroFactor import before delayed auto-open.',
+                    payload: {
+                      requestId: pendingAutoOpenRequestIdRef.current,
+                    },
+                  })
+                  pendingAutoOpenRequestIdRef.current = null
+                }
+
+                macroFactorImportInputRef.current?.click()
+              }}
             >
               <Upload className="h-4 w-4" />
               Select MacroFactor files
@@ -4044,7 +4189,11 @@ function SettingsScreen({
             />
           </div>
 
-          <div className="space-y-3 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70">
+          <div
+            ref={renphoImportCardRef}
+            className="space-y-3 rounded-[28px] border border-black/5 bg-white/70 p-4 dark:border-white/10 dark:bg-slate-900/70"
+            data-testid="renpho-history-import-card"
+          >
             <div className="space-y-1">
               <p className="text-sm font-semibold text-slate-900 dark:text-white">Import Renpho weights</p>
               <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -4052,8 +4201,10 @@ function SettingsScreen({
               </p>
             </div>
             <button
+              ref={renphoImportButtonRef}
               type="button"
               className="action-button-secondary w-full gap-2"
+              data-testid="renpho-history-import-button"
               onClick={() => renphoImportInputRef.current?.click()}
             >
               <Upload className="h-4 w-4" />
@@ -4099,6 +4250,40 @@ function SettingsScreen({
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-950/50 dark:text-slate-200">
               Detected files: {historyImportPreview.fileKinds.map((kind) => formatHistoryImportFileKind(kind)).join(', ')}
             </div>
+
+            {FEATURE_FLAGS.paidCutOsV1 && historyImportPreview.macrofactorReplayReport ? (
+              <div className="space-y-3 rounded-[24px] border border-teal-200 bg-teal-50/80 px-4 py-4 text-sm text-slate-800 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-slate-100">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
+                    Cut OS replay
+                  </p>
+                  <p className="mt-1 font-semibold text-slate-900 dark:text-white">
+                    {historyImportPreview.macrofactorReplayReport.reconstructedCommands.length} reconstructed command days
+                  </p>
+                  <p className="mt-1 text-slate-600 dark:text-slate-300">
+                    {historyImportPreview.macrofactorReplayReport.switchingPitch}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {historyImportPreview.macrofactorReplayReport.reconstructedCommands.slice(-4).map((command) => (
+                    <div key={`${command.date}:${command.primaryAction}`} className="rounded-2xl bg-white/80 px-3 py-3 dark:bg-slate-950/60">
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        {formatShortDate(command.date)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                        {command.primaryAction}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {historyImportPreview.macrofactorReplayReport.decisionDiffs.length ? (
+                  <p className="rounded-2xl bg-white/80 px-3 py-3 text-xs text-slate-600 dark:bg-slate-950/60 dark:text-slate-300">
+                    {historyImportPreview.macrofactorReplayReport.decisionDiffs.length} imported date
+                    {historyImportPreview.macrofactorReplayReport.decisionDiffs.length === 1 ? '' : 's'} overlap local records; local records win in replay.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
             {historyImportPreview.warnings.length > 0 ? (
               <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">

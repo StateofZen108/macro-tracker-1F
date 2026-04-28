@@ -19,6 +19,7 @@ test-results
 .env.*
 !.env.example
 tmp-*.png
+tmp/
 supabase/.temp/
 
 # Editor directories and files

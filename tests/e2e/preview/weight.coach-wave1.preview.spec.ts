@@ -12,52 +12,58 @@ test.beforeEach(async ({ page }) => {
   await resetApp(page)
 })
 
-test('standard cut actionable apply path persists the coach update on mobile preview', async ({ page }) => {
+test('standard cut actionable apply path persists the step lever on mobile preview', async ({ page }) => {
   await seedCoachWave1Scenario(page, 'standard_cut_actionable')
   await goToWeight(page)
 
   await expect(page.getByText('Weekly check-in').first()).toBeVisible()
-  await expect(page.getByText('Decrease calories').first()).toBeVisible()
-  await expectCenterHittable(page.getByRole('button', { name: /apply suggestion/i }))
-  await expectCenterHittable(page.getByRole('button', { name: /keep current/i }))
+  await expect(page.getByText('Raise steps before lowering calories').first()).toBeVisible()
+  const stepTargetButton = page.getByRole('button', { name: /raise daily step target/i })
+  await stepTargetButton.scrollIntoViewIfNeeded()
+  await expectCenterHittable(stepTargetButton)
 
-  await page.getByRole('button', { name: /apply suggestion/i }).click()
+  await stepTargetButton.click()
   await expect(page.getByText(/applied/i).first()).toBeVisible()
 
   await goToSettings(page)
   await expect(page.getByTestId('psmf-diet-phase-section')).toContainText('No active PSMF phase scheduled.')
   await expect(page.getByTestId('recovery-section')).toContainText('Recovery: green')
   await expect(page.getByTestId('garmin-section')).toContainText(
-    'Connect Garmin to import sleep, stress, Body Battery, steps, and cardio into recovery scoring.',
+    'Connect Garmin once. After that, MacroTracker keeps sleep, stress, Body Battery, steps, and cardio snapshots updated automatically in the background.',
   )
-  await expect(getSettingsCalorieTargetInput(page)).toHaveValue('2200')
-  await expect(page.getByLabel(/Carbs \(g\)/i)).toHaveValue('220')
+  await expect(page.getByLabel(/Daily step target/i)).toHaveValue('9500')
+  await expect(getSettingsCalorieTargetInput(page)).toHaveValue('2400')
 })
 
-test('personal floor clamp renders the exact note on mobile preview', async ({ page }) => {
+test('personal floor clamp evidence stays secondary while step lever is primary', async ({ page }) => {
   await seedCoachWave1Scenario(page, 'standard_cut_personal_floor_clamp')
   await goToWeight(page)
 
-  await expect(page.getByText('Decrease calories').first()).toBeVisible()
-  await expect(page.getByText('Clamped to your coach minimum: 1252 kcal').first()).toBeVisible()
-  await expectCenterHittable(page.getByRole('button', { name: /apply suggestion/i }))
+  await expect(page.getByText('Raise steps before lowering calories').first()).toBeVisible()
+  await expect(page.getByText('Suggested target: 1252 kcal/day').first()).toBeVisible()
+  const stepTargetButton = page.getByRole('button', { name: /raise daily step target/i })
+  await stepTargetButton.scrollIntoViewIfNeeded()
+  await expectCenterHittable(stepTargetButton)
 })
 
-test('psmf slower-than-target weeks do not offer an automatic calorie decrease', async ({ page }) => {
+test('psmf slower-than-target weeks do not offer an automatic calorie decrease first', async ({ page }) => {
   await seedCoachWave1Scenario(page, 'psmf_no_further_decrease')
   await goToWeight(page)
 
-  await expect(page.getByText('Keep targets').first()).toBeVisible()
-  await expect(
-    page.getByText('PSMF mode active: no further automatic calorie decrease applied.').first(),
-  ).toBeVisible()
+  await expect(page.getByText('Raise steps before lowering calories').first()).toBeVisible()
+  await expect(page.getByText('Target delta').first()).toBeVisible()
+  await expect(page.getByText('No calorie change').first()).toBeVisible()
   await expect(page.getByRole('button', { name: /apply suggestion/i })).toHaveCount(0)
-  await expectCenterHittable(page.getByRole('button', { name: /keep current/i }))
+  const stepTargetButton = page.getByRole('button', { name: /raise daily step target/i })
+  await stepTargetButton.scrollIntoViewIfNeeded()
+  await expectCenterHittable(stepTargetButton)
 
   await goToSettings(page)
   await expect(page.getByTestId('psmf-diet-phase-section')).toContainText('PSMF active until')
   await expect(page.getByTestId('recovery-section')).toContainText('Recovery: green')
-  await expect(page.getByTestId('garmin-section')).toContainText('Garmin is connected. Imported wellness data can influence recovery scoring and coaching holds.')
+  await expect(page.getByTestId('garmin-section')).toContainText(
+    'Garmin is connected and background automation is active.',
+  )
   await expect(page.getByTestId('garmin-section')).toContainText('Last synced:')
 })
 
@@ -76,7 +82,9 @@ test('recent fat-loss mode switches force a stabilization hold on mobile preview
   await goToSettings(page)
   await expect(page.getByTestId('psmf-diet-phase-section')).toContainText('PSMF phase expired on')
   await expect(page.getByTestId('recovery-section')).toContainText('Recovery: yellow')
-  await expect(page.getByTestId('garmin-section')).toContainText('Garmin sync is temporarily rate limited.')
+  await expect(page.getByTestId('garmin-section')).toContainText(
+    'Garmin background sync is temporarily rate limited.',
+  )
 })
 
 test('recent goal mode switches force a stabilization hold on mobile preview', async ({ page }) => {
@@ -103,6 +111,8 @@ test('recent goal mode switches force a stabilization hold on mobile preview', a
   await goToSettings(page)
   await expect(page.getByTestId('psmf-diet-phase-section')).toContainText('Diet break active until')
   await expect(page.getByTestId('recovery-section')).toContainText('Recovery: red')
-  await expect(page.getByTestId('garmin-section')).toContainText('Garmin needs to be reconnected before new data can sync.')
+  await expect(page.getByTestId('garmin-section')).toContainText(
+    'Garmin needs to be reconnected before automatic background sync can resume.',
+  )
   await expect(page.getByTestId('garmin-section')).toContainText('Reconnect Garmin')
 })

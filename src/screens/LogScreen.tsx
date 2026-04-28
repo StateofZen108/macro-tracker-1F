@@ -1,10 +1,11 @@
-import { Beaker, Settings2 } from 'lucide-react'
+import { Barcode, Beaker, Copy, Plus, Search, Settings2, Zap } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { CoachingCard } from '../components/CoachingCard'
 import { DailySummaryBar } from '../components/DailySummaryBar'
 import { DateNavigator } from '../components/DateNavigator'
 import { DayStatusCard } from '../components/DayStatusCard'
 import { MealSection } from '../components/MealSection'
+import { CutOsCommandCard } from '../components/cut-os/CutOsCommandCard'
 import type { RecentCombinationOption } from '../components/log/RecentCombinationsStrip'
 import type {
   ActionResult,
@@ -12,6 +13,8 @@ import type {
   ActivityEntry,
   CoachingInsight,
   CutDayPlan,
+  CutOsActionTarget,
+  CutOsSurfaceModel,
   DayConfounderMarker,
   DayStatus,
   Food,
@@ -40,6 +43,7 @@ interface LogScreenProps {
   recommendationDismissed: boolean
   settings: UserSettings
   cutDayPlan?: CutDayPlan | null
+  cutOsSnapshot?: CutOsSurfaceModel | null
   onChangeDate: (date: string) => void
   onChangeDayStatus: (status: DayStatus) => void
   onToggleDayMarker: (marker: DayConfounderMarker) => void
@@ -54,7 +58,7 @@ interface LogScreenProps {
   onOpenIntervention: () => void
   onEditIntervention: (interventionId: string) => void
   onDeleteIntervention: (interventionId: string) => void
-  onOpenAddFood: (meal: MealType) => void
+  onOpenAddFood: (meal: MealType, options?: { initialMode?: 'browse' | 'scanner' | 'ocr' | 'custom' }) => void
   onAddFavoriteFood: (meal: MealType, foodId: string) => void
   onOpenTemplates: (meal: MealType) => void
   onSaveMealTemplate: (meal: MealType) => void
@@ -65,6 +69,7 @@ interface LogScreenProps {
   onAdjustEntryServings: (entryId: string, nextServings: number) => void
   onDeleteEntry: (entryId: string) => void
   onOpenSettings: () => void
+  onActivateCutOsTarget?: (target: CutOsActionTarget) => void
 }
 
 const DEFAULT_COLLAPSED_STATE: Record<MealType, boolean> = {
@@ -162,7 +167,7 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
     setCardioType(entry?.cardioType)
     setNotes(entry?.notes ?? '')
     setErrorMessage(null)
-  }, [entry?.cardioMinutes, entry?.cardioType, entry?.date, entry?.notes, entry?.steps, entry?.updatedAt, entry?.deletedAt])
+  }, [entry])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   function handleSave(event: React.FormEvent<HTMLFormElement>): void {
@@ -316,6 +321,72 @@ function ActivityCard({ entry, onSave, onDelete }: ActivityCardProps) {
   )
 }
 
+interface FastLogToolbarProps {
+  onOpenAddFood: (meal: MealType, options?: { initialMode?: 'browse' | 'scanner' | 'ocr' | 'custom' }) => void
+  onOpenQuickAdd: () => void
+  onOpenCopyPrevious: () => void
+  onOpenSettings: () => void
+}
+
+function FastLogToolbar({
+  onOpenAddFood,
+  onOpenQuickAdd,
+  onOpenCopyPrevious,
+  onOpenSettings,
+}: FastLogToolbarProps) {
+  const buttonClass =
+    'flex min-h-[48px] items-center justify-center gap-2 rounded-2xl px-3 py-3 text-sm font-semibold transition'
+  const secondaryClass =
+    'bg-slate-100 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700'
+
+  return (
+    <section className="app-card space-y-3 px-3 py-3" aria-label="Fast logging">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-6">
+        <button
+          type="button"
+          className={`${buttonClass} bg-teal-700 text-white sm:col-span-2`}
+          onClick={() => onOpenAddFood('breakfast')}
+        >
+          <Search className="h-4 w-4" />
+          Search food
+        </button>
+        <button
+          type="button"
+          className={`${buttonClass} ${secondaryClass}`}
+          onClick={() => onOpenAddFood('breakfast', { initialMode: 'scanner' })}
+        >
+          <Barcode className="h-4 w-4" />
+          Scan
+        </button>
+        <button type="button" className={`${buttonClass} ${secondaryClass}`} onClick={onOpenQuickAdd}>
+          <Zap className="h-4 w-4" />
+          Quick add
+        </button>
+        <button type="button" className={`${buttonClass} ${secondaryClass}`} onClick={onOpenCopyPrevious}>
+          <Copy className="h-4 w-4" />
+          Copy previous
+        </button>
+        <button
+          type="button"
+          className={`${buttonClass} ${secondaryClass}`}
+          onClick={() => onOpenAddFood('breakfast', { initialMode: 'custom' })}
+        >
+          <Plus className="h-4 w-4" />
+          Custom
+        </button>
+      </div>
+      <button
+        type="button"
+        className="inline-flex min-h-[40px] w-full items-center justify-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800 sm:w-auto"
+        onClick={onOpenSettings}
+      >
+        <Settings2 className="h-4 w-4" />
+        Logging settings
+      </button>
+    </section>
+  )
+}
+
 export function LogScreen({
   date,
   foods,
@@ -331,6 +402,7 @@ export function LogScreen({
   recommendationDismissed,
   settings,
   cutDayPlan = null,
+  cutOsSnapshot = null,
   onChangeDate,
   onChangeDayStatus,
   onToggleDayMarker,
@@ -356,6 +428,7 @@ export function LogScreen({
   onAdjustEntryServings,
   onDeleteEntry,
   onOpenSettings,
+  onActivateCutOsTarget,
 }: LogScreenProps) {
   const stickyRef = useRef<HTMLDivElement | null>(null)
   const previousMealCountsRef = useRef<Record<MealType, number>>({
@@ -482,6 +555,39 @@ export function LogScreen({
           paddingBottom: 'var(--app-bottom-clearance, calc(env(safe-area-inset-bottom) + 7.5rem))',
         }}
       >
+        <FastLogToolbar
+          onOpenAddFood={onOpenAddFood}
+          onOpenQuickAdd={onOpenQuickAdd}
+          onOpenCopyPrevious={onOpenCopyPrevious}
+          onOpenSettings={onOpenSettings}
+        />
+
+        {cutOsSnapshot &&
+        cutOsSnapshot.command.state !== 'setup_required' &&
+        cutOsSnapshot.command.state !== 'collecting_proof' ? (
+          <CutOsCommandCard
+            model={cutOsSnapshot}
+            surface="log"
+            compact
+            showProofs={cutOsSnapshot.diagnosis.phaseVerdict !== 'standard_cut' || cutOsSnapshot.command.state === 'blocked'}
+            showSetup={false}
+            onActivateTarget={
+              onActivateCutOsTarget ??
+              ((target) => {
+                if (target === 'coach') {
+                  onOpenCoach()
+                  return
+                }
+                if (target === 'phase' || target === 'settings') {
+                  onOpenSettings()
+                  return
+                }
+                onOpenAddFood('breakfast')
+              })
+            }
+          />
+        ) : null}
+
         {primaryMeals.map((meal) => (
           <MealSection
             key={meal}
@@ -512,6 +618,51 @@ export function LogScreen({
                 onDeleteEntry={onDeleteEntry}
           />
         ))}
+
+        {secondaryMeals.map((meal) => (
+          <MealSection
+            key={meal}
+            meal={meal}
+            entries={groupedEntries[meal]}
+            templates={templates.filter((template) => template.defaultMeal === meal)}
+            favoriteFoods={favoriteFoodRecords}
+            recentCombinations={recentCombinations[meal] ?? []}
+            totals={mealTotals[meal]}
+            collapsed={collapsedMeals[meal]}
+            onToggle={() =>
+              setCollapsedMeals((currentState) => ({
+                ...currentState,
+                [meal]: !currentState[meal],
+              }))
+            }
+            onAddFood={() => onOpenAddFood(meal)}
+            onAddFavoriteFood={(foodId) => onAddFavoriteFood(meal, foodId)}
+            onApplyTemplate={(templateId) => onApplyQuickTemplate(templateId, meal)}
+            onApplyRecentCombination={(sourceDate) =>
+              onApplyRecentCombination({ sourceDate, sourceMeal: meal, targetMeal: meal })
+            }
+            onBrowseTemplates={() => onOpenTemplates(meal)}
+            onSaveTemplate={() => onSaveMealTemplate(meal)}
+            onEditEntry={onEditEntry}
+            onAdjustEntryServings={onAdjustEntryServings}
+            onDeleteEntry={onDeleteEntry}
+          />
+        ))}
+
+        <div
+          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+          style={{
+            scrollMarginTop: `${stickyHeight + stickyOffset + 16}px`,
+          }}
+        >
+          <button type="button" className="action-button-secondary w-full gap-2" onClick={onOpenIntervention}>
+            <Beaker className="h-4 w-4" />
+            Log intervention
+          </button>
+          <button type="button" className="action-button-secondary w-full" onClick={onOpenCoach}>
+            Ask coach
+          </button>
+        </div>
 
         <div
           style={{
@@ -560,57 +711,6 @@ export function LogScreen({
             </div>
           </section>
         ) : null}
-
-        <div
-          className="grid grid-cols-2 gap-3 sm:grid-cols-4"
-          style={{
-            scrollMarginTop: `${stickyHeight + stickyOffset + 16}px`,
-          }}
-        >
-          <button type="button" className="action-button-secondary w-full" onClick={onOpenQuickAdd}>
-            Quick add
-          </button>
-          <button type="button" className="action-button-secondary w-full" onClick={onOpenCopyPrevious}>
-            Copy previous
-          </button>
-          <button type="button" className="action-button-secondary w-full gap-2" onClick={onOpenIntervention}>
-            <Beaker className="h-4 w-4" />
-            Log intervention
-          </button>
-          <button type="button" className="action-button-secondary w-full" onClick={onOpenCoach}>
-            Ask coach
-          </button>
-        </div>
-
-        {secondaryMeals.map((meal) => (
-          <MealSection
-            key={meal}
-            meal={meal}
-            entries={groupedEntries[meal]}
-            templates={templates.filter((template) => template.defaultMeal === meal)}
-            favoriteFoods={favoriteFoodRecords}
-            recentCombinations={recentCombinations[meal] ?? []}
-            totals={mealTotals[meal]}
-            collapsed={collapsedMeals[meal]}
-            onToggle={() =>
-              setCollapsedMeals((currentState) => ({
-                ...currentState,
-                [meal]: !currentState[meal],
-              }))
-            }
-            onAddFood={() => onOpenAddFood(meal)}
-            onAddFavoriteFood={(foodId) => onAddFavoriteFood(meal, foodId)}
-            onApplyTemplate={(templateId) => onApplyQuickTemplate(templateId, meal)}
-            onApplyRecentCombination={(sourceDate) =>
-              onApplyRecentCombination({ sourceDate, sourceMeal: meal, targetMeal: meal })
-            }
-            onBrowseTemplates={() => onOpenTemplates(meal)}
-            onSaveTemplate={() => onSaveMealTemplate(meal)}
-            onEditEntry={onEditEntry}
-            onAdjustEntryServings={onAdjustEntryServings}
-            onDeleteEntry={onDeleteEntry}
-          />
-        ))}
 
         <section
           className="app-card space-y-4 px-4 py-4"

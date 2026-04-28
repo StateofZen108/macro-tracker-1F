@@ -11,12 +11,15 @@ import type {
 import { calculateFoodNutrition } from '../utils/macros'
 import type { UndoAction } from './useUndoQueue'
 
+export type AddFoodInitialMode = 'browse' | 'scanner' | 'ocr' | 'custom'
+
 export type FoodSheetContext =
   | {
       kind: 'add'
       meal: MealType
       entryContext: 'meal_slot' | 'global_add'
       captureSource?: CaptureConvenienceSource | null
+      initialMode?: AddFoodInitialMode
     }
   | {
       kind: 'replace'
@@ -110,6 +113,7 @@ export function useFoodEntryController({
     options?: {
       entryContext?: 'meal_slot' | 'global_add'
       captureSource?: CaptureConvenienceSource | null
+      initialMode?: AddFoodInitialMode
     },
   ): void {
     ensureEditableIntakeDay(() => {
@@ -118,6 +122,7 @@ export function useFoodEntryController({
         meal,
         entryContext: options?.entryContext ?? 'meal_slot',
         captureSource: options?.captureSource ?? null,
+        initialMode: options?.initialMode ?? 'browse',
       })
       reportError(null)
     })

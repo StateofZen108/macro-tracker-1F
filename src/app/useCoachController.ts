@@ -5,9 +5,11 @@ import type {
   CoachActionProposal,
   CoachContextSnapshot,
   CoachMode,
+  CoachProofAnswer,
   CoachProviderConfig,
   CoachQueuedQuestion,
   CoachingInsight,
+  CutOsSurfaceModel,
   FoodLogEntry,
   InterventionEntry,
   NetworkStatus,
@@ -16,6 +18,7 @@ import type {
   WeightEntry,
   UiPrefs,
 } from '../types'
+import { FEATURE_FLAGS } from '../config/featureFlags'
 import { addDays } from '../utils/dates'
 import { calculateFoodNutrition, sumNutrition } from '../utils/macros'
 
@@ -36,6 +39,13 @@ interface UseCoachControllerOptions {
     mode: CoachMode,
     snapshot?: CoachContextSnapshot,
   ) => ActionResult<CoachQueuedQuestion>
+  answerQuestionWithProof: (
+    question: string,
+    mode: CoachMode,
+    snapshot: CoachContextSnapshot,
+    cutOsSurface: CutOsSurfaceModel | null,
+  ) => ActionResult<CoachProofAnswer>
+  cutOsSurface: CutOsSurfaceModel | null
   updateUiPrefs: (prefs: UiPrefs) => ActionResult<void>
   updateSettings: (settings: UserSettings) => ActionResult<void>
   updateCoachConfig: (config: CoachProviderConfig) => ActionResult<void>
@@ -63,6 +73,8 @@ export function useCoachController({
   getDayStatus,
   buildSnapshot,
   queueQuestion,
+  answerQuestionWithProof,
+  cutOsSurface,
   updateUiPrefs,
   updateSettings,
   updateCoachConfig,
@@ -143,7 +155,10 @@ export function useCoachController({
   }
 
   function handleCoachQuestion(question: string, mode: typeof uiPrefs.preferredAskCoachMode): void {
-    const result = queueQuestion(question, mode, buildCoachContextSnapshot())
+    const snapshot = buildCoachContextSnapshot()
+    const result = FEATURE_FLAGS.coachProofAnswerV1
+      ? answerQuestionWithProof(question, mode, snapshot, cutOsSurface)
+      : queueQuestion(question, mode, snapshot)
     if (!result.ok) {
       reportError(result.error)
       return

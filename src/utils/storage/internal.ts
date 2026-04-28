@@ -1,13 +1,18 @@
 import type {
   ActionResult,
   ActivityEntry,
+  AdherenceScore,
   AppActionError,
   BackupFile,
   BackupPreview,
   CatalogProvider,
   CheckInRecord,
+  CoachingConfidence,
   CoachingEvidenceCard,
+  ConfounderSet,
   CutReviewCard,
+  DataQualityScore,
+  DayConfounderMarker,
   EnergyModelSnapshot,
   GarminModifierWindow,
   CoachingCalibrationRecord,
@@ -672,6 +677,128 @@ function readNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }
 
+function readNullableNumber(value: unknown): number | null | undefined {
+  if (value === null || value === undefined) {
+    return null
+  }
+
+  return readNumber(value) ?? undefined
+}
+
+function readBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null
+}
+
+function readStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function isCoachingConfidence(value: unknown): value is CoachingConfidence {
+  return value === 'none' || value === 'low' || value === 'medium' || value === 'high'
+}
+
+function isDayConfounderMarker(value: unknown): value is DayConfounderMarker {
+  return value === 'travel' || value === 'illness' || value === 'high_calorie_event'
+}
+
+function parseDataQualityScore(rawValue: unknown): DataQualityScore | undefined {
+  if (!isRecord(rawValue) || !isCoachingConfidence(rawValue.band)) {
+    return undefined
+  }
+
+  const score = readNumber(rawValue.score)
+  const eligibleDays = readNumber(rawValue.eligibleDays)
+  const weighInDays = readNumber(rawValue.weighInDays)
+  const explicitEligibleDays = readNumber(rawValue.explicitEligibleDays)
+  const completeDays = readNumber(rawValue.completeDays)
+  const partialDays = readNumber(rawValue.partialDays)
+  const fastingDays = readNumber(rawValue.fastingDays)
+  const unmarkedLoggedDays = readNumber(rawValue.unmarkedLoggedDays)
+  const markedConfounderDays = readNumber(rawValue.markedConfounderDays)
+  const recentlyImported = readBoolean(rawValue.recentlyImported)
+  const recoveryIssueCount = readNumber(rawValue.recoveryIssueCount)
+
+  if (
+    score === null ||
+    eligibleDays === null ||
+    weighInDays === null ||
+    explicitEligibleDays === null ||
+    completeDays === null ||
+    partialDays === null ||
+    fastingDays === null ||
+    unmarkedLoggedDays === null ||
+    markedConfounderDays === null ||
+    recentlyImported === null ||
+    recoveryIssueCount === null
+  ) {
+    return undefined
+  }
+
+  return {
+    score,
+    band: rawValue.band,
+    eligibleDays,
+    weighInDays,
+    explicitEligibleDays,
+    completeDays,
+    partialDays,
+    fastingDays,
+    unmarkedLoggedDays,
+    markedConfounderDays,
+    recentlyImported,
+    recoveryIssueCount,
+  }
+}
+
+function parseAdherenceScore(rawValue: unknown): AdherenceScore | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const isAdequate = readBoolean(rawValue.isAdequate)
+  const calorieDeviationPercent = readNullableNumber(rawValue.calorieDeviationPercent)
+  const proteinHitRate = readNullableNumber(rawValue.proteinHitRate)
+
+  if (
+    isAdequate === null ||
+    calorieDeviationPercent === undefined ||
+    proteinHitRate === undefined
+  ) {
+    return undefined
+  }
+
+  return {
+    isAdequate,
+    calorieDeviationPercent,
+    proteinHitRate,
+    stepAdherencePercent: readNumber(rawValue.stepAdherencePercent) ?? undefined,
+    cardioAdherencePercent: readNumber(rawValue.cardioAdherencePercent) ?? undefined,
+    reasons: readStringArray(rawValue.reasons),
+  }
+}
+
+function parseConfounderSet(rawValue: unknown): ConfounderSet | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  return {
+    reasons: readStringArray(rawValue.reasons),
+    explicitMarkers: Array.isArray(rawValue.explicitMarkers)
+      ? rawValue.explicitMarkers.filter(isDayConfounderMarker)
+      : [],
+    hasRecentImport: readBoolean(rawValue.hasRecentImport) ?? false,
+    hasInterventionChange: readBoolean(rawValue.hasInterventionChange) ?? false,
+    hasRecoveryIssues: readBoolean(rawValue.hasRecoveryIssues) ?? false,
+    hasPartialLogging: readBoolean(rawValue.hasPartialLogging) ?? false,
+    hasMissingWeighIns: readBoolean(rawValue.hasMissingWeighIns) ?? false,
+    hasTravel: readBoolean(rawValue.hasTravel) ?? false,
+    hasIllness: readBoolean(rawValue.hasIllness) ?? false,
+    hasHighCalorieEvent: readBoolean(rawValue.hasHighCalorieEvent) ?? false,
+    highCalorieEventDays: readNumber(rawValue.highCalorieEventDays) ?? 0,
+  }
+}
+
 function buildIssue(scope: RecoverableDataIssue['scope'], key: string, message: string): RecoverableDataIssue {
   return {
     id: crypto.randomUUID(),
@@ -832,6 +959,9 @@ function emitStorageChange(): void {
   storageChangeScheduled = true
   Promise.resolve().then(() => {
     storageChangeScheduled = false
+    if (typeof window === 'undefined') {
+      return
+    }
     for (const listener of storageListeners) {
       listener()
     }
@@ -3261,6 +3391,9 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
             message: readString(reason.message) ?? 'Unknown blocked reason.',
           }))
         : undefined,
+      dataQuality: parseDataQualityScore(rawRecord.dataQuality),
+      adherence: parseAdherenceScore(rawRecord.adherence),
+      confounders: parseConfounderSet(rawRecord.confounders),
       decisionRecordId: readOptionalString(rawRecord.decisionRecordId),
       cutReviewCard: parseCutReviewCard(rawRecord.cutReviewCard),
       weeklyCheckInPacket: parseWeeklyCheckInPacketRecord(rawRecord.weeklyCheckInPacket),
@@ -3268,6 +3401,7 @@ function parseCheckInRecordStrict(rawRecord: unknown, index: number): ActionResu
       supersededByDecisionRecordId: readOptionalString(rawRecord.supersededByDecisionRecordId),
       createdAt,
       appliedAt: readOptionalString(rawRecord.appliedAt),
+      updatedAt: readOptionalString(rawRecord.updatedAt),
     }),
   )
 }

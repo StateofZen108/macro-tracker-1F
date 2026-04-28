@@ -119,7 +119,6 @@ export function shouldCollapseLegacyAddFoodSections(params: {
 }): boolean {
   return (
     params.mode === 'add' &&
-    (params.mealAwareLaneVisible || params.phaseTemplateLaneVisible === true) &&
     params.query.trim().length === 0 &&
     !params.showMoreWaysToLog
   )
@@ -418,12 +417,6 @@ export function BrowsePane({
   )
   const toolbarStyle =
     loggingToolbarStyle ?? loggingShortcutPreference?.toolbarStyle ?? 'search_barcode'
-  const fastPathVisible = mealAwareLaneVisible || phaseTemplateLaneVisible
-  const primaryQuickAction = orderedQuickActionButtons[0]
-  const secondaryQuickActions = orderedQuickActionButtons.slice(1)
-  const hasSecondaryQuickActions =
-    secondaryQuickActions.length > 0 || captureConvenienceEnabled
-  const focusedFastPathMode = mode === 'add' && fastPathVisible && debouncedQuery.trim().length === 0
   const collapseLegacyFastPath = shouldCollapseLegacyAddFoodSections({
     mode,
     mealAwareLaneVisible,
@@ -433,12 +426,9 @@ export function BrowsePane({
   })
   const canRevealMoreWaysToLog =
     mode === 'add' &&
-    !focusedFastPathMode &&
-    toolbarStyle === 'search_barcode' &&
     debouncedQuery.length === 0 &&
-    hasSecondaryQuickActions
-  const showLegacyFastPathSections =
-    !focusedFastPathMode || showMoreWaysToLog || debouncedQuery.length > 0
+    !showMoreWaysToLog
+  const showLegacyFastPathSections = !collapseLegacyFastPath
 
   function handleSearchChange(nextQuery: string): void {
     if (nextQuery.trim().length > 0) {
@@ -493,120 +483,29 @@ export function BrowsePane({
     )
   }
 
-  function renderSearchShortcutTile(): React.ReactNode {
-    return (
-      <button
-        key="search-tile"
-        type="button"
-        className="rounded-2xl bg-slate-100 px-3 py-3 text-sm font-semibold text-slate-900 transition dark:bg-slate-800 dark:text-slate-100"
-        onClick={() => searchInputRef?.current?.focus()}
-      >
-        <span className="inline-flex items-center gap-2">
-          <Search className="h-4 w-4" />
-          Search
-        </span>
-      </button>
-    )
-  }
-
   return (
     <div ref={contentRef} className="space-y-4" data-add-food-pane="browse">
-      {focusedFastPathMode ? (
-        <div className="space-y-3">
-          {toolbarStyle !== 'none' ? (
-            <div className="grid gap-3 sm:grid-cols-3">
-              {orderedQuickActionButtons.map((action) => renderQuickActionButton(action))}
-            </div>
-          ) : renderSearchInput()}
-          {collapseLegacyFastPath ? (
-            <button
-              type="button"
-              className="action-button-secondary w-full"
-              onClick={() => setShowMoreWaysToLog(true)}
-            >
-              More ways to log
-            </button>
-          ) : null}
-        </div>
-      ) : toolbarStyle === 'four_custom' ? (
-        <div className="space-y-3">
-          {renderSearchInput()}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {renderSearchShortcutTile()}
-            {orderedQuickActionButtons.map((action) => renderQuickActionButton(action))}
+      <div className="space-y-3">
+        {renderSearchInput()}
+        {toolbarStyle !== 'none' ? (
+          <div className="grid gap-2 sm:grid-cols-3">
+            {orderedQuickActionButtons.map((action, index) =>
+              renderQuickActionButton(action, index === 0 ? 'primary' : 'secondary'),
+            )}
           </div>
-        </div>
-      ) : toolbarStyle === 'search_barcode_custom' ? (
-        <div className="space-y-3">
-          {renderSearchInput()}
-          {primaryQuickAction ? renderQuickActionButton(primaryQuickAction, 'primary') : null}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {secondaryQuickActions.map((action) => renderQuickActionButton(action))}
-          </div>
-        </div>
-      ) : toolbarStyle === 'none' ? (
-        <div className="space-y-3">{renderSearchInput()}</div>
-      ) : (
-        <div className="space-y-3">
-          {renderSearchInput()}
-          {primaryQuickAction ? renderQuickActionButton(primaryQuickAction, 'primary') : null}
-          {canRevealMoreWaysToLog && !showMoreWaysToLog ? (
-            <button
-              type="button"
-              className="action-button-secondary w-full"
-              onClick={() => setShowMoreWaysToLog(true)}
-            >
-              More ways to log
-            </button>
-          ) : null}
-        </div>
-      )}
+        ) : null}
+        {canRevealMoreWaysToLog ? (
+          <button
+            type="button"
+            className="action-button-secondary w-full"
+            onClick={() => setShowMoreWaysToLog(true)}
+          >
+            More ways to log
+          </button>
+        ) : null}
+      </div>
 
-      {!collapseLegacyFastPath && fastPathVisible && debouncedQuery.length === 0 && showMoreWaysToLog ? (
-        <div className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
-                More ways to log
-              </p>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-200">
-                Search your library or open the broader browse path.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="action-button-secondary"
-              onClick={() => setShowMoreWaysToLog(false)}
-            >
-              Collapse
-            </button>
-          </div>
-          {renderSearchInput()}
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {orderedQuickActionButtons.map((action) => renderQuickActionButton(action))}
-          </div>
-          {captureConvenienceEnabled ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                className="action-button-secondary w-full"
-                onClick={onOpenVoiceCapture}
-              >
-                Voice capture
-              </button>
-              <button
-                type="button"
-                className="action-button-secondary w-full"
-                onClick={onOpenMealPhotoCapture}
-              >
-                Meal photo
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {canRevealMoreWaysToLog && showMoreWaysToLog ? (
+      {showMoreWaysToLog && captureConvenienceEnabled ? (
         <div className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-4 dark:border-white/10 dark:bg-slate-900/70">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
@@ -625,29 +524,22 @@ export function BrowsePane({
               Collapse
             </button>
           </div>
-          {secondaryQuickActions.length ? (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {secondaryQuickActions.map((action) => renderQuickActionButton(action))}
-            </div>
-          ) : null}
-          {captureConvenienceEnabled ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                className="action-button-secondary w-full"
-                onClick={onOpenVoiceCapture}
-              >
-                Voice capture
-              </button>
-              <button
-                type="button"
-                className="action-button-secondary w-full"
-                onClick={onOpenMealPhotoCapture}
-              >
-                Meal photo
-              </button>
-            </div>
-          ) : null}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              className="action-button-secondary w-full"
+              onClick={onOpenVoiceCapture}
+            >
+              Voice capture
+            </button>
+            <button
+              type="button"
+              className="action-button-secondary w-full"
+              onClick={onOpenMealPhotoCapture}
+            >
+              Meal photo
+            </button>
+          </div>
         </div>
       ) : null}
 
@@ -858,7 +750,7 @@ export function BrowsePane({
         </div>
       ) : null}
 
-      {mode === 'add' ? (
+      {mode === 'add' && (showMoreWaysToLog || query.trim() || selectedFood) ? (
         <div className="rounded-[24px] border border-black/5 bg-white/70 px-4 py-3 dark:border-white/10 dark:bg-slate-900/70">
           <label className="flex items-center justify-between text-sm text-slate-700 dark:text-slate-200">
             <span>Keep batch adds open</span>

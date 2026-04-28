@@ -11,6 +11,19 @@ export type SettingsHubSectionId =
   | 'workouts'
   | 'body_progress'
   | 'data_sync'
+export type SettingsFocusTarget =
+  | 'macrofactor_history_import'
+  | 'renpho_history_import'
+  | 'data_sync'
+  | 'coach_provider'
+export type SettingsFocusSource = 'cut_os_activation' | 'coach' | 'manual'
+export interface SettingsFocusRequest {
+  id: string
+  target: SettingsFocusTarget
+  autoOpenFilePicker: boolean
+  createdAt: string
+  source: SettingsFocusSource
+}
 export type WeightRange = '30' | '90' | 'all'
 export type WeightUnit = 'lb' | 'kg'
 export type BarcodeVerification = 'verified' | 'needsConfirmation'
@@ -294,6 +307,40 @@ export type DiagnosticsEventType =
   | 'cut_intel_v1.phase_review_opened'
   | 'cut_intel_v1.phase_review_open_failed'
   | 'cut_intel_v1.review_superseded'
+  | 'cut_os.command_generated'
+  | 'cut_os.action_proposed'
+  | 'cut_os.training_contract_computed'
+  | 'cut_os.food_trust_blocked'
+  | 'cut_os.phase_verdict_computed'
+  | 'cut_os.replay_generated'
+  | 'cut_os.recompute_after_action'
+  | 'cut_os.food_block_resolved'
+  | 'cut_os.disabled_by_flag'
+  | 'cut_os.replay_local_precedence'
+  | 'cut_os.training_precedence'
+  | 'cut_os.action_applied'
+  | 'cut_os.action_deferred'
+  | 'cut_os.action_failed'
+  | 'cut_os.surface_mismatch'
+  | 'cut_os.action_history_reconciled'
+  | 'cut_os.action_apply_ignored'
+  | 'cut_os.activation_demo_started'
+  | 'cut_os.activation_demo_exited'
+  | 'cut_os.import_focus_consumed'
+  | 'cut_os.import_focus_failed'
+  | 'cut_os.import_focus_user_preempted'
+  | 'cut_os.import_focus_superseded'
+  | 'cut_os.import_picker_opened'
+  | 'cut_os.import_picker_blocked'
+  | 'history_import.preview_generated'
+  | 'history_import.preview_failed'
+  | 'history_import.preview_stale_local_data'
+  | 'history_import.applied'
+  | 'history_import.apply_failed'
+  | 'history_import.corpus_verified'
+  | 'history_import.corpus_failed'
+  | 'ui.bottom_sheet.discard_confirmed'
+  | 'build.chunk_policy_verified'
   | 'workouts_v1_progression_applied'
   | 'workouts_v1_progression_failed'
   | 'sync_v2_replication_succeeded'
@@ -325,6 +372,17 @@ export type DiagnosticsEventType =
   | 'body_progress_snapshot_saved'
   | 'body_progress_snapshot_deleted'
   | 'body_progress_snapshot_failed'
+  | 'coach.proof_answer_snapshot_captured'
+  | 'coach.proof_answer_provider_changed'
+  | 'coach.proof_answer_generated'
+  | 'coach.proof_answer_failed'
+  | 'coach.proof_answer_blocked'
+  | 'coach.proof_citation_missing'
+  | 'qa.device_evidence_recorded'
+  | 'qa.device_evidence_failed'
+  | 'qa.device_evidence_invalidated'
+  | 'release.hygiene_verified'
+  | 'release.hygiene_failed'
 export type CoachProposalType =
   | 'applyCalorieTarget'
   | 'applyMacroTargets'
@@ -339,6 +397,215 @@ export type CheckInStatus =
   | 'overridden'
   | 'deferred'
   | 'insufficientData'
+export type CutOsCommandState =
+  | 'setup_required'
+  | 'collecting_proof'
+  | 'blocked'
+  | 'command_issued'
+  | 'action_applied'
+  | 'cooldown'
+  | 'replay_report_issued'
+export type CutOsUrgency = 'low' | 'medium' | 'high'
+export type CutOsActionTarget =
+  | 'log'
+  | 'review_food'
+  | 'train'
+  | 'weigh_in'
+  | 'body_progress'
+  | 'coach'
+  | 'phase'
+  | 'settings'
+  | 'hold'
+export type ScaleLieVerdict =
+  | 'on_track'
+  | 'true_stall'
+  | 'expected_spike'
+  | 'confounded_stall'
+  | 'logging_noise'
+  | 'insufficient_proof'
+export type TrainingContractVerdict =
+  | 'preserved'
+  | 'at_risk'
+  | 'leaking'
+  | 'insufficient_training_data'
+export type PhaseOsVerdict =
+  | 'standard_cut'
+  | 'psmf'
+  | 'refeed'
+  | 'high_carb'
+  | 'diet_break'
+  | 'phase_review_due'
+export type FoodTrustVerdict =
+  | 'trusted_for_coaching'
+  | 'review_required'
+  | 'logging_incomplete'
+export type CutOsDiagnosisVerdict =
+  | 'setup_required'
+  | 'collecting_proof'
+  | 'on_track'
+  | 'blocked'
+  | 'true_stall'
+  | 'protect_training'
+  | 'phase_review'
+  | 'review_food'
+
+export interface CutOsCta {
+  label: string
+  target: CutOsActionTarget
+  payload?: Record<string, string | number | boolean>
+}
+
+export interface CutOsSecondaryAction extends CutOsCta {
+  reason: string
+}
+
+export interface CutOsProof {
+  id: string
+  source: 'scale' | 'training' | 'phase' | 'food_trust' | 'coaching' | 'import'
+  title: string
+  summary: string
+  evidenceWindow: {
+    start: string
+    end: string
+  }
+  strength: 'low' | 'medium' | 'high'
+  blocking: boolean
+}
+
+export interface CutOsDiagnosis {
+  verdict: CutOsDiagnosisVerdict
+  reasonCodes: string[]
+  blockedBy: string[]
+  scaleVerdict: ScaleLieVerdict
+  trainingVerdict: TrainingContractVerdict
+  phaseVerdict: PhaseOsVerdict
+  foodTrustVerdict: FoodTrustVerdict
+}
+
+export interface CutOsCommand {
+  date: string
+  state: CutOsCommandState
+  primaryAction: string
+  urgency: CutOsUrgency
+  confidence: CommandConfidence
+  diagnosisId: string
+  proofIds: string[]
+  cta: CutOsCta
+  secondaryActions: CutOsSecondaryAction[]
+}
+
+export interface CutOsSnapshot {
+  command: CutOsCommand
+  diagnosis: CutOsDiagnosis
+  proofs: CutOsProof[]
+  generatedAt: string
+}
+
+export type CutOsActionStatus = 'proposed' | 'applied' | 'deferred' | 'failed'
+
+export interface CutOsActionRecord {
+  id: string
+  commandId: string
+  diagnosisId: string
+  date: string
+  actionTarget: CutOsActionTarget
+  status: CutOsActionStatus
+  createdAt: string
+  updatedAt: string
+  appliedAt?: string
+  deferredAt?: string
+  failureCode?: string
+  failureMessage?: string
+}
+
+export type CutOsSetupChecklistItemStatus = 'complete' | 'pending'
+
+export interface CutOsSetupChecklistItem {
+  id: string
+  label: string
+  detail: string
+  current: number
+  target: number
+  status: CutOsSetupChecklistItemStatus
+  routeTarget: CutOsActionTarget
+}
+
+export interface CutOsSurfaceModel extends CutOsSnapshot {
+  setup: CutOsSetupChecklistItem[]
+  actionHistory: CutOsActionRecord[]
+  activeAction: CutOsActionRecord | null
+}
+
+export interface CutOsActivationState {
+  demoActive: boolean
+  dismissedAt?: string
+  updatedAt: string
+}
+
+export type CutOsActivationActionKind = 'route' | 'start_demo' | 'exit_demo'
+
+export type CutOsActivationActionId =
+  | 'import_history'
+  | 'try_demo'
+  | 'start_logging'
+  | 'add_weigh_in'
+  | 'set_training'
+  | 'review_food'
+  | 'open_coach'
+  | 'exit_demo'
+
+export interface CutOsActivationAction {
+  id: CutOsActivationActionId
+  kind: CutOsActivationActionKind
+  label: string
+  detail: string
+  target?: CutOsActionTarget
+  settingsFocusTarget?: SettingsFocusTarget
+  autoOpenFilePicker?: boolean
+}
+
+export type CutOsActivationReceiptStatus = 'ready' | 'pending' | 'blocked'
+
+export interface CutOsActivationProofReceiptItem {
+  id: string
+  label: string
+  detail: string
+  status: CutOsActivationReceiptStatus
+}
+
+export interface CutOsActivationModel {
+  state: 'needs_proof' | 'demo_active'
+  headline: string
+  summary: string
+  primaryAction: CutOsActivationAction
+  secondaryActions: CutOsActivationAction[]
+  proofReceipt: CutOsActivationProofReceiptItem[]
+  nextProof: CutOsSetupChecklistItem | null
+  demoSurface: CutOsSurfaceModel | null
+}
+
+export interface MacrofactorReplayReport {
+  importedWindow: {
+    start: string
+    end: string
+  }
+  reconstructedCommands: Array<{
+    date: string
+    primaryAction: string
+    verdict: ScaleLieVerdict | 'import_only'
+  }>
+  decisionDiffs: Array<{
+    date: string
+    summary: string
+    localWins: boolean
+  }>
+  switchingPitch: string
+}
+
+export interface HistoryImportPreviewOptions {
+  localDates: ReadonlySet<string>
+  includeMacrofactorReplay: boolean
+}
 
 export const MEAL_TYPES: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack']
 
@@ -1780,6 +2047,17 @@ export interface HistoryImportPreview {
   }
   warnings: HistoryImportWarning[]
   payload: ParsedHistoryPayload
+  macrofactorReplayReport?: MacrofactorReplayReport
+}
+
+export interface HistoryImportCorpusCase {
+  id: string
+  provider: HistoryImportProvider
+  files: Array<{ fileName: string; text: string }>
+  expectedCounts: HistoryImportPreview['counts']
+  expectedWarnings: Array<HistoryImportWarning['code']>
+  expectedReplayCommandDays: number
+  expectedOverlapCount: number
 }
 
 export interface UndoQueueItem {
@@ -2730,4 +3008,27 @@ export interface CoachResponse {
   proposals: CoachActionProposal[]
   safetyFlags: CoachSafetyFlag[]
   contextUsed: string[]
+}
+
+export interface CoachProofAnswerInput {
+  question: string
+  mode: CoachMode
+  contextSnapshot: CoachContextSnapshot
+  cutOsSurface: CutOsSurfaceModel | null
+}
+
+export interface CoachProofAnswer {
+  answer: string
+  answerType: CoachAnswerType
+  citations: CoachCitation[]
+  proposals: CoachActionProposal[]
+  safetyFlags: CoachSafetyFlag[]
+  contextUsed: string[]
+}
+
+export interface DeviceQaResult {
+  checkedAt: string
+  device: 'physical_android' | 'physical_ios'
+  browser: string
+  checks: Array<{ id: string; status: 'passed' | 'failed'; evidence: string }>
 }

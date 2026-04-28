@@ -52,21 +52,29 @@ test('S22 weight layout keeps weekly check-in actions readable on initial render
   await expectCenterHittable(page.getByRole('button', { name: /^settings$/i }).first())
 })
 
-test('weekly check-in can apply a ready calorie recommendation', async ({ page }) => {
+test('weekly check-in holds after one clean slow week without an apply action', async ({ page }) => {
+  await seedCoachWave1Scenario(page, 'standard_cut_one_clean_hold')
+  await goToWeight(page)
+
+  await expect(page.getByText(/wait for one more clean week/i).first()).toBeVisible()
+  await expect(page.getByRole('button', { name: /apply suggestion/i })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /apply review/i })).toHaveCount(0)
+})
+
+test('weekly check-in applies the step lever before cutting calories', async ({ page }) => {
   await seedCoachWave1Scenario(page, 'standard_cut_actionable')
   await goToWeight(page)
 
   const weeklyCheckInHeading = page.getByText('Weekly check-in').first()
   await weeklyCheckInHeading.scrollIntoViewIfNeeded()
-  await expect(page.getByText(/rate of loss was slower than target/i).first()).toBeVisible()
-  await expect(page.getByText(/2200 cal\/day/i)).toBeVisible()
-  const applySuggestionButton = page.getByRole('button', { name: /apply suggestion/i })
+  await expect(page.getByText(/raise steps before lowering calories/i).first()).toBeVisible()
+  const applySuggestionButton = page.getByRole('button', { name: /raise daily step target/i })
   await safeClick(applySuggestionButton)
   await expect(page.getByText(/applied/i).first()).toBeVisible()
 
   await goToSettings(page)
-  await expect(getSettingsCalorieTargetInput(page)).toHaveValue('2200')
-  await expect(page.getByLabel(/Carbs \(g\)/i)).toHaveValue('220')
+  await expect(page.getByLabel(/Daily step target/i)).toHaveValue('9500')
+  await expect(getSettingsCalorieTargetInput(page)).toHaveValue('2400')
 })
 
 test('body progress metrics can be saved from the weight screen', async ({ page }) => {

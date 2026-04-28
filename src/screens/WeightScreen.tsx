@@ -3,6 +3,7 @@ import { ScreenHeader } from '../components/ScreenHeader'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import { buildBodyProgressQuickCompare } from '../domain/personalCut'
 import { WeightChart } from '../components/WeightChart'
+import { CutOsCommandCard } from '../components/cut-os/CutOsCommandCard'
 import type {
   ActionResult,
   BodyProgressCompareMode,
@@ -16,6 +17,8 @@ import type {
   CoachingDecisionRecord,
   CoachingReasonCode,
   CutDayPlan,
+  CutOsActionTarget,
+  CutOsSurfaceModel,
   DeficiencyAlert,
   FoodContributionRecord,
   LegacyCoachingCode,
@@ -42,6 +45,7 @@ interface WeightScreenProps {
   bodyProgressSnapshots?: BodyProgressSnapshot[]
   cutDayPlan?: CutDayPlan | null
   previewPsmfGarminUiState?: PreviewPsmfGarminUiState | null
+  cutOsSnapshot?: CutOsSurfaceModel | null
   onSaveWeight: (date: string, weight: number, unit: UserSettings['weightUnit']) => ActionResult<void>
   onDeleteWeight: (date: string) => ActionResult<void>
   onApplyCheckInSuggestion: () => void
@@ -55,6 +59,7 @@ interface WeightScreenProps {
   onDeleteBodyProgress?: (snapshotId: string) => Promise<ActionResult<void>>
   onOpenCoach?: () => void
   onOpenSettings?: () => void
+  onActivateCutOsTarget?: (target: CutOsActionTarget) => void
 }
 
 const RANGE_OPTIONS: WeightRange[] = ['30', '90', 'all']
@@ -510,6 +515,7 @@ export function WeightScreen({
   bodyProgressSnapshots = [],
   cutDayPlan = null,
   previewPsmfGarminUiState,
+  cutOsSnapshot = null,
   onSaveWeight,
   onDeleteWeight,
   onApplyCheckInSuggestion,
@@ -520,6 +526,7 @@ export function WeightScreen({
   onDeleteBodyProgress,
   onOpenCoach,
   onOpenSettings,
+  onActivateCutOsTarget,
 }: WeightScreenProps) {
   const today = getTodayDateKey()
   const todayEntry = weights.find((entry) => entry.date === today) ?? null
@@ -575,11 +582,15 @@ export function WeightScreen({
       ),
     [settings.bodyMetricVisibility],
   )
-  const photoVisibility = settings.progressPhotoVisibility ?? {
-    front: true,
-    side: true,
-    back: true,
-  }
+  const photoVisibility = useMemo(
+    () =>
+      settings.progressPhotoVisibility ?? {
+        front: true,
+        side: true,
+        back: true,
+      },
+    [settings.progressPhotoVisibility],
+  )
   const visibleBodyProgressSnapshots = useMemo(
     () =>
       bodyProgressSnapshots.map((snapshot) => ({
@@ -2290,6 +2301,25 @@ export function WeightScreen({
         description="Keep the first view anchored on whether the cut is still working, then drop into weigh-ins and longer history only after that."
         onOpenSettings={onOpenSettings}
       />
+      {cutOsSnapshot ? (
+        <CutOsCommandCard
+          model={cutOsSnapshot}
+          surface="weight"
+          compact
+          showProofs={false}
+          showSetup={false}
+          onActivateTarget={
+            onActivateCutOsTarget ??
+            ((target) => {
+              if (target === 'coach') {
+                onOpenCoach?.()
+                return
+              }
+              onOpenSettings?.()
+            })
+          }
+        />
+      ) : null}
       <section className="app-card space-y-3 px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -2351,6 +2381,7 @@ export function WeightScreen({
               <CutReviewCard
                 card={currentCheckIn.cutReviewCard}
                 variant="weight"
+                onApply={onApplyCheckInSuggestion}
                 onOpenCoach={onOpenCoach}
               />
             ) : null}

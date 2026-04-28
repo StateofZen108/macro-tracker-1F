@@ -142,11 +142,11 @@ describe('add-food pane helpers', () => {
     expect(lane[2]).toMatchObject({ kind: 'food', key: 'food-apple' })
   })
 
-  it('collapses legacy fast-path sections when the meal-aware lane is visible and no query is active', () => {
+  it('collapses legacy add-food sections until query or more-ways reveal them', () => {
     expect(
       shouldCollapseLegacyAddFoodSections({
         mode: 'add',
-        mealAwareLaneVisible: true,
+        mealAwareLaneVisible: false,
         query: '',
         showMoreWaysToLog: false,
       }),
@@ -157,6 +157,24 @@ describe('add-food pane helpers', () => {
         mode: 'add',
         mealAwareLaneVisible: true,
         query: 'yogurt',
+        showMoreWaysToLog: false,
+      }),
+    ).toBe(false)
+
+    expect(
+      shouldCollapseLegacyAddFoodSections({
+        mode: 'add',
+        mealAwareLaneVisible: true,
+        query: '',
+        showMoreWaysToLog: true,
+      }),
+    ).toBe(false)
+
+    expect(
+      shouldCollapseLegacyAddFoodSections({
+        mode: 'replace',
+        mealAwareLaneVisible: true,
+        query: '',
         showMoreWaysToLog: false,
       }),
     ).toBe(false)

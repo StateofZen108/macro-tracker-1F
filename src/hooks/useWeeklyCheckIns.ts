@@ -133,7 +133,7 @@ export function useWeeklyCheckIns(
         eventType: 'cut_intel_v1.review_superseded',
         severity: 'info',
         scope: 'diagnostics',
-        recordKey: current.record.id,
+        recordKey: `${current.decisionRecord.windowStart}:${current.decisionRecord.windowEnd}`,
         message: 'A stale adaptive cut review was superseded by fresher data.',
         payload: {
           supersededDecisionIds: staleRecords.map((entry) => entry.id),
@@ -156,7 +156,14 @@ export function useWeeklyCheckIns(
       return
     }
 
-    const eventKey = `${current.record.id}:${current.shadowComparison.currentDecisionType}:${current.shadowComparison.nextDecisionType}:${current.shadowComparison.currentBlockedReasonCodes.join(',')}:${current.shadowComparison.nextBlockedReasonCodes.join(',')}`
+    const eventKey = [
+      current.decisionRecord.windowStart,
+      current.decisionRecord.windowEnd,
+      current.shadowComparison.currentDecisionType,
+      current.shadowComparison.nextDecisionType,
+      current.shadowComparison.currentBlockedReasonCodes.join(','),
+      current.shadowComparison.nextBlockedReasonCodes.join(','),
+    ].join(':')
     if (lastShadowEventKeyRef.current === eventKey) {
       return
     }
@@ -166,7 +173,7 @@ export function useWeeklyCheckIns(
       eventType: 'coach_method_v2_diverged',
       severity: 'info',
       scope: 'diagnostics',
-      recordKey: current.record.id,
+      recordKey: `${current.decisionRecord.windowStart}:${current.decisionRecord.windowEnd}`,
       message: 'Coach Method V2 diverged from the current weekly coaching decision.',
       payload: {
         windowStart: current.decisionRecord.windowStart,
@@ -181,7 +188,6 @@ export function useWeeklyCheckIns(
   }, [
     current.decisionRecord.windowEnd,
     current.decisionRecord.windowStart,
-    current.record.id,
     current.shadowComparison,
   ])
 
@@ -191,7 +197,13 @@ export function useWeeklyCheckIns(
     }
 
     const packet = current.record.weeklyCheckInPacket
-    const eventKey = `${current.record.id}:${packet.decisionType}:${packet.confidenceBand}:${packet.generatedAt}`
+    const eventKey = [
+      packet.id,
+      packet.decisionType,
+      packet.confidenceBand,
+      packet.nextCheckInDate,
+      packet.targetDelta ?? 'none',
+    ].join(':')
     if (lastCoachV3PacketEventKeyRef.current === eventKey) {
       return
     }
@@ -201,7 +213,7 @@ export function useWeeklyCheckIns(
       eventType: 'coach_v3_packet_generated',
       severity: 'info',
       scope: 'diagnostics',
-      recordKey: current.record.id,
+      recordKey: packet.id,
       message: 'Coach Engine V3 packet generated for the latest weekly check-in.',
       payload: {
         decisionType: packet.decisionType,
@@ -210,7 +222,7 @@ export function useWeeklyCheckIns(
         nextCheckInDate: packet.nextCheckInDate,
       },
     })
-  }, [current.record.id, current.record.weeklyCheckInPacket])
+  }, [current.record.weeklyCheckInPacket])
 
   const currentRecord = useMemo(() => {
     return checkInHistory.find((entry) => entry.id === current.record.id) ?? current.record

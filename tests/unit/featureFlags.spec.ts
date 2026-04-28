@@ -78,6 +78,10 @@ describe('feature flags', () => {
       motionSystemV1: false,
       adaptiveCutIntelligenceV1: false,
       adaptiveCutReviewSurfaceV1: false,
+      paidCutOsV1: false,
+      cutOsImportFocusV1: false,
+      coachProofAnswerV1: false,
+      macroFactorCorpusGateV1: false,
     })
   })
 
@@ -157,6 +161,10 @@ describe('feature flags', () => {
       motionSystemV1: true,
       adaptiveCutIntelligenceV1: true,
       adaptiveCutReviewSurfaceV1: true,
+      paidCutOsV1: true,
+      cutOsImportFocusV1: true,
+      coachProofAnswerV1: true,
+      macroFactorCorpusGateV1: true,
     })
   })
 
@@ -255,6 +263,10 @@ describe('feature flags', () => {
       motionSystemV1: false,
       adaptiveCutIntelligenceV1: false,
       adaptiveCutReviewSurfaceV1: false,
+      paidCutOsV1: false,
+      cutOsImportFocusV1: false,
+      coachProofAnswerV1: false,
+      macroFactorCorpusGateV1: false,
     })
   })
 
@@ -305,6 +317,7 @@ describe('feature flags', () => {
       VITE_FF_QUIET_SETTINGS_V1: 'true',
       VITE_FF_ADAPTIVE_CUT_INTELLIGENCE_V1: 'true',
       VITE_FF_ADAPTIVE_CUT_REVIEW_SURFACE_V1: 'true',
+      VITE_FF_PAID_CUT_OS_V1: 'true',
     })
 
     expect(flags.nutrientGoalsV1).toBe(false)
@@ -324,6 +337,10 @@ describe('feature flags', () => {
     expect(flags.quietSettingsV1).toBe(false)
     expect(flags.adaptiveCutIntelligenceV1).toBe(false)
     expect(flags.adaptiveCutReviewSurfaceV1).toBe(false)
+    expect(flags.paidCutOsV1).toBe(false)
+    expect(flags.cutOsImportFocusV1).toBe(false)
+    expect(flags.coachProofAnswerV1).toBe(false)
+    expect(flags.macroFactorCorpusGateV1).toBe(false)
   })
 
   it('downgrades premium finish flags when their prerequisites are disabled', () => {

@@ -2,7 +2,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { gzipSync } from 'node:zlib'
 
-const distAssetsDir = resolve(process.cwd(), 'dist/assets')
+const distRoot = resolve(process.cwd(), 'dist')
+const distAssetsDir = resolve(distRoot, 'assets')
 const RAW_LIMIT_BYTES = 500 * 1024
 const FOOD_ACQUISITION_LIMIT_BYTES = 400 * 1024
 const MAIN_GZIP_LIMIT_BYTES = 150 * 1024
@@ -55,6 +56,16 @@ if (!assetFiles.some((file) => file.startsWith('index-'))) {
   violations.push('Missing main entry chunk output.')
 }
 
+const serviceWorkerPath = join(distRoot, 'sw.js')
+if (existsSync(serviceWorkerPath)) {
+  const serviceWorkerSource = readFileSync(serviceWorkerPath, 'utf8')
+  if (serviceWorkerSource.includes('heic2any-')) {
+    violations.push('HEIC conversion chunk is present in the PWA app-shell precache.')
+  }
+} else {
+  violations.push('Missing generated service worker output.')
+}
+
 if (violations.length) {
   console.error('Chunk budget check failed:')
   for (const violation of violations) {
@@ -63,4 +74,4 @@ if (violations.length) {
   process.exit(1)
 }
 
-console.log('Chunk budgets passed.')
+console.log('Chunk budgets passed with HEIC excluded from app-shell precache.')

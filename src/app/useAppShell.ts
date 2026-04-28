@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState } from 'react'
-import type { AppActionError, NetworkStatus, TabId } from '../types'
+import type { AppActionError, NetworkStatus, SettingsFocusRequest, TabId } from '../types'
 import { getTodayDateKey } from '../utils/dates'
+import { recordDiagnosticsEvent } from '../utils/diagnostics'
 
 export interface ConfirmState {
   title: string
@@ -44,6 +45,7 @@ export function useAppShell() {
     typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'online',
   )
   const [settingsEditorState, setSettingsEditorState] = useState<ExternalSheetState | null>(null)
+  const [settingsFocusRequest, setSettingsFocusRequest] = useState<SettingsFocusRequest | null>(null)
 
   useLayoutEffect(() => {
     const handleOnline = () => setNetworkStatus('online')
@@ -69,6 +71,30 @@ export function useAppShell() {
     }
 
     setGlobalError(typeof error === 'string' ? buildAppError(error) : error)
+  }
+
+  function pushSettingsFocusRequest(request: SettingsFocusRequest): void {
+    setSettingsFocusRequest((current) => {
+      if (current && current.id !== request.id) {
+        recordDiagnosticsEvent({
+          eventType: 'cut_os.import_focus_superseded',
+          severity: 'info',
+          scope: 'diagnostics',
+          message: `Settings focus request ${current.id} was superseded by ${request.id}.`,
+          payload: {
+            previousTarget: current.target,
+            nextTarget: request.target,
+            source: request.source,
+          },
+        })
+      }
+
+      return request
+    })
+  }
+
+  function consumeSettingsFocusRequest(id: string): void {
+    setSettingsFocusRequest((current) => (current?.id === id ? null : current))
   }
 
   function requestTabChange(nextTab: TabId, options: RequestTabChangeOptions): void {
@@ -216,6 +242,9 @@ export function useAppShell() {
     networkStatus,
     settingsEditorState,
     setSettingsEditorState,
+    settingsFocusRequest,
+    pushSettingsFocusRequest,
+    consumeSettingsFocusRequest,
     requestTabChange,
   }
 }
