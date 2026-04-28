@@ -35,6 +35,19 @@ function readSmokeEventId() {
   return result.eventId
 }
 
+function readSupabaseMigrationVerified() {
+  if (process.env.SUPABASE_MIGRATION_VERIFIED === 'true') {
+    return true
+  }
+
+  const resultPath = resolve('tmp', 'supabase-migration-live-result.json')
+  if (!existsSync(resultPath)) {
+    return false
+  }
+  const result = JSON.parse(readFileSync(resultPath, 'utf8'))
+  return result.ok === true
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const buildId = resolveRequired('VITE_APP_BUILD_ID')
   const gitSha = resolveGitSha()
@@ -51,7 +64,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     deviceQaManifestPath,
     sentrySmokeEventId: readSmokeEventId(),
     sentryAlertsVerified: process.env.SENTRY_ALERTS_VERIFIED === 'true',
-    supabaseMigrationVerified: process.env.SUPABASE_MIGRATION_VERIFIED === 'true',
+    supabaseMigrationVerified: readSupabaseMigrationVerified(),
     moduleBudgetPassed: true,
   }
 

@@ -13,6 +13,14 @@ npx playwright test tests/e2e --config=playwright.config.ts
 npm run test:release
 ```
 
+To execute every rail that the current machine can honestly access and get a single report:
+
+```powershell
+npm run test:release:accessible
+```
+
+This command runs the full local release suite, then automatically runs Sentry smoke, live Supabase RLS verification, device QA evidence validation, readiness-manifest validation, and the strict production release gate only when the required credentials, tools, and manifests are present. It writes `tmp/production-rails-accessible-report.json` and exits green when all accessible rails pass, even if external rails are explicitly pending.
+
 Production release also requires a non-local build ID, physical-device evidence, a live Sentry smoke event, module budgets, Supabase migration verification, and a committed readiness manifest:
 
 ```powershell
@@ -21,10 +29,12 @@ $env:RELEASE_DEVICE_QA_REQUIRED='true'
 $env:PRODUCTION_RELEASE_REQUIRED='true'
 $env:OBSERVABILITY_SMOKE_URL='https://<deployment>/api/observability/smoke'
 $env:OBSERVABILITY_SMOKE_SECRET='<deployment-secret>'
+$env:SUPABASE_DB_URL='<production-postgres-url>'
 $env:SENTRY_ALERTS_VERIFIED='true'
 $env:SUPABASE_MIGRATION_VERIFIED='true'
 npm run test:device-qa:evidence
 npm run test:observability:smoke
+npm run test:supabase:rls-live
 npm run test:module-budgets
 npm run test:production-readiness
 npm run test:release:production
@@ -68,6 +78,14 @@ If Upstash is absent in production, expensive unauthenticated routes fail closed
 `supabase/migrations/20260428130000_sync_rls_constraints.sql` enables RLS on sync tables, adds authenticated user isolation policies, adds constraints for known scopes and payload shape, and hardens sync functions with `search_path = public`.
 
 The server service-role routes remain the production writer path. RLS is still required as defense-in-depth for accidental anon/authenticated direct access.
+
+For live verification, set `SUPABASE_DB_URL` or `DATABASE_URL` and ensure `psql` is available on `PATH`, then run:
+
+```powershell
+npm run test:supabase:rls-live
+```
+
+The check inspects the production database for RLS-enabled sync tables, authenticated user-isolation policies, required constraints, indexes, and hardened `search_path = public` functions. A successful run writes `tmp/supabase-migration-live-result.json`, which `npm run write:production-readiness` can use as the Supabase verification proof.
 
 ## Device QA
 

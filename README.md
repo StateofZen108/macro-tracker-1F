@@ -196,7 +196,9 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - Supabase RLS and sync-table constraints as defense-in-depth
   - release hygiene checks for committed source state
   - public root module budget checks
+  - one-command accessible production rails via `npm run test:release:accessible`
   - production Sentry smoke checks and readiness manifests
+  - optional live Supabase RLS verification via `npm run test:supabase:rls-live`
   - physical-device QA evidence for camera, barcode, OCR, PWA, offline, and dirty-sheet paths
 
 ## What is intentionally not shipped yet

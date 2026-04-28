@@ -21,8 +21,9 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `security_audit_green` | `npm run test:security:audit` exits 0 with no moderate, high, or critical vulnerabilities |
 | `api_hardened` | `tests/unit/productionHardening.spec.ts` verifies request IDs, body limits, rate limits, timeout envelopes, and structured errors |
 | `observability_ready` | `tests/unit/productionHardening.spec.ts` verifies Sentry redaction; `npm run test:observability:smoke` proves production server capture with build context |
-| `rls_defended` | `tests/unit/productionHardening.spec.ts` verifies the Supabase RLS/constraint migration includes policies, constraints, and hardened search paths |
+| `rls_defended` | `tests/unit/productionHardening.spec.ts` verifies the migration and live snapshot validator; `npm run test:supabase:rls-live` proves the deployed database when `SUPABASE_DB_URL` and `psql` are available |
 | `production_readiness_green` | `npm run test:production-readiness` validates a committed readiness manifest with device QA, Sentry smoke event, migration verification, and module budget proof |
+| `accessible_rails_green` | `npm run test:release:accessible` runs every local rail and any configured external rail, writing `tmp/production-rails-accessible-report.json` with exact pending blockers |
 | `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:release:production` |
 
 ## Gate Status
@@ -34,6 +35,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `$env:VITE_APP_BUILD_ID='cut-os-final-focus-proof'; npm run build` | 0 TypeScript errors, 0 Vite warnings | 2026-04-28: passed, no Vite chunk warning |
 | `npm run test:bundle` | Budgets pass, HEIC excluded from precache | 2026-04-28: passed, HEIC excluded from app-shell precache |
 | `npm run test:module-budgets` | Public root module budgets pass | 2026-04-28: passed |
+| `npm run test:release:accessible` | All locally accessible rails pass; external rails either pass or are explicitly pending | Pending latest run |
 | `npm run test:history-import:corpus` | MacroFactor corpus cases pass | 2026-04-28: passed, 5/5 corpus tests |
 | `npm run test:unit` | 0 failed tests | 2026-04-28: passed, 265 tests passed; existing documented skips/todos unchanged |
 | `npx playwright test tests/e2e --config=playwright.config.ts` | 0 failed tests | 2026-04-28: passed, 54/54 S22 tests |
@@ -54,5 +56,6 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 - Bottom-sheet dirty discard must stay above the parent sheet and keep its buttons center-hittable.
 - Device QA must attach dated physical-device evidence for camera permission denied/granted, barcode fallback, OCR save, PWA install/reopen, offline logging, and discard hit testing.
 - Production readiness must include the live Sentry smoke event ID, Supabase migration verification, and module budget proof for the same build ID and git SHA.
+- Accessible rails must be used before production signoff so local/CI automation executes everything available before external evidence is requested.
 
 Physical-device QA, live Sentry smoke, and Supabase migration verification require external evidence outside this desktop/headless environment.

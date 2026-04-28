@@ -9,6 +9,8 @@ import { redactClientSentryEvent } from '../../src/observability/sentry.client'
 import { findModuleBudgetViolations } from '../../scripts/check-module-budgets.mjs'
 import { validateProductionReadinessManifest } from '../../scripts/check-production-readiness.mjs'
 import { runSentrySmoke } from '../../scripts/check-sentry-smoke.mjs'
+import { resolveAccessibleProductionRailsPlan } from '../../scripts/run-accessible-production-rails.mjs'
+import { validateSupabaseMigrationSnapshot } from '../../scripts/check-supabase-migration-live.mjs'
 import {
   findReleaseHygieneViolations,
   parsePorcelainStatus,
@@ -82,6 +84,53 @@ describe('production hardening scripts', () => {
 
   it('enforces public root module budgets', () => {
     expect(findModuleBudgetViolations()).toEqual([])
+  })
+
+  it('plans all locally accessible rails while reporting missing external proof', () => {
+    const plan = resolveAccessibleProductionRailsPlan({
+      env: {},
+      exists: () => false,
+      commandExistsImpl: () => false,
+      gitSha: 'abc123',
+    })
+
+    expect(plan.buildId).toBe('local-accessible-abc123')
+    expect(plan.rails.map((rail) => rail.id)).toEqual(['local_release_suite'])
+    expect(plan.pending.map((item) => item.id)).toEqual([
+      'sentry_smoke',
+      'supabase_live_migration',
+      'device_qa_evidence',
+      'production_readiness_manifest',
+      'strict_production_release',
+    ])
+  })
+
+  it('includes external rails when credentials, tools, and manifests are available', () => {
+    const plan = resolveAccessibleProductionRailsPlan({
+      env: {
+        VITE_APP_BUILD_ID: 'build-1',
+        OBSERVABILITY_SMOKE_URL: 'https://example.test/api/observability/smoke',
+        OBSERVABILITY_SMOKE_SECRET: 'secret',
+        SUPABASE_DB_URL: 'postgres://example',
+      },
+      exists: (path) =>
+        path.endsWith('docs\\device-qa-results\\build-1.json') ||
+        path.endsWith('docs/device-qa-results/build-1.json') ||
+        path.endsWith('docs\\production-readiness\\build-1.json') ||
+        path.endsWith('docs/production-readiness/build-1.json'),
+      commandExistsImpl: () => true,
+      gitSha: 'abc123',
+    })
+
+    expect(plan.pending).toEqual([])
+    expect(plan.rails.map((rail) => rail.id)).toEqual([
+      'local_release_suite',
+      'sentry_smoke',
+      'supabase_live_migration',
+      'device_qa_evidence',
+      'production_readiness_manifest',
+      'strict_production_release',
+    ])
   })
 })
 
@@ -373,5 +422,51 @@ describe('Supabase RLS migration', () => {
     expect(sql).toContain("jsonb_typeof(payload_json) = 'object'")
     expect(sql).toContain("status in ('applied', 'dead_letter')")
     expect(sql).toContain('set search_path = public')
+  })
+
+  it('validates a live Supabase RLS and constraint snapshot', () => {
+    expect(validateSupabaseMigrationSnapshot({
+      rlsTables: [
+        { table: 'sync_records', rls: true },
+        { table: 'sync_mutations', rls: true },
+        { table: 'sync_users', rls: true },
+      ],
+      policies: [
+        {
+          policy: 'sync_records_user_isolation',
+          qual: 'auth.uid() = user_id',
+          withCheck: 'auth.uid() = user_id',
+        },
+        {
+          policy: 'sync_mutations_user_isolation',
+          qual: 'auth.uid() = user_id',
+          withCheck: 'auth.uid() = user_id',
+        },
+        {
+          policy: 'sync_users_user_isolation',
+          qual: 'auth.uid() = user_id',
+          withCheck: 'auth.uid() = user_id',
+        },
+      ],
+      constraints: [
+        { name: 'sync_records_scope_known' },
+        { name: 'sync_records_payload_object' },
+        { name: 'sync_records_server_version_positive' },
+        { name: 'sync_records_last_device_id_nonempty' },
+        { name: 'sync_mutations_status_known' },
+      ],
+      indexes: [
+        'sync_records_user_version_idx',
+        'sync_mutations_user_record_idx',
+      ],
+      functions: [
+        { name: 'claim_sync_server_version', config: '{search_path=public}' },
+        { name: 'replace_sync_records_for_user', config: '{search_path=public}' },
+      ],
+    })).toEqual([])
+
+    expect(validateSupabaseMigrationSnapshot({
+      rlsTables: [{ table: 'sync_records', rls: false }],
+    })).toContain('RLS is not enabled for sync_records.')
   })
 })
