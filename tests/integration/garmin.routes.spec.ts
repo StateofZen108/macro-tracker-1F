@@ -144,7 +144,7 @@ describe('garmin api routes', () => {
   })
 
   it('returns a Garmin connect session', async () => {
-    const routeModule = await import('../../api/garmin/connect')
+    const routeModule = await import('../../api/garmin/[action]')
     const response = await routeModule.default.fetch(
       buildRequest('GET', 'http://localhost/api/garmin/connect?returnTo=https://macrotracker-mf.vercel.app/settings'),
     )
@@ -157,26 +157,24 @@ describe('garmin api routes', () => {
   })
 
   it('returns Garmin status and sync payloads', async () => {
-    const statusRoute = await import('../../api/garmin/status')
-    const syncRoute = await import('../../api/garmin/sync')
-    const disconnectRoute = await import('../../api/garmin/disconnect')
+    const routeModule = await import('../../api/garmin/[action]')
 
-    await expect(statusRoute.default.fetch(buildRequest('GET', 'http://localhost/api/garmin/status'))).resolves.toMatchObject({
+    await expect(routeModule.default.fetch(buildRequest('GET', 'http://localhost/api/garmin/status'))).resolves.toMatchObject({
       status: 200,
     })
-    await expect(syncRoute.default.fetch(buildRequest('POST', 'http://localhost/api/garmin/sync'))).resolves.toMatchObject({
+    await expect(routeModule.default.fetch(buildRequest('POST', 'http://localhost/api/garmin/sync'))).resolves.toMatchObject({
       status: 200,
     })
     await expect(
-      disconnectRoute.default.fetch(buildRequest('POST', 'http://localhost/api/garmin/disconnect')),
+      routeModule.default.fetch(buildRequest('POST', 'http://localhost/api/garmin/disconnect')),
     ).resolves.toMatchObject({
       status: 200,
     })
   })
 
   it('redirects callback responses back into the app', async () => {
-    const callbackRoute = await import('../../api/garmin/callback')
-    const response = await callbackRoute.default.fetch(
+    const routeModule = await import('../../api/garmin/[action]')
+    const response = await routeModule.default.fetch(
       buildRequest(
         'GET',
         'http://localhost/api/garmin/callback?code=auth-code&state=state-1',
@@ -192,7 +190,7 @@ describe('garmin api routes', () => {
 
   it('protects the background sync route with a bearer secret', async () => {
     process.env.GARMIN_BACKGROUND_SYNC_SECRET = 'sync-secret'
-    const routeModule = await import('../../api/garmin/background-sync')
+    const routeModule = await import('../../api/garmin/[action]')
 
     const unauthorizedResponse = await routeModule.default.fetch(
       buildRequest('POST', 'http://localhost/api/garmin/background-sync', undefined),
