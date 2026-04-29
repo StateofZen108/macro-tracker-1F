@@ -13,6 +13,8 @@ export const REQUIRED_DEVICE_QA_CHECKS = [
   'discard_dialog_hit_test',
 ]
 
+export const DEVICE_QA_AUTOMATION_MODES = ['automated', 'operator_assisted']
+
 function resolveBuildId(env = process.env) {
   return env.VITE_APP_BUILD_ID || env.VERCEL_GIT_COMMIT_SHA || env.GIT_COMMIT_SHA || null
 }
@@ -22,6 +24,22 @@ function resolveGitSha() {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim()
+}
+
+function isTruthy(value) {
+  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function isGitTracked(path) {
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', path], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function validateDeviceQaEvidence(manifest, expected) {
@@ -63,6 +81,10 @@ export function validateDeviceQaEvidence(manifest, expected) {
     if (typeof check.evidence !== 'string' || !check.evidence.trim()) {
       violations.push(`Device QA check missing evidence: ${requiredId}`)
     }
+
+    if (!DEVICE_QA_AUTOMATION_MODES.includes(check.automationMode)) {
+      violations.push(`Device QA check ${requiredId} requires automationMode automated or operator_assisted.`)
+    }
   }
 
   return violations
@@ -86,6 +108,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const violations = validateDeviceQaEvidence(manifest, { buildId, gitSha })
+  if (isTruthy(process.env.PRODUCTION_RELEASE_REQUIRED) && !isGitTracked(join('docs', 'device-qa-results', `${buildId}.json`))) {
+    violations.push(`Device QA manifest must be committed in strict production mode: docs/device-qa-results/${buildId}.json`)
+  }
   if (violations.length) {
     console.error('Device QA evidence check failed:')
     for (const violation of violations) {

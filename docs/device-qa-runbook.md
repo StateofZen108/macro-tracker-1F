@@ -9,6 +9,7 @@ Each run must record:
 - Build ID and git SHA.
 - Date, tester, device model, OS version, browser, and install mode.
 - One result row per check with `passed` or `failed`.
+- `automationMode` for each row: `automated` when a real-device automation captured the proof, or `operator_assisted` when a human completed a hardware-only step and attached evidence.
 - Evidence as a screenshot path, short video path, exported diagnostics file, or exact note explaining a browser limitation plus the fallback that passed.
 
 Use this result shape when recording evidence:
@@ -18,7 +19,12 @@ type DeviceQaResult = {
   checkedAt: string
   device: 'physical_android' | 'physical_ios'
   browser: string
-  checks: Array<{ id: string; status: 'passed' | 'failed'; evidence: string }>
+  checks: Array<{
+    id: string
+    status: 'passed' | 'failed'
+    evidence: string
+    automationMode: 'automated' | 'operator_assisted'
+  }>
 }
 ```
 
@@ -37,5 +43,7 @@ type DeviceQaResult = {
 ## Release Rule
 
 `device_qa_green` passes only when all required checks pass on at least one physical Android or iOS device for the candidate build. A blocked API can pass only when the limitation is browser-documented in the evidence row and the equivalent fallback check passes on the same build.
+
+Use `npm run test:device-qa:auto-android` for the USB Android lane, `npm run test:device-qa:browserstack` for BrowserStack real-device evidence, and `npm run write:device-qa:manifest` to convert completed evidence into `docs/device-qa-results/<build-id>.json`. Emulator-only, synthetic, or missing `automationMode` rows fail `npm run test:device-qa:evidence`.
 
 Any failed check keeps the release red until the fix lands and this runbook is repeated against the new build.

@@ -3033,7 +3033,7 @@ export interface DeviceQaResult {
   checkedAt: string
   device: 'physical_android' | 'physical_ios'
   browser: string
-  checks: Array<{ id: string; status: 'passed' | 'failed'; evidence: string }>
+  checks: Array<{ id: string; status: 'passed' | 'failed'; evidence: string; automationMode?: DeviceQaAutomationMode }>
 }
 
 export interface ObservabilityContext {
@@ -3087,7 +3087,33 @@ export interface DeviceQaEvidenceManifest {
       | 'discard_dialog_hit_test'
     status: 'passed' | 'failed'
     evidence: string
+    automationMode: DeviceQaAutomationMode
   }>
+}
+
+export type ProductionProofStatus =
+  | 'proof_green'
+  | 'local_green_external_pending'
+  | 'proof_failed'
+
+export type DeviceQaAutomationMode =
+  | 'automated'
+  | 'operator_assisted'
+
+export interface ProductionProofReport {
+  buildId: string
+  gitSha: string
+  checkedAt: string
+  deploymentBaseUrl: string
+  status: ProductionProofStatus
+  rails: Array<{
+    id: string
+    status: 'passed' | 'failed' | 'pending'
+    evidence?: string
+    reason?: string
+  }>
+  generatedFiles: string[]
+  commitSha?: string
 }
 
 export type ApiErrorExposure = 'public' | 'private'
@@ -3096,10 +3122,17 @@ export interface ProductionReadinessManifest {
   buildId: string
   gitSha: string
   checkedAt: string
+  deploymentBaseUrl?: string
   releaseSuitePassed: boolean
   deviceQaManifestPath: string
   sentrySmokeEventId: string
+  sentrySmokeResultPath?: string
   sentryAlertsVerified: boolean
+  sentryAlertVerificationMode?: 'api' | 'manual_attestation'
+  sentryAlertsResultPath?: string
   supabaseMigrationVerified: boolean
+  supabaseVerificationMode?: 'live_database' | 'manual_attestation'
+  supabaseMigrationResultPath?: string
+  productionProofReportPath?: string
   moduleBudgetPassed: boolean
 }

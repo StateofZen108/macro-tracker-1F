@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -8,12 +9,35 @@ function truthy(value) {
   return typeof value === 'string' && ['true', '1', 'on'].includes(value.trim().toLowerCase())
 }
 
+function resolveGitSha(env) {
+  if (env.VERCEL_GIT_COMMIT_SHA || env.GIT_COMMIT_SHA) {
+    return env.VERCEL_GIT_COMMIT_SHA || env.GIT_COMMIT_SHA
+  }
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+  } catch {
+    return null
+  }
+}
+
 export async function runSentrySmoke(env = process.env, fetchImpl = fetch) {
   const productionRequired = truthy(env.PRODUCTION_RELEASE_REQUIRED)
+  const buildId = env.VITE_APP_BUILD_ID ?? env.VERCEL_GIT_COMMIT_SHA ?? env.GIT_COMMIT_SHA ?? null
+  const deploymentBaseUrl = env.PRODUCTION_BASE_URL ?? null
+  const gitSha = resolveGitSha(env)
+  const checkedAt = new Date().toISOString()
+
   if (truthy(env.OBSERVABILITY_SMOKE_DISABLED)) {
     if (productionRequired) {
       return {
         ok: false,
+        checkedAt,
+        buildId,
+        gitSha,
+        deploymentBaseUrl,
         errors: ['OBSERVABILITY_SMOKE_DISABLED cannot be true when PRODUCTION_RELEASE_REQUIRED=true.'],
       }
     }
@@ -21,6 +45,10 @@ export async function runSentrySmoke(env = process.env, fetchImpl = fetch) {
       ok: true,
       skipped: true,
       eventId: 'smoke-disabled-outside-production',
+      checkedAt,
+      buildId,
+      gitSha,
+      deploymentBaseUrl,
     }
   }
 
@@ -29,6 +57,10 @@ export async function runSentrySmoke(env = process.env, fetchImpl = fetch) {
   if (!url || !secret) {
     return {
       ok: false,
+      checkedAt,
+      buildId,
+      gitSha,
+      deploymentBaseUrl,
       errors: ['OBSERVABILITY_SMOKE_URL and OBSERVABILITY_SMOKE_SECRET are required.'],
     }
   }
@@ -40,13 +72,17 @@ export async function runSentrySmoke(env = process.env, fetchImpl = fetch) {
       'X-Observability-Smoke-Secret': secret,
     },
     body: JSON.stringify({
-      buildId: env.VITE_APP_BUILD_ID ?? env.VERCEL_GIT_COMMIT_SHA ?? env.GIT_COMMIT_SHA ?? null,
+      buildId,
     }),
   })
   const payload = await response.json().catch(() => null)
   if (!response.ok || !payload?.eventId) {
     return {
       ok: false,
+      checkedAt,
+      buildId,
+      gitSha,
+      deploymentBaseUrl,
       errors: [`Sentry smoke failed with status ${response.status}; missing event ID.`],
     }
   }
@@ -54,6 +90,13 @@ export async function runSentrySmoke(env = process.env, fetchImpl = fetch) {
   return {
     ok: true,
     eventId: String(payload.eventId),
+    checkedAt,
+    buildId,
+    gitSha,
+    deploymentBaseUrl,
+    smokeUrl: url,
+    returnedBuildId: payload.buildId ?? null,
+    returnedGitSha: payload.gitSha ?? null,
   }
 }
 
@@ -68,6 +111,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
 
   mkdirSync(dirname(RESULT_PATH), { recursive: true })
-  writeFileSync(RESULT_PATH, JSON.stringify(result, null, 2))
+  writeFileSync(RESULT_PATH, `${JSON.stringify(result, null, 2)}\n`)
   console.log(result.skipped ? 'Sentry smoke skipped outside production.' : `Sentry smoke verified: ${result.eventId}`)
 }

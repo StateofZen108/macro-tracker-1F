@@ -21,6 +21,32 @@ npm run test:release:accessible
 
 This command runs the full local release suite, then automatically runs Sentry smoke, live Supabase RLS verification, device QA evidence validation, readiness-manifest validation, and the strict production release gate only when the required credentials, tools, and manifests are present. It writes `tmp/production-rails-accessible-report.json` and exits green when all accessible rails pass, even if external rails are explicitly pending.
 
+To close the strict production proof rails, run the proof orchestrator against a deployed HTTPS build:
+
+```powershell
+$env:VITE_APP_BUILD_ID='<non-local-build-id>'
+$env:PRODUCTION_BASE_URL='https://<deployment>'
+$env:OBSERVABILITY_SMOKE_SECRET='<deployment-secret>'
+$env:SENTRY_AUTH_TOKEN='<sentry-token>'
+$env:SENTRY_ORG='<org>'
+$env:SENTRY_PROJECT='<project>'
+$env:SUPABASE_DB_URL='<production-postgres-url>'
+$env:DEVICE_QA_MODE='auto_android'
+npm run test:release:proof
+```
+
+`npm run test:release:proof` derives `OBSERVABILITY_SMOKE_URL` from `PRODUCTION_BASE_URL` when it is not supplied, runs every local and external rail, and writes `tmp/production-proof-report.json`. It fails with exact blockers when Sentry, Supabase, a physical device, or committed evidence is unavailable.
+
+To generate and commit evidence after physical-device proof has been collected, run:
+
+```powershell
+$env:DEVICE_QA_OPERATOR_EVIDENCE_JSON='C:\path\to\completed-device-evidence.json'
+$env:PRODUCTION_PROOF_AUTO_COMMIT='true'
+npm run release:proof-and-commit
+```
+
+Commit mode writes `docs/device-qa-results/<build-id>.json` and `docs/production-readiness/<build-id>.json`, commits only the release evidence, then reruns `npm run test:release:production`.
+
 Production release also requires a non-local build ID, physical-device evidence, a live Sentry smoke event, module budgets, Supabase migration verification, and a committed readiness manifest:
 
 ```powershell
@@ -34,6 +60,7 @@ $env:SENTRY_ALERTS_VERIFIED='true'
 $env:SUPABASE_MIGRATION_VERIFIED='true'
 npm run test:device-qa:evidence
 npm run test:observability:smoke
+npm run test:sentry:alerts
 npm run test:supabase:rls-live
 npm run test:module-budgets
 npm run test:production-readiness
@@ -57,6 +84,8 @@ Configure Sentry alerts before paid release:
 | OCR failure spike | Notify when OCR route failures exceed 3 in 10 minutes |
 | Sync failure spike | Notify when sync push/pull/bootstrap failures exceed 3 in 10 minutes |
 | Release regression | Notify when a new issue first appears on the current `SENTRY_RELEASE` |
+
+Run `npm run test:sentry:alerts` with `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` to verify those rules through the Sentry API. If API credentials are unavailable, `SENTRY_ALERTS_VERIFIED=true` is accepted only as a manual attestation and is recorded as such in production readiness.
 
 Production smoke uses `POST /api/observability/smoke` with `X-Observability-Smoke-Secret`. The route captures a synthetic server message and returns the Sentry event ID. The event ID must be recorded in `docs/production-readiness/<build-id>.json`; `OBSERVABILITY_SMOKE_DISABLED=true` is allowed only outside production-required runs.
 
@@ -91,17 +120,27 @@ The check inspects the production database for RLS-enabled sync tables, authenti
 
 Physical-device evidence lives under `docs/device-qa-results/<build-id>.json`. The manifest must match the release build ID and git SHA and must pass every check defined in `docs/device-qa-runbook.md`.
 
-Do not mark a production release green without a real physical Android or iOS run. Playwright evidence is not a substitute for camera, barcode, OCR capture, PWA install/reopen, and offline logging proof.
+Do not mark a production release green without a real physical Android or iOS run. Playwright desktop evidence is not a substitute for camera, barcode, OCR capture, PWA install/reopen, and offline logging proof.
+
+Supported real-device lanes:
+
+- `npm run test:device-qa:auto-android`: detects a USB Android device through ADB and writes operator instructions/evidence under `test-results/device-qa/<build-id>/`.
+- `npm run test:device-qa:browserstack`: accepts BrowserStack real-device evidence when `BROWSERSTACK_USERNAME` and `BROWSERSTACK_ACCESS_KEY` are set.
+- `npm run write:device-qa:manifest`: converts completed physical-device evidence JSON into the committed manifest format.
+
+Each device check must include `automationMode: "automated"` or `automationMode: "operator_assisted"`. Synthetic or emulator-only evidence fails the release gate.
 
 ## Production Readiness Manifest
 
 Readiness manifests live under `docs/production-readiness/<build-id>.json` and must match the current git SHA. Each manifest records:
 
 - physical-device QA manifest path
+- deployed production base URL
 - Sentry smoke event ID
+- Sentry alert verification mode
 - release suite status
-- Sentry alert verification
-- Supabase migration verification
+- Supabase migration verification mode
+- generated production proof report path
 - module budget status
 
 The production gate fails if the manifest is missing, stale, incomplete, or uncommitted.

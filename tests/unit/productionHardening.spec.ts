@@ -9,8 +9,24 @@ import { redactClientSentryEvent } from '../../src/observability/sentry.client'
 import { findModuleBudgetViolations } from '../../scripts/check-module-budgets.mjs'
 import { validateProductionReadinessManifest } from '../../scripts/check-production-readiness.mjs'
 import { runSentrySmoke } from '../../scripts/check-sentry-smoke.mjs'
+import { validateSentryAlertRules, verifySentryAlerts } from '../../scripts/check-sentry-alerts.mjs'
 import { resolveAccessibleProductionRailsPlan } from '../../scripts/run-accessible-production-rails.mjs'
 import { validateSupabaseMigrationSnapshot } from '../../scripts/check-supabase-migration-live.mjs'
+import {
+  deriveSmokeUrl,
+  isNonLocalBuildId,
+  resolveProductionProofPlan,
+  validateProductionProofPreflight,
+} from '../../scripts/run-production-proof.mjs'
+import { buildDeviceQaManifest } from '../../scripts/write-device-qa-manifest.mjs'
+import {
+  buildBrowserStackCapabilities,
+  resolveBrowserStackDeviceQaPlan,
+} from '../../scripts/run-device-qa-browserstack.mjs'
+import {
+  parseAdbDevices,
+  resolveAndroidDeviceQaPlan,
+} from '../../scripts/run-device-qa-android.mjs'
 import {
   findReleaseHygieneViolations,
   parsePorcelainStatus,
@@ -56,12 +72,18 @@ describe('production hardening scripts', () => {
         id,
         status: 'passed',
         evidence: `evidence/${id}.png`,
+        automationMode: 'operator_assisted',
       })),
     }
 
     expect(validateDeviceQaEvidence(manifest, { buildId: 'build-1', gitSha: 'abc123' })).toEqual([])
     expect(validateDeviceQaEvidence({ ...manifest, gitSha: 'old' }, { buildId: 'build-1', gitSha: 'abc123' }))
       .toContain('Device QA gitSha mismatch: expected abc123, got old.')
+    expect(validateDeviceQaEvidence({
+      ...manifest,
+      checks: manifest.checks.map((check) => ({ ...check, automationMode: 'simulated' })),
+    }, { buildId: 'build-1', gitSha: 'abc123' }))
+      .toContain('Device QA check camera_permission_denied requires automationMode automated or operator_assisted.')
   })
 
   it('requires complete production readiness evidence for the current build', () => {
@@ -73,7 +95,9 @@ describe('production hardening scripts', () => {
       deviceQaManifestPath: 'docs/device-qa-results/build-1.json',
       sentrySmokeEventId: 'event-1',
       sentryAlertsVerified: true,
+      sentryAlertVerificationMode: 'api',
       supabaseMigrationVerified: true,
+      supabaseVerificationMode: 'live_database',
       moduleBudgetPassed: true,
     }
 
@@ -131,6 +155,85 @@ describe('production hardening scripts', () => {
       'production_readiness_manifest',
       'strict_production_release',
     ])
+  })
+
+  it('enforces strict production proof preflight and derives the smoke URL', () => {
+    expect(isNonLocalBuildId('build-2026-04-29')).toBe(true)
+    expect(isNonLocalBuildId('local-release-abc')).toBe(false)
+    expect(deriveSmokeUrl({ PRODUCTION_BASE_URL: 'https://app.example.com/' } as NodeJS.ProcessEnv))
+      .toBe('https://app.example.com/api/observability/smoke')
+
+    const result = validateProductionProofPreflight({
+      env: {
+        VITE_APP_BUILD_ID: 'local-release-abc',
+        PRODUCTION_BASE_URL: 'http://localhost:4173',
+      } as NodeJS.ProcessEnv,
+      gitStatus: ' M src/App.tsx',
+      gitSha: 'abc123',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toContain('Production proof requires a non-local VITE_APP_BUILD_ID, VERCEL_GIT_COMMIT_SHA, or GIT_COMMIT_SHA.')
+    expect(result.errors).toContain('PRODUCTION_BASE_URL must be HTTPS.')
+    expect(result.errors).toContain('Tracked source change is not committed: src/App.tsx')
+  })
+
+  it('builds production proof plans for test and commit modes', () => {
+    expect(resolveProductionProofPlan({ mode: 'test', env: {} as NodeJS.ProcessEnv }).map((rail) => rail.id))
+      .toContain('strict_production_release')
+    expect(resolveProductionProofPlan({ mode: 'commit', env: { DEVICE_QA_MODE: 'browserstack' } as NodeJS.ProcessEnv }).map((rail) => rail.id))
+      .toEqual([
+        'local_release_suite',
+        'sentry_smoke',
+        'sentry_alerts',
+        'supabase_live_migration',
+        'browserstack_device_qa',
+        'write_device_qa_manifest',
+        'device_qa_evidence',
+        'module_budgets',
+        'write_production_readiness',
+      ])
+  })
+
+  it('normalizes device QA evidence and refuses missing hardware proof', () => {
+    const manifest = buildDeviceQaManifest({
+      checkedAt: '2026-04-29T10:00:00.000Z',
+      tester: 'QA',
+      checks: REQUIRED_DEVICE_QA_CHECKS.map((id) => ({
+        id,
+        status: 'passed',
+        evidence: `evidence/${id}.png`,
+        automationMode: id === 'discard_dialog_hit_test' ? 'automated' : 'operator_assisted',
+      })),
+    }, { buildId: 'build-1', gitSha: 'abc123' })
+
+    expect(manifest.buildId).toBe('build-1')
+    expect(validateDeviceQaEvidence(manifest, { buildId: 'build-1', gitSha: 'abc123' })).toEqual([])
+    expect(validateDeviceQaEvidence(buildDeviceQaManifest({ checks: [] }, { buildId: 'build-1', gitSha: 'abc123' }), {
+      buildId: 'build-1',
+      gitSha: 'abc123',
+    })).toContain('Device QA check did not pass: camera_permission_denied')
+  })
+
+  it('detects Android and BrowserStack device QA blockers exactly', () => {
+    expect(parseAdbDevices('List of devices attached\r\nabc123\tdevice\r\nbad\toffline\r\n'))
+      .toEqual([{ serial: 'abc123', state: 'device' }, { serial: 'bad', state: 'offline' }])
+
+    const noAdbPlan = resolveAndroidDeviceQaPlan(
+      { VITE_APP_BUILD_ID: 'build-1', PRODUCTION_BASE_URL: 'https://app.example.com' } as NodeJS.ProcessEnv,
+      () => false,
+    )
+    expect(noAdbPlan.ok).toBe(false)
+    expect(noAdbPlan.errors).toContain('ADB is required for auto_android device QA.')
+
+    const browserStackPlan = resolveBrowserStackDeviceQaPlan({
+      VITE_APP_BUILD_ID: 'build-1',
+      PRODUCTION_BASE_URL: 'https://app.example.com',
+    } as NodeJS.ProcessEnv)
+    expect(browserStackPlan.ok).toBe(false)
+    expect(browserStackPlan.errors).toContain('BROWSERSTACK_USERNAME and BROWSERSTACK_ACCESS_KEY are required for BrowserStack device QA.')
+    expect(buildBrowserStackCapabilities({ VITE_APP_BUILD_ID: 'build-1' } as NodeJS.ProcessEnv)['bstack:options'].realMobile)
+      .toBe('true')
   })
 })
 
@@ -409,6 +512,37 @@ describe('observability smoke', () => {
 
     expect(result.ok).toBe(false)
     expect(result.errors).toContain('OBSERVABILITY_SMOKE_DISABLED cannot be true when PRODUCTION_RELEASE_REQUIRED=true.')
+  })
+
+  it('verifies Sentry alert rules through API or explicit manual attestation', async () => {
+    expect(validateSentryAlertRules([
+      { name: 'New issue' },
+      { name: 'API 5xx spike' },
+      { name: 'OCR failure spike' },
+      { name: 'Sync failure spike' },
+      { name: 'Release regression' },
+    ])).toEqual([])
+
+    expect(validateSentryAlertRules([{ name: 'New issue' }])).toContain('api_5xx_spike')
+
+    await expect(verifySentryAlerts({
+      SENTRY_ALERTS_VERIFIED: 'true',
+    } as NodeJS.ProcessEnv)).resolves.toMatchObject({
+      ok: true,
+      verificationMode: 'manual_attestation',
+    })
+
+    await expect(verifySentryAlerts({
+      SENTRY_AUTH_TOKEN: 'token',
+      SENTRY_ORG: 'org',
+      SENTRY_PROJECT: 'project',
+    } as NodeJS.ProcessEnv, async () => new Response(JSON.stringify([{ name: 'New issue' }]), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))).resolves.toMatchObject({
+      ok: false,
+      missingAlertIds: expect.arrayContaining(['api_5xx_spike']),
+    })
   })
 })
 

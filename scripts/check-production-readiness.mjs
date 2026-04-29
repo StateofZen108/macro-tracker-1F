@@ -14,6 +14,22 @@ function resolveGitSha() {
   }).trim()
 }
 
+function isTruthy(value) {
+  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
+
+function isGitTracked(path) {
+  try {
+    execFileSync('git', ['ls-files', '--error-unmatch', path], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export function validateProductionReadinessManifest(manifest, expected) {
   const violations = []
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -33,6 +49,29 @@ export function validateProductionReadinessManifest(manifest, expected) {
     }
   }
 
+  if (expected.requireDeploymentBaseUrl && (typeof manifest.deploymentBaseUrl !== 'string' || !manifest.deploymentBaseUrl.startsWith('https://'))) {
+    violations.push('Readiness manifest requires an HTTPS deploymentBaseUrl.')
+  }
+  if (expected.requireProofReport && (typeof manifest.productionProofReportPath !== 'string' || !manifest.productionProofReportPath.trim())) {
+    violations.push('Readiness manifest requires productionProofReportPath in strict production mode.')
+  }
+
+  if (
+    manifest.sentryAlertVerificationMode !== undefined &&
+    manifest.sentryAlertVerificationMode !== 'api' &&
+    manifest.sentryAlertVerificationMode !== 'manual_attestation'
+  ) {
+    violations.push('Readiness manifest sentryAlertVerificationMode must be api or manual_attestation.')
+  }
+
+  if (
+    manifest.supabaseVerificationMode !== undefined &&
+    manifest.supabaseVerificationMode !== 'live_database' &&
+    manifest.supabaseVerificationMode !== 'manual_attestation'
+  ) {
+    violations.push('Readiness manifest supabaseVerificationMode must be live_database or manual_attestation.')
+  }
+
   for (const field of [
     'releaseSuitePassed',
     'sentryAlertsVerified',
@@ -41,6 +80,21 @@ export function validateProductionReadinessManifest(manifest, expected) {
   ]) {
     if (manifest[field] !== true) {
       violations.push(`Readiness manifest requires ${field}=true.`)
+    }
+  }
+
+  if (expected.requireExistingPaths) {
+    for (const field of [
+      'deviceQaManifestPath',
+      'sentrySmokeResultPath',
+      'sentryAlertsResultPath',
+      'supabaseMigrationResultPath',
+      'productionProofReportPath',
+    ]) {
+      const path = manifest[field]
+      if (typeof path === 'string' && path.trim() && !existsSync(resolve(path))) {
+        violations.push(`Readiness manifest references missing evidence path: ${path}`)
+      }
     }
   }
 
@@ -64,7 +118,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
 
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  const violations = validateProductionReadinessManifest(manifest, { buildId, gitSha })
+  const strictProduction = isTruthy(process.env.PRODUCTION_RELEASE_REQUIRED)
+  const violations = validateProductionReadinessManifest(manifest, {
+    buildId,
+    gitSha,
+    requireExistingPaths: true,
+    requireDeploymentBaseUrl: strictProduction,
+    requireProofReport: strictProduction,
+  })
+  if (strictProduction && !isGitTracked(join('docs', 'production-readiness', `${buildId}.json`))) {
+    violations.push(`Readiness manifest must be committed in strict production mode: docs/production-readiness/${buildId}.json`)
+  }
   if (violations.length) {
     console.error('Production readiness check failed:')
     for (const violation of violations) {

@@ -24,6 +24,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `rls_defended` | `tests/unit/productionHardening.spec.ts` verifies the migration and live snapshot validator; `npm run test:supabase:rls-live` proves the deployed database when `SUPABASE_DB_URL` and `psql` are available |
 | `production_readiness_green` | `npm run test:production-readiness` validates a committed readiness manifest with device QA, Sentry smoke event, migration verification, and module budget proof |
 | `accessible_rails_green` | `npm run test:release:accessible` runs every local rail and any configured external rail, writing `tmp/production-rails-accessible-report.json` with exact pending blockers |
+| `production_proof_green` | `npm run test:release:proof` passes against a non-local HTTPS deployment and writes `tmp/production-proof-report.json`; commit mode writes committed device/readiness evidence |
 | `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:release:production` |
 
 ## Gate Status
@@ -36,6 +37,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `npm run test:bundle` | Budgets pass, HEIC excluded from precache | 2026-04-28: passed, HEIC excluded from app-shell precache |
 | `npm run test:module-budgets` | Public root module budgets pass | 2026-04-28: passed |
 | `npm run test:release:accessible` | All locally accessible rails pass; external rails either pass or are explicitly pending | Pending latest run |
+| `npm run test:release:proof` | Strict deployed proof passes with Sentry smoke/alerts, Supabase verification, device QA, and committed readiness evidence | Pending real deployment/device evidence |
 | `npm run test:history-import:corpus` | MacroFactor corpus cases pass | 2026-04-28: passed, 5/5 corpus tests |
 | `npm run test:unit` | 0 failed tests | 2026-04-28: passed, 265 tests passed; existing documented skips/todos unchanged |
 | `npx playwright test tests/e2e --config=playwright.config.ts` | 0 failed tests | 2026-04-28: passed, 54/54 S22 tests |
@@ -57,5 +59,6 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 - Device QA must attach dated physical-device evidence for camera permission denied/granted, barcode fallback, OCR save, PWA install/reopen, offline logging, and discard hit testing.
 - Production readiness must include the live Sentry smoke event ID, Supabase migration verification, and module budget proof for the same build ID and git SHA.
 - Accessible rails must be used before production signoff so local/CI automation executes everything available before external evidence is requested.
+- Strict production proof must use `npm run test:release:proof` or `npm run release:proof-and-commit`; missing deployed Sentry, Supabase, physical-device, or committed evidence must remain machine-detected blockers.
 
 Physical-device QA, live Sentry smoke, and Supabase migration verification require external evidence outside this desktop/headless environment.

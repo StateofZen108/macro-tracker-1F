@@ -7,7 +7,7 @@ function requiredBuildId(env) {
   if (!buildId) {
     throw new Error('Production release requires explicit VITE_APP_BUILD_ID, VERCEL_GIT_COMMIT_SHA, or GIT_COMMIT_SHA.')
   }
-  if (buildId.startsWith('local-release-')) {
+  if (buildId.startsWith('local-') || buildId.startsWith('local-release-')) {
     throw new Error('Production release cannot use a local fallback build ID.')
   }
   return buildId
@@ -46,6 +46,8 @@ try {
 for (const scriptName of [
   'test:release',
   'test:observability:smoke',
+  'test:sentry:alerts',
+  'test:supabase:rls-live',
   'test:module-budgets',
   'test:production-readiness',
   'test:release:hygiene',

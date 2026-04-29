@@ -3,6 +3,11 @@ import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const SMOKE_RESULT_PATH = resolve('tmp', 'observability-smoke-result.json')
+const SENTRY_ALERTS_RESULT_PATH = resolve('tmp', 'sentry-alerts-result.json')
+const SUPABASE_RESULT_PATH = resolve('tmp', 'supabase-migration-live-result.json')
+const PROOF_REPORT_PATH = resolve('tmp', 'production-proof-report.json')
+
 function resolveRequired(name) {
   const value = process.env[name]?.trim()
   if (!value) {
@@ -24,28 +29,64 @@ function readSmokeEventId() {
     return direct
   }
 
-  const smokePath = resolve('tmp', 'observability-smoke-result.json')
-  if (!existsSync(smokePath)) {
+  if (!existsSync(SMOKE_RESULT_PATH)) {
     throw new Error('Missing tmp/observability-smoke-result.json.')
   }
-  const result = JSON.parse(readFileSync(smokePath, 'utf8'))
+  const result = JSON.parse(readFileSync(SMOKE_RESULT_PATH, 'utf8'))
   if (typeof result.eventId !== 'string' || !result.eventId.trim()) {
     throw new Error('Sentry smoke result is missing eventId.')
   }
   return result.eventId
 }
 
-function readSupabaseMigrationVerified() {
-  if (process.env.SUPABASE_MIGRATION_VERIFIED === 'true') {
-    return true
+function readSentryAlertsResult() {
+  if (existsSync(SENTRY_ALERTS_RESULT_PATH)) {
+    const result = JSON.parse(readFileSync(SENTRY_ALERTS_RESULT_PATH, 'utf8'))
+    return {
+      verified: result.ok === true,
+      verificationMode: result.verificationMode ?? 'api',
+      path: 'tmp/sentry-alerts-result.json',
+    }
   }
 
-  const resultPath = resolve('tmp', 'supabase-migration-live-result.json')
-  if (!existsSync(resultPath)) {
-    return false
+  if (process.env.SENTRY_ALERTS_VERIFIED === 'true') {
+    return {
+      verified: true,
+      verificationMode: 'manual_attestation',
+      path: undefined,
+    }
   }
-  const result = JSON.parse(readFileSync(resultPath, 'utf8'))
-  return result.ok === true
+
+  return {
+    verified: false,
+    verificationMode: undefined,
+    path: undefined,
+  }
+}
+
+function readSupabaseMigrationResult() {
+  if (existsSync(SUPABASE_RESULT_PATH)) {
+    const result = JSON.parse(readFileSync(SUPABASE_RESULT_PATH, 'utf8'))
+    return {
+      verified: result.ok === true,
+      verificationMode: result.verificationMode ?? 'live_database',
+      path: 'tmp/supabase-migration-live-result.json',
+    }
+  }
+
+  if (process.env.SUPABASE_MIGRATION_VERIFIED === 'true') {
+    return {
+      verified: true,
+      verificationMode: 'manual_attestation',
+      path: undefined,
+    }
+  }
+
+  return {
+    verified: false,
+    verificationMode: undefined,
+    path: undefined,
+  }
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
@@ -56,21 +97,37 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     throw new Error(`Missing device QA manifest: ${deviceQaManifestPath}`)
   }
 
+  const sentryAlerts = readSentryAlertsResult()
+  if (!sentryAlerts.verified) {
+    throw new Error('Missing Sentry alert verification.')
+  }
+  const supabaseMigration = readSupabaseMigrationResult()
+  if (!supabaseMigration.verified) {
+    throw new Error('Missing Supabase migration verification.')
+  }
+
   const manifest = {
     buildId,
     gitSha,
     checkedAt: new Date().toISOString(),
+    deploymentBaseUrl: process.env.PRODUCTION_BASE_URL ?? null,
     releaseSuitePassed: true,
-    deviceQaManifestPath,
+    deviceQaManifestPath: `docs/device-qa-results/${buildId}.json`,
     sentrySmokeEventId: readSmokeEventId(),
-    sentryAlertsVerified: process.env.SENTRY_ALERTS_VERIFIED === 'true',
-    supabaseMigrationVerified: readSupabaseMigrationVerified(),
+    sentrySmokeResultPath: existsSync(SMOKE_RESULT_PATH) ? 'tmp/observability-smoke-result.json' : undefined,
+    sentryAlertsVerified: sentryAlerts.verified,
+    sentryAlertVerificationMode: sentryAlerts.verificationMode,
+    sentryAlertsResultPath: sentryAlerts.path,
+    supabaseMigrationVerified: supabaseMigration.verified,
+    supabaseVerificationMode: supabaseMigration.verificationMode,
+    supabaseMigrationResultPath: supabaseMigration.path,
+    productionProofReportPath: existsSync(PROOF_REPORT_PATH) ? 'tmp/production-proof-report.json' : undefined,
     moduleBudgetPassed: true,
   }
 
   const outputDir = resolve('docs', 'production-readiness')
   mkdirSync(outputDir, { recursive: true })
-  writeFileSync(join(outputDir, `${buildId}.json`), JSON.stringify(manifest, null, 2))
+  writeFileSync(join(outputDir, `${buildId}.json`), `${JSON.stringify(manifest, null, 2)}\n`)
   writeFileSync(
     join(outputDir, `${buildId}.md`),
     [
@@ -78,10 +135,12 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
       '',
       `- Git SHA: ${gitSha}`,
       `- Checked at: ${manifest.checkedAt}`,
-      `- Device QA: ${deviceQaManifestPath}`,
+      `- Deployment base URL: ${manifest.deploymentBaseUrl ?? '<not recorded>'}`,
+      `- Device QA: ${manifest.deviceQaManifestPath}`,
       `- Sentry smoke event: ${manifest.sentrySmokeEventId}`,
-      `- Sentry alerts verified: ${manifest.sentryAlertsVerified}`,
-      `- Supabase migration verified: ${manifest.supabaseMigrationVerified}`,
+      `- Sentry alerts verified: ${manifest.sentryAlertsVerified} (${manifest.sentryAlertVerificationMode})`,
+      `- Supabase migration verified: ${manifest.supabaseMigrationVerified} (${manifest.supabaseVerificationMode})`,
+      `- Production proof report: ${manifest.productionProofReportPath ?? '<not recorded>'}`,
       `- Module budgets passed: ${manifest.moduleBudgetPassed}`,
       '',
     ].join('\n'),

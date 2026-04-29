@@ -197,7 +197,9 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - release hygiene checks for committed source state
   - public root module budget checks
   - one-command accessible production rails via `npm run test:release:accessible`
+  - strict production proof orchestration via `npm run test:release:proof`
   - production Sentry smoke checks and readiness manifests
+  - Sentry alert verification via API or recorded manual attestation
   - optional live Supabase RLS verification via `npm run test:supabase:rls-live`
   - physical-device QA evidence for camera, barcode, OCR, PWA, offline, and dirty-sheet paths
 
@@ -371,6 +373,27 @@ Run the release signoff gate:
 ```bash
 npm run test:release
 ```
+
+Run every locally accessible production rail and get exact external blockers:
+
+```bash
+npm run test:release:accessible
+```
+
+Run strict production proof against a deployed HTTPS build:
+
+```powershell
+$env:VITE_APP_BUILD_ID='<non-local-build-id>'
+$env:PRODUCTION_BASE_URL='https://<deployment>'
+$env:OBSERVABILITY_SMOKE_SECRET='<deployment-secret>'
+$env:SENTRY_AUTH_TOKEN='<sentry-token>'
+$env:SENTRY_ORG='<org>'
+$env:SENTRY_PROJECT='<project>'
+$env:SUPABASE_DB_URL='<production-postgres-url>'
+npm run test:release:proof
+```
+
+`npm run test:release:proof` fails by design when Sentry smoke/alerts, Supabase verification, physical-device QA, or committed readiness evidence is unavailable. After real device evidence exists, `npm run release:proof-and-commit` can write and commit the production evidence when `PRODUCTION_PROOF_AUTO_COMMIT=true`.
 
 The Cut OS 10/10 release predicate is stricter than a plain build:
 
