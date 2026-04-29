@@ -71,6 +71,11 @@ describe('feature flags', () => {
       progressProofFinishV1: false,
       cohesionFinishV1: false,
       premiumDesignV1: false,
+      premiumUiV1: false,
+      premiumLogSummaryV2: false,
+      premiumFastLogToolbarV2: false,
+      premiumMealLedgerV2: false,
+      premiumProofStripV1: false,
       mobileIaV1: false,
       commandSurfacePolishV1: false,
       screenFinishV1: false,
@@ -154,6 +159,11 @@ describe('feature flags', () => {
       progressProofFinishV1: true,
       cohesionFinishV1: true,
       premiumDesignV1: true,
+      premiumUiV1: true,
+      premiumLogSummaryV2: true,
+      premiumFastLogToolbarV2: true,
+      premiumMealLedgerV2: true,
+      premiumProofStripV1: true,
       mobileIaV1: true,
       commandSurfacePolishV1: true,
       screenFinishV1: true,
@@ -256,6 +266,11 @@ describe('feature flags', () => {
       progressProofFinishV1: false,
       cohesionFinishV1: false,
       premiumDesignV1: false,
+      premiumUiV1: false,
+      premiumLogSummaryV2: false,
+      premiumFastLogToolbarV2: false,
+      premiumMealLedgerV2: false,
+      premiumProofStripV1: false,
       mobileIaV1: false,
       commandSurfacePolishV1: false,
       screenFinishV1: false,
@@ -347,6 +362,11 @@ describe('feature flags', () => {
     const flags = buildFeatureFlags({
       MODE: 'production',
       VITE_FF_PREMIUM_DESIGN_V1: 'false',
+      VITE_FF_PREMIUM_UI_V1: 'false',
+      VITE_FF_PREMIUM_LOG_SUMMARY_V2: 'true',
+      VITE_FF_PREMIUM_FAST_LOG_TOOLBAR_V2: 'true',
+      VITE_FF_PREMIUM_MEAL_LEDGER_V2: 'true',
+      VITE_FF_PREMIUM_PROOF_STRIP_V1: 'true',
       VITE_FF_MOBILE_IA_V1: 'true',
       VITE_FF_MOTION_SYSTEM_V1: 'true',
       VITE_FF_COMMAND_HOME_V1: 'false',
@@ -372,5 +392,9 @@ describe('feature flags', () => {
     expect(flags.progressProofFinishV1).toBe(false)
     expect(flags.screenFinishV1).toBe(false)
     expect(flags.settingsHubV1).toBe(false)
+    expect(flags.premiumLogSummaryV2).toBe(false)
+    expect(flags.premiumFastLogToolbarV2).toBe(false)
+    expect(flags.premiumMealLedgerV2).toBe(false)
+    expect(flags.premiumProofStripV1).toBe(false)
   })
 })

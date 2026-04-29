@@ -58,6 +58,14 @@ export default defineConfig(({ mode }) => {
               return 'cut-os-activation'
             }
 
+            if (id.includes('src/components/AppBottomNav')) {
+              return 'app-shell-nav'
+            }
+
+            if (id.includes('src/components/DateNavigator')) {
+              return 'date-navigator'
+            }
+
             if (
               id.includes('src/components/AddFoodSheet') ||
               id.includes('src/components/SaveRecipeSheet') ||

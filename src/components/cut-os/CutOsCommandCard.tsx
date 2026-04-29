@@ -1,7 +1,9 @@
 import { ArrowRight, Clock3 } from 'lucide-react'
+import { FEATURE_FLAGS } from '../../config/featureFlags'
 import type { CutOsActionTarget, CutOsSurfaceModel } from '../../types'
 import { CutOsActionHistory } from './CutOsActionHistory'
 import { CutOsProofStack } from './CutOsProofStack'
+import { CutOsProofStrip } from './CutOsProofStrip'
 import { CutOsSetupChecklist } from './CutOsSetupChecklist'
 
 interface CutOsCommandCardProps {
@@ -41,6 +43,7 @@ export function CutOsCommandCard({
   const { command, diagnosis, activeAction } = model
   const proofLimit = compact ? 2 : surface === 'coach' ? undefined : 3
   const pendingSetup = model.setup.filter((item) => item.status === 'pending')
+  const showPremiumProofStrip = FEATURE_FLAGS.premiumUiV1 && FEATURE_FLAGS.premiumProofStripV1
   const testId =
     surface === 'dashboard'
       ? 'cut-os-command'
@@ -101,7 +104,9 @@ export function CutOsCommandCard({
         ))}
       </div>
 
-      {!compact ? (
+      {showPremiumProofStrip ? <CutOsProofStrip model={model} compact={compact} /> : null}
+
+      {!compact && !showPremiumProofStrip ? (
         <div className="grid gap-2 sm:grid-cols-4">
           {[
             ['Scale', diagnosis.scaleVerdict],

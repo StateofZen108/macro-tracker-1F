@@ -62,6 +62,11 @@ export interface FeatureFlags {
   progressProofFinishV1: boolean
   cohesionFinishV1: boolean
   premiumDesignV1: boolean
+  premiumUiV1: boolean
+  premiumLogSummaryV2: boolean
+  premiumFastLogToolbarV2: boolean
+  premiumMealLedgerV2: boolean
+  premiumProofStripV1: boolean
   mobileIaV1: boolean
   commandSurfacePolishV1: boolean
   screenFinishV1: boolean
@@ -164,6 +169,11 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     progressProofFinishV1: resolveFeatureFlag(env.VITE_FF_PROGRESS_PROOF_FINISH_V1, mode),
     cohesionFinishV1: resolveFeatureFlag(env.VITE_FF_COHESION_FINISH_V1, mode),
     premiumDesignV1: resolveFeatureFlag(env.VITE_FF_PREMIUM_DESIGN_V1, mode),
+    premiumUiV1: resolveFeatureFlag(env.VITE_FF_PREMIUM_UI_V1, mode),
+    premiumLogSummaryV2: resolveFeatureFlag(env.VITE_FF_PREMIUM_LOG_SUMMARY_V2, mode),
+    premiumFastLogToolbarV2: resolveFeatureFlag(env.VITE_FF_PREMIUM_FAST_LOG_TOOLBAR_V2, mode),
+    premiumMealLedgerV2: resolveFeatureFlag(env.VITE_FF_PREMIUM_MEAL_LEDGER_V2, mode),
+    premiumProofStripV1: resolveFeatureFlag(env.VITE_FF_PREMIUM_PROOF_STRIP_V1, mode),
     mobileIaV1: resolveFeatureFlag(env.VITE_FF_MOBILE_IA_V1, mode),
     commandSurfacePolishV1: resolveFeatureFlag(env.VITE_FF_COMMAND_SURFACE_POLISH_V1, mode),
     screenFinishV1: resolveFeatureFlag(env.VITE_FF_SCREEN_FINISH_V1, mode),
@@ -348,6 +358,13 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
   if (!resolvedFlags.premiumDesignV1) {
     resolvedFlags.mobileIaV1 = false
     resolvedFlags.motionSystemV1 = false
+  }
+
+  if (!resolvedFlags.premiumUiV1) {
+    resolvedFlags.premiumLogSummaryV2 = false
+    resolvedFlags.premiumFastLogToolbarV2 = false
+    resolvedFlags.premiumMealLedgerV2 = false
+    resolvedFlags.premiumProofStripV1 = false
   }
 
   if (!resolvedFlags.commandSurfaceV2) {

@@ -17,6 +17,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('S22 log layout exposes fast logging methods on initial render', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 })
   const dailySummary = page.getByTestId('daily-summary-card')
   await expect(dailySummary).toBeVisible()
   await expectFullyInViewport(dailySummary)
@@ -29,17 +30,20 @@ test('S22 log layout exposes fast logging methods on initial render', async ({ p
   await expect(page.getByTestId('daily-summary-carbs-label')).toHaveText('C')
   await expect(page.getByTestId('daily-summary-carbs-value')).toContainText(/\d+g/i)
   await expectFullyInViewport(page.getByTestId('daily-summary-carbs'))
+  await expect(page.getByTestId('daily-summary-protein')).toHaveAttribute('data-macro-token', 'protein')
+  await expect(page.getByTestId('daily-summary-fat')).toHaveAttribute('data-macro-token', 'fat')
+  await expect(page.getByTestId('daily-summary-carbs')).toHaveAttribute('data-macro-token', 'carbs')
   const summaryFitsWithoutHorizontalScroll = await dailySummary.evaluate(
     (element) => element.scrollWidth <= element.clientWidth + 1,
   )
   expect(summaryFitsWithoutHorizontalScroll).toBe(true)
 
   const fastLogButtons = [
-    page.getByRole('button', { name: /^search food$/i }),
-    page.getByRole('button', { name: /^scan$/i }),
-    page.getByRole('button', { name: /^quick add$/i }),
-    page.getByRole('button', { name: /^copy previous$/i }),
-    page.getByRole('button', { name: /^custom$/i }),
+    page.getByTestId('fast-log-primary-search'),
+    page.getByTestId('fast-log-scan'),
+    page.getByTestId('fast-log-quick-add'),
+    page.getByTestId('fast-log-copy'),
+    page.getByTestId('fast-log-custom'),
     page.getByRole('button', { name: /^logging settings$/i }),
   ]
 
@@ -48,6 +52,22 @@ test('S22 log layout exposes fast logging methods on initial render', async ({ p
     await expectFullyInViewport(button)
     await expectCenterHittable(button)
   }
+
+  await expect(page.getByTestId('fast-log-primary-search')).toHaveText(/search food/i)
+  await expect(page.getByTestId('meal-ledger-row').first()).toBeVisible()
+  await expectFullyInViewport(page.locator('[data-meal-section="breakfast"]').getByRole('button', { name: /add food to breakfast/i }))
+  await expect(page.getByTestId('meal-ledger-macro-rail').first()).toBeVisible()
+
+  const navHasNoVisibleTruncatedLabels = await page.locator('nav').last().evaluate((nav) => {
+    return [...nav.querySelectorAll('span')]
+      .filter((span) => {
+        const rect = span.getBoundingClientRect()
+        const styles = window.getComputedStyle(span)
+        return rect.width > 2 && rect.height > 2 && styles.visibility !== 'hidden' && styles.display !== 'none'
+      })
+      .every((span) => !span.textContent?.includes('...'))
+  })
+  expect(navHasNoVisibleTruncatedLabels).toBe(true)
 })
 
 test('breakfast add button is hittable and search clears stale selection', async ({ page }) => {
