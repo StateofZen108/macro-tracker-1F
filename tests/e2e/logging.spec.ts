@@ -17,6 +17,23 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('S22 log layout exposes fast logging methods on initial render', async ({ page }) => {
+  const dailySummary = page.getByTestId('daily-summary-card')
+  await expect(dailySummary).toBeVisible()
+  await expectFullyInViewport(dailySummary)
+  await expect(page.getByTestId('daily-summary-goal')).toContainText(/goal\s*\d+\s*cal/i)
+  await expect(page.getByTestId('daily-summary-calories')).toContainText(/\d+\s*cal/i)
+  await expect(page.getByTestId('daily-summary-protein-label')).toHaveText('P')
+  await expect(page.getByTestId('daily-summary-protein-value')).toContainText(/\d+g/i)
+  await expect(page.getByTestId('daily-summary-fat-label')).toHaveText('F')
+  await expect(page.getByTestId('daily-summary-fat-value')).toContainText(/\d+g/i)
+  await expect(page.getByTestId('daily-summary-carbs-label')).toHaveText('C')
+  await expect(page.getByTestId('daily-summary-carbs-value')).toContainText(/\d+g/i)
+  await expectFullyInViewport(page.getByTestId('daily-summary-carbs'))
+  const summaryFitsWithoutHorizontalScroll = await dailySummary.evaluate(
+    (element) => element.scrollWidth <= element.clientWidth + 1,
+  )
+  expect(summaryFitsWithoutHorizontalScroll).toBe(true)
+
   const fastLogButtons = [
     page.getByRole('button', { name: /^search food$/i }),
     page.getByRole('button', { name: /^scan$/i }),
@@ -82,7 +99,13 @@ test('quick add logs a snapshot-only entry and updates totals', async ({ page })
 
   const quickAddRow = entryRow(page, 'Protein bar')
   await expect(quickAddRow).toContainText('220 cal')
-  await expect(page.getByText('220 cal').first()).toBeVisible()
+  await expect(page.getByTestId('daily-summary-calories')).toContainText('220 cal')
+  await expect(page.getByTestId('daily-summary-protein-label')).toHaveText('P')
+  await expect(page.getByTestId('daily-summary-protein-value')).toHaveText('20g')
+  await expect(page.getByTestId('daily-summary-fat-label')).toHaveText('F')
+  await expect(page.getByTestId('daily-summary-fat-value')).toHaveText('7g')
+  await expect(page.getByTestId('daily-summary-carbs-label')).toHaveText('C')
+  await expect(page.getByTestId('daily-summary-carbs-value')).toHaveText('23g')
 })
 
 test('bottom sheet escape closes clean sheets and dirty discard stays hittable', async ({ page }) => {
