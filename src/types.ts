@@ -47,7 +47,7 @@ export type ImportTrustBlockingIssue =
   | 'provider_conflict'
   | 'low_ocr_confidence'
 export type FoodTrustStatus = 'trusted' | 'review_required' | 'blocked'
-export type FoodTrustEvidenceSource = 'barcode' | 'ocr' | 'catalog' | 'custom' | 'import'
+export type FoodTrustEvidenceSource = 'barcode' | 'ocr' | 'catalog' | 'custom' | 'import' | 'ai_photo'
 export type FoodTrustServingBasis = 'verified' | 'inferred' | 'missing'
 export type FoodTrustMacroCompleteness = 'complete' | 'partial' | 'missing'
 export interface FoodTrustEvidence {
@@ -513,6 +513,18 @@ export type DiagnosticsEventType =
   | 'observability.client_initialized'
   | 'observability.client_disabled'
   | 'observability.redaction_failed'
+  | 'daily_guardrails.computed'
+  | 'daily_guardrails.recompute_after_action'
+  | 'daily_guardrails.cta_suppressed'
+  | 'daily_guardrails.disabled_by_flag'
+  | 'food_trust.repair_task_created'
+  | 'surface_consistency.verified'
+  | 'surface_consistency.failed'
+  | 'surface_consistency.mismatch_blocked'
+  | 'coach.repair_answer_generated'
+  | 'recovery.issue_visible'
+  | 'recovery.partial_save_blocked'
+  | 'release.daily_reliability_verified'
 export type CoachProposalType =
   | 'applyCalorieTarget'
   | 'applyMacroTargets'
@@ -660,10 +672,77 @@ export interface CutOsSetupChecklistItem {
   routeTarget: CutOsActionTarget
 }
 
+export type DailyGuardrailSeverity = 'info' | 'warn' | 'block'
+export type DailyGuardrailSource = 'food' | 'weight' | 'training' | 'phase' | 'coach' | 'sync'
+export type DailyGuardrailRoute = 'log' | 'weight' | 'workouts' | 'settings' | 'coach'
+
+export interface DailyGuardrail {
+  id: string
+  date: string
+  severity: DailyGuardrailSeverity
+  source: DailyGuardrailSource
+  title: string
+  reason: string
+  cta: {
+    label: string
+    route: DailyGuardrailRoute
+    targetId?: string
+  }
+  proofIds: string[]
+}
+
+export type TrustRepairReasonCode =
+  | 'missing_macros'
+  | 'missing_serving_basis'
+  | 'provider_conflict'
+  | 'low_confidence'
+  | 'unreviewed_ai'
+  | 'impossible_value'
+
+export interface TrustRepairTask {
+  id: string
+  foodId?: string
+  logEntryId?: string
+  source: FoodTrustEvidenceSource
+  reasonCode: TrustRepairReasonCode
+  status: 'open' | 'resolved' | 'dismissed'
+  blockingCoachProof: boolean
+}
+
+export type CommandSurfaceName = 'dashboard' | 'log' | 'weight' | 'coach'
+
+export interface CommandSurfaceSnapshot {
+  surface: CommandSurfaceName
+  commandId?: string
+  diagnosisId?: string
+  primaryAction?: string
+  proofIds: string[]
+  actionStatus: CutOsActionStatus | 'none'
+  setupItemIds: string[]
+}
+
+export interface CommandConsistencyReport {
+  status: 'verified' | 'mismatch' | 'unverified'
+  checkedAt: string
+  surfaces: CommandSurfaceSnapshot[]
+  mismatchReasons: string[]
+}
+
+export interface DailyMistakeProofModel {
+  date: string
+  commandId?: string
+  readiness: 'ready' | 'needs_repair' | 'blocked'
+  primaryGuardrail: DailyGuardrail | null
+  guardrails: DailyGuardrail[]
+  trustRepairs: TrustRepairTask[]
+  surfaceConsistency: CommandConsistencyReport
+}
+
 export interface CutOsSurfaceModel extends CutOsSnapshot {
   setup: CutOsSetupChecklistItem[]
   actionHistory: CutOsActionRecord[]
   activeAction: CutOsActionRecord | null
+  dailyGuardrails?: DailyMistakeProofModel
 }
 
 export interface CutOsActivationState {

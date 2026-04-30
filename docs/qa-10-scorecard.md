@@ -38,6 +38,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `paid_ops_ready` | `npm run test:paid-ops` verifies billing state reconciliation and redacted support bundles |
 | `native_device_green` | `npm run test:native-device-proof` verifies a current-build physical-device manifest in strict production mode and reports pending evidence locally when no real device proof exists |
 | `macrofactor_surpass_candidate` | `npm run test:macrofactor-surpass` passes logger speed, AI meal capture, food database trust, Cut OS benchmark, paid ops, and native-device proof rails |
+| `daily_reliability_green` | `npm run test:mistake-proof-core` verifies daily guardrails, visible trust repair, surface consistency, Coach repair answers, and food trust classification |
 | `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:release:production` |
 
 ## Gate Status
@@ -53,6 +54,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `npm run test:release:proof` | Strict deployed proof passes with Sentry smoke/alerts, Supabase verification, device QA, and committed readiness evidence | Pending real deployment/device evidence |
 | `npm run test:standalone-cut-9` | Food trust, activation, Coach proof, Cut OS replay, server typecheck, and deploy-log scanner pass | 2026-04-30: passed locally; deploy-log scanner enforces supplied logs and production strict mode |
 | `npm run test:macrofactor-surpass` | Logger speed, AI meal capture, provider trust, Cut OS benchmark, paid ops, and native-device proof rails pass | Pending latest run |
+| `npm run test:mistake-proof-core` | Daily guardrails, mistake-proof Log, surface consistency, Coach proof, and food trust gates pass | Pending latest run |
 | `npm run test:server:function-typecheck` | API/server functions typecheck with 0 diagnostics | 2026-04-30: passed |
 | `npm run test:server:deploy-clean` | Vercel deploy log has 0 TypeScript diagnostics, warnings, or function packaging warnings | 2026-04-30: local no-log mode passed; production strict mode requires a supplied deploy log |
 | `npm run test:history-import:corpus` | MacroFactor corpus cases pass | 2026-04-28: passed, 5/5 corpus tests |
@@ -81,5 +83,6 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 - Accessible rails must be used before production signoff so local/CI automation executes everything available before external evidence is requested.
 - Strict production proof must use `npm run test:release:proof` or `npm run release:proof-and-commit`; missing deployed Sentry, Supabase, physical-device, or committed evidence must remain machine-detected blockers.
 - MacroFactor-surpass proof must keep local paid value separate from production proof: local domains and E2E can pass on this machine, while `native_device_green` stays pending or strict-red until real-device evidence is committed for the current build.
+- Daily reliability must keep one safe next action visible, expose food repair at the exact meal row, suppress unsafe harder-cut CTAs while blockers are open, and keep Dashboard, Log, Weight, and Coach on the same command packet.
 
 Physical-device QA, live Sentry smoke, and Supabase migration verification require external evidence outside this desktop/headless environment.

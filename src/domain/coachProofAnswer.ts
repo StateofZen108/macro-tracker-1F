@@ -68,6 +68,52 @@ function setupAnswer(input: CoachProofAnswerInput): CoachProofAnswer {
   }
 }
 
+function repairAnswer(input: CoachProofAnswerInput): CoachProofAnswer {
+  const guardrails = input.cutOsSurface?.dailyGuardrails
+  const primary = guardrails?.primaryGuardrail
+  const repairSummary =
+    guardrails?.trustRepairs.length
+      ? `${guardrails.trustRepairs.length} food trust repair task${
+          guardrails.trustRepairs.length === 1 ? '' : 's'
+        } are open.`
+      : 'The active daily guardrail needs to be cleared before escalation.'
+  const title = primary?.title ?? 'Daily guardrail blocks escalation'
+  const reason = primary?.reason ?? repairSummary
+  const action = primary?.cta.label ?? 'Fix the active guardrail'
+
+  return {
+    answer:
+      `I would not escalate the cut from this packet yet. ${title}: ${sentence(reason)} ` +
+      `The next action is "${action}", then I will recompute the daily command from the repaired proof. ` +
+      'Calories, macros, phases, and workouts stay unchanged from this answer.',
+    answerType: 'safety-limited',
+    citations: [
+      {
+        id: primary?.id ?? 'daily-guardrail',
+        label: 'daily guardrail',
+        title,
+        source: 'Cut OS proof packet',
+        summary: reason,
+        sourceType: 'App inference',
+      },
+    ],
+    proposals: [],
+    safetyFlags: [
+      {
+        id: 'daily-guardrail-active',
+        severity: primary?.severity === 'block' ? 'blocked' : 'warning',
+        message: 'No harder-cut advice is supported while a daily guardrail is active.',
+      },
+    ],
+    contextUsed: [
+      `Question: ${input.question.trim()}`,
+      `Selected date ${input.contextSnapshot.selectedDate}`,
+      `Daily readiness ${guardrails?.readiness ?? 'blocked'}`,
+      repairSummary,
+    ],
+  }
+}
+
 export function buildCoachProofAnswer(input: CoachProofAnswerInput): CoachProofAnswer {
   const surface = input.cutOsSurface
   if (
@@ -76,6 +122,14 @@ export function buildCoachProofAnswer(input: CoachProofAnswerInput): CoachProofA
     surface.command.state === 'collecting_proof'
   ) {
     return setupAnswer(input)
+  }
+
+  if (
+    surface.dailyGuardrails &&
+    (surface.dailyGuardrails.readiness === 'blocked' ||
+      surface.dailyGuardrails.trustRepairs.some((task) => task.status === 'open' && task.blockingCoachProof))
+  ) {
+    return repairAnswer(input)
   }
 
   const proofById = new Map(surface.proofs.map((proof) => [proof.id, proof]))

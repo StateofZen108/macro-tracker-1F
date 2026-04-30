@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { classifyFoodTrustEvidence, isFoodTrustedForCoaching } from '../../src/domain/foodTrust'
-import type { Food } from '../../src/types'
+import { buildTrustRepairTasks, classifyFoodTrustEvidence, isFoodTrustedForCoaching } from '../../src/domain/foodTrust'
+import type { Food, FoodLogEntry } from '../../src/types'
 
 function food(overrides: Partial<Food> = {}): Food {
   return {
@@ -89,5 +89,36 @@ describe('food trust evidence', () => {
     expect(evidence.source).toBe('ocr')
     expect(evidence.status).toBe('trusted')
     expect(evidence.reviewedAt).toBe('2026-04-28T10:00:00.000Z')
+  })
+
+  it('creates exact repair tasks for untrusted logged foods', () => {
+    const entry: FoodLogEntry = {
+      id: 'entry-1',
+      date: '2026-04-28',
+      meal: 'breakfast',
+      servings: 1,
+      createdAt: '2026-04-28T08:00:00.000Z',
+      needsReview: true,
+      snapshot: {
+        name: 'Imported meal',
+        servingSize: 0,
+        servingUnit: '',
+        calories: Number.NaN,
+        protein: 20,
+        carbs: 30,
+        fat: 10,
+        source: 'custom',
+      },
+    }
+
+    const tasks = buildTrustRepairTasks({ date: '2026-04-28', entries: [entry] })
+
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({
+      logEntryId: 'entry-1',
+      reasonCode: 'missing_macros',
+      status: 'open',
+      blockingCoachProof: true,
+    })
   })
 })

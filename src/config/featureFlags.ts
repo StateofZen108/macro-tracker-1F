@@ -94,6 +94,11 @@ export interface FeatureFlags {
   nativeDeviceProofV1: boolean
   paidAccountOpsV1: boolean
   supportOpsV1: boolean
+  mistakeProofCutV1: boolean
+  dailyGuardrailsV1: boolean
+  foodTrustRepairV1: boolean
+  coachMistakeProofV1: boolean
+  surfaceConsistencyGuardV1: boolean
 }
 
 export function resolveFeatureFlag(
@@ -217,6 +222,11 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     nativeDeviceProofV1: resolveFeatureFlag(env.VITE_FF_NATIVE_DEVICE_PROOF_V1, mode),
     paidAccountOpsV1: resolveFeatureFlag(env.VITE_FF_PAID_ACCOUNT_OPS_V1, mode),
     supportOpsV1: resolveFeatureFlag(env.VITE_FF_SUPPORT_OPS_V1, mode),
+    mistakeProofCutV1: resolveFeatureFlag(env.VITE_FF_MISTAKE_PROOF_CUT_V1, mode),
+    dailyGuardrailsV1: resolveFeatureFlag(env.VITE_FF_DAILY_GUARDRAILS_V1, mode),
+    foodTrustRepairV1: resolveFeatureFlag(env.VITE_FF_FOOD_TRUST_REPAIR_V1, mode),
+    coachMistakeProofV1: resolveFeatureFlag(env.VITE_FF_COACH_MISTAKE_PROOF_V1, mode),
+    surfaceConsistencyGuardV1: resolveFeatureFlag(env.VITE_FF_SURFACE_CONSISTENCY_GUARD_V1, mode),
   }
 
   if (!resolvedFlags.catalogProviderV2) {
@@ -490,6 +500,25 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
 
   if (!resolvedFlags.coachProofDefaultV2) {
     resolvedFlags.coachLiveProviderV1 = false
+  }
+
+  if (!resolvedFlags.standaloneCutNineV1) {
+    resolvedFlags.mistakeProofCutV1 = false
+  }
+
+  if (!resolvedFlags.mistakeProofCutV1) {
+    resolvedFlags.dailyGuardrailsV1 = false
+    resolvedFlags.foodTrustRepairV1 = false
+    resolvedFlags.coachMistakeProofV1 = false
+    resolvedFlags.surfaceConsistencyGuardV1 = false
+  }
+
+  if (!resolvedFlags.foodTrustConfidenceV3) {
+    resolvedFlags.foodTrustRepairV1 = false
+  }
+
+  if (!resolvedFlags.coachProofDefaultV2) {
+    resolvedFlags.coachMistakeProofV1 = false
   }
 
   return resolvedFlags

@@ -44,6 +44,15 @@ export function CutOsCommandCard({
   const proofLimit = compact ? 2 : surface === 'coach' ? undefined : 3
   const pendingSetup = model.setup.filter((item) => item.status === 'pending')
   const showPremiumProofStrip = FEATURE_FLAGS.premiumUiV1 && FEATURE_FLAGS.premiumProofStripV1
+  const actionIsRepair =
+    command.cta.target === 'review_food' ||
+    command.cta.target === 'log' ||
+    command.cta.target === 'weigh_in' ||
+    command.cta.target === 'train'
+  const suppressActionCta =
+    FEATURE_FLAGS.mistakeProofCutV1 &&
+    model.dailyGuardrails?.readiness === 'blocked' &&
+    !actionIsRepair
   const testId =
     surface === 'dashboard'
       ? 'cut-os-command'
@@ -82,27 +91,33 @@ export function CutOsCommandCard({
         </span>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <button
-          type="button"
-          className="action-button flex-1 gap-2"
-          onClick={() => onActivateTarget(command.cta.target)}
-          data-testid="cut-os-primary-action"
-        >
-          {command.cta.label}
-          <ArrowRight className="h-4 w-4" />
-        </button>
-        {command.secondaryActions.slice(0, compact ? 1 : 2).map((action) => (
+      {suppressActionCta ? (
+        <div className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          Fix the active daily guardrail before applying this command. Cut OS will recompute the action after proof is trusted.
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 sm:flex-row">
           <button
-            key={`${action.target}:${action.label}`}
             type="button"
-            className="action-button-secondary flex-1"
-            onClick={() => onActivateTarget(action.target)}
+            className="action-button flex-1 gap-2"
+            onClick={() => onActivateTarget(command.cta.target)}
+            data-testid="cut-os-primary-action"
           >
-            {action.label}
+            {command.cta.label}
+            <ArrowRight className="h-4 w-4" />
           </button>
-        ))}
-      </div>
+          {command.secondaryActions.slice(0, compact ? 1 : 2).map((action) => (
+            <button
+              key={`${action.target}:${action.label}`}
+              type="button"
+              className="action-button-secondary flex-1"
+              onClick={() => onActivateTarget(action.target)}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {showPremiumProofStrip ? <CutOsProofStrip model={model} compact={compact} /> : null}
 

@@ -1,6 +1,9 @@
-import { useMemo, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useSyncExternalStore } from 'react'
+import { FEATURE_FLAGS } from '../config/featureFlags'
 import { buildCutOsSetupChecklist, buildCutOsSnapshot } from '../domain/cutOs'
 import { buildCutOsSurfaceModel } from '../domain/cutOsActions'
+import { buildDailyMistakeProofModel } from '../domain/dailyGuardrails'
+import { buildCommandConsistencyReport, buildCommandSurfaceSnapshot } from '../domain/surfaceConsistency'
 import type {
   BodyProgressSnapshot,
   CheckInRecord,
@@ -18,6 +21,7 @@ import {
   loadCutOsActions,
   subscribeToCutOsActions,
 } from '../utils/storage/cutOsActions'
+import { upsertDailyGuardrailModel } from '../utils/storage/dailyGuardrails'
 
 interface UseCutOsSurfaceInput {
   enabled: boolean
@@ -42,7 +46,7 @@ export function useCutOsSurface(input: UseCutOsSurfaceInput): CutOsSurfaceModel 
     loadCutOsActions,
   )
 
-  return useMemo(() => {
+  const surface = useMemo(() => {
     const snapshot = buildCutOsSnapshot(input)
     const setup = input.enabled
       ? buildCutOsSetupChecklist({
@@ -54,10 +58,43 @@ export function useCutOsSurface(input: UseCutOsSurfaceInput): CutOsSurfaceModel 
         })
       : []
 
-    return buildCutOsSurfaceModel({
+    const baseSurface = buildCutOsSurfaceModel({
       snapshot,
       setup,
       actionHistory,
     })
+
+    if (!baseSurface || !FEATURE_FLAGS.dailyGuardrailsV1) {
+      return baseSurface
+    }
+
+    const surfaceConsistency = buildCommandConsistencyReport({
+      surfaces: (['dashboard', 'log', 'weight', 'coach'] as const).map((surfaceName) =>
+        buildCommandSurfaceSnapshot(surfaceName, baseSurface),
+      ),
+    })
+    const dailyGuardrails = buildDailyMistakeProofModel({
+      date: input.date,
+      surface: baseSurface,
+      entries: input.logsByDate[input.date] ?? [],
+      foodReviewQueue: input.foodReviewQueue,
+      weights: input.weights,
+      surfaceConsistency,
+    })
+
+    return {
+      ...baseSurface,
+      dailyGuardrails,
+    }
   }, [actionHistory, input])
+
+  useEffect(() => {
+    if (!surface?.dailyGuardrails || !FEATURE_FLAGS.dailyGuardrailsV1) {
+      return
+    }
+
+    void upsertDailyGuardrailModel(surface.dailyGuardrails)
+  }, [surface?.dailyGuardrails])
+
+  return surface
 }

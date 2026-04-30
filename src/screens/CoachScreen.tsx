@@ -164,6 +164,7 @@ export function CoachScreen({
         setup: cutOsSnapshot.setup,
         actionHistory: cutOsSnapshot.actionHistory,
         activeAction: cutOsSnapshot.activeAction,
+        dailyGuardrails: cutOsSnapshot.dailyGuardrails,
       },
       null,
       2,
@@ -215,6 +216,18 @@ export function CoachScreen({
           </div>
 
           <CutOsProofStack proofs={cutOsSnapshot.proofs} />
+          {cutOsSnapshot.dailyGuardrails?.primaryGuardrail ? (
+            <div
+              data-testid="coach-guardrail-summary"
+              className="rounded-[20px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] opacity-75">
+                Daily guardrail
+              </p>
+              <p className="mt-1 font-semibold">{cutOsSnapshot.dailyGuardrails.primaryGuardrail.title}</p>
+              <p className="mt-1">{cutOsSnapshot.dailyGuardrails.primaryGuardrail.reason}</p>
+            </div>
+          ) : null}
           <CutOsActionHistory records={cutOsSnapshot.actionHistory} />
           {cutOsReplayReport ? <CutOsValidationCard report={cutOsReplayReport} compact embedded /> : null}
         </section>

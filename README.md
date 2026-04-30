@@ -10,6 +10,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 
 - Daily logging split into `breakfast`, `lunch`, `dinner`, and `snack`
 - Sticky daily summary bar with calorie and macro totals against targets
+- Daily guardrail strip that shows whether today is ready, needs repair, or blocked before any harder-cut action
 - Date navigation with previous/next day controls
 - Add-food flow with:
   - recent foods and local search
@@ -31,6 +32,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - inline serving stepper
   - edit entry
   - delete with undo
+  - visible trust-repair chips when a logged item cannot support coaching proof
 - Day status controls:
   - `unmarked`
   - `complete`
@@ -122,6 +124,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - proof-bound Cut OS answers are generated locally when a command/proof packet exists
   - setup-incomplete questions get an insufficient-data answer instead of generic fat-loss advice
   - answers state what new evidence would change the recommendation before any harder-cut escalation
+  - active food, recovery, stale-data, or surface-consistency guardrails return a repair answer instead of escalation
   - no provider setup is required for the paid-feeling default path
   - live-provider questions can still be queued once provider fallback mode is deliberately selected
 - Supported scaffold targets:

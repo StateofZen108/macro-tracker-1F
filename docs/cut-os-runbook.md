@@ -14,6 +14,9 @@ Cut OS turns the app into one daily cut command with proof, blockers, and a next
 | React surface assembly | `src/hooks/useCutOsSurface.ts` |
 | Settings focus request state | `src/app/useAppShell.ts`, `src/screens/SettingsScreen.tsx` |
 | Proof-bound Coach answers | `src/domain/coachProofAnswer.ts`, `src/hooks/useCoach.ts`, `src/app/useCoachController.ts` |
+| Daily mistake-proof guardrails | `src/domain/dailyGuardrails.ts`, `src/utils/storage/dailyGuardrails.ts`, `src/components/cut-os/DailyGuardrailStrip.tsx` |
+| Surface consistency guard | `src/domain/surfaceConsistency.ts`, `src/hooks/useCutOsSurface.ts` |
+| Food trust repair tasks | `src/domain/foodTrust.ts`, `src/components/FoodLogItem.tsx`, `src/components/MealSection.tsx` |
 | Activation renderer | `src/components/cut-os/CutOsActivationCard.tsx` |
 | Command renderer | `src/components/cut-os/CutOsCommandCard.tsx` |
 | Setup checklist | `src/components/cut-os/CutOsSetupChecklist.tsx` |
@@ -60,6 +63,10 @@ Cut OS turns the app into one daily cut command with proof, blockers, and a next
 | `coach_proof_answered` | Thread write succeeds | User asks another question | Idle | Feedback applies to saved message ID |
 | `coach_proof_blocked` | Cut OS packet missing or setup incomplete | User follows setup/import/log CTA | Idle | No target mutation occurs |
 | `coach_proof_failed` | Thread write fails | User retries | Answering | Previous thread remains unchanged |
+| `daily_guardrails_ready` | Shared model computes with no blockers | New repair, stale data, or mismatch appears | Actionable or blocked | Latest local snapshot wins |
+| `daily_guardrails_blocked` | Food trust, stale proof, recovery, or surface mismatch blocks the day | User resolves the blocker | Recompute into ready/actionable | Deleted blocker beats stale command |
+| `trust_repair_open` | Food trust issue is detected | User reviews, fixes, or dismisses | Resolved or dismissed | User review wins over provider update |
+| `surface_consistency_mismatch` | Dashboard, Log, Weight, or Coach disagree | Shared model recomputes | Verified | Mismatch hides unsafe CTAs |
 | `sheet_closed` | Sheet unmounted | Open request | Open | Latest open wins |
 | `sheet_open` | Sheet mounted | Clean close or dirty close | Closed or discard confirm | Active sheet owns focus |
 | `sheet_discard_confirm` | Dirty close requested | Keep editing or discard | Open or closed | Dialog owns pointer/focus |
@@ -73,6 +80,9 @@ npm run lint
 $env:VITE_APP_BUILD_ID='cut-os-10-final'; npm run build
 npm run test:bundle
 npm run test:history-import:corpus
+npm run test:daily-guardrails
+npm run test:mistake-proof-log
+npm run test:surface-consistency
 npm run test:unit
 npx playwright test tests/e2e --config=playwright.config.ts
 npm run test:release

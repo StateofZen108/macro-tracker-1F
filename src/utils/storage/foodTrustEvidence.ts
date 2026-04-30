@@ -30,7 +30,14 @@ function emitChange(): void {
 }
 
 function isEvidenceSource(value: unknown): value is FoodTrustEvidence['source'] {
-  return value === 'barcode' || value === 'ocr' || value === 'catalog' || value === 'custom' || value === 'import'
+  return (
+    value === 'barcode' ||
+    value === 'ocr' ||
+    value === 'catalog' ||
+    value === 'custom' ||
+    value === 'import' ||
+    value === 'ai_photo'
+  )
 }
 
 function isEvidenceStatus(value: unknown): value is FoodTrustEvidence['status'] {

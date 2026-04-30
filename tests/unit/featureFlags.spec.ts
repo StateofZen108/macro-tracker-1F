@@ -103,6 +103,11 @@ describe('feature flags', () => {
       nativeDeviceProofV1: false,
       paidAccountOpsV1: false,
       supportOpsV1: false,
+      mistakeProofCutV1: false,
+      dailyGuardrailsV1: false,
+      foodTrustRepairV1: false,
+      coachMistakeProofV1: false,
+      surfaceConsistencyGuardV1: false,
     })
   })
 
@@ -207,6 +212,11 @@ describe('feature flags', () => {
       nativeDeviceProofV1: true,
       paidAccountOpsV1: true,
       supportOpsV1: true,
+      mistakeProofCutV1: true,
+      dailyGuardrailsV1: true,
+      foodTrustRepairV1: true,
+      coachMistakeProofV1: true,
+      surfaceConsistencyGuardV1: true,
     })
   })
 
@@ -330,6 +340,11 @@ describe('feature flags', () => {
       nativeDeviceProofV1: false,
       paidAccountOpsV1: false,
       supportOpsV1: false,
+      mistakeProofCutV1: false,
+      dailyGuardrailsV1: false,
+      foodTrustRepairV1: false,
+      coachMistakeProofV1: false,
+      surfaceConsistencyGuardV1: false,
     })
   })
 
@@ -409,6 +424,11 @@ describe('feature flags', () => {
     expect(flags.firstTenMinuteActivationV1).toBe(false)
     expect(flags.coachProofDefaultV2).toBe(false)
     expect(flags.cutOsReplayValidationV1).toBe(false)
+    expect(flags.mistakeProofCutV1).toBe(false)
+    expect(flags.dailyGuardrailsV1).toBe(false)
+    expect(flags.foodTrustRepairV1).toBe(false)
+    expect(flags.coachMistakeProofV1).toBe(false)
+    expect(flags.surfaceConsistencyGuardV1).toBe(false)
   })
 
   it('downgrades premium finish flags when their prerequisites are disabled', () => {

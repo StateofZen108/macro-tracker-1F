@@ -1,6 +1,8 @@
 import type {
   Food,
   FoodSnapshot,
+  FoodLogEntry,
+  FoodReviewItem,
   FoodTrustEvidence,
   FoodTrustEvidenceSource,
   FoodTrustMacroCompleteness,
@@ -8,6 +10,8 @@ import type {
   FoodTrustStatus,
   ImportTrust,
   ImportTrustBlockingIssue,
+  TrustRepairReasonCode,
+  TrustRepairTask,
 } from '../types'
 
 type FoodTrustInput = {
@@ -239,6 +243,128 @@ export function classifyFoodTrustEvidence(input: FoodTrustInput): FoodTrustEvide
 
 export function isFoodTrustedForCoaching(evidence: FoodTrustEvidence | null | undefined): boolean {
   return evidence?.status === 'trusted'
+}
+
+function repairReasonFromEvidence(evidence: FoodTrustEvidence): TrustRepairReasonCode {
+  if (evidence.source === 'ai_photo' && !evidence.reviewedAt) {
+    return 'unreviewed_ai'
+  }
+
+  if (evidence.reasons.includes('missing_macros') || evidence.macroCompleteness !== 'complete') {
+    return 'missing_macros'
+  }
+
+  if (
+    evidence.reasons.includes('unknown_serving_basis') ||
+    evidence.reasons.includes('estimated_serving') ||
+    evidence.servingBasis !== 'verified'
+  ) {
+    return 'missing_serving_basis'
+  }
+
+  if (evidence.providerConflict || evidence.reasons.includes('provider_conflict')) {
+    return 'provider_conflict'
+  }
+
+  if (evidence.reasons.includes('low_ocr_confidence') || evidence.confidence < 0.8) {
+    return 'low_confidence'
+  }
+
+  return evidence.status === 'blocked' ? 'impossible_value' : 'low_confidence'
+}
+
+function repairSourceFromReviewItem(item: FoodReviewItem): FoodTrustEvidenceSource {
+  if (item.source === 'ocr') {
+    return 'ocr'
+  }
+
+  if (item.source === 'catalog_import') {
+    return 'import'
+  }
+
+  if (item.barcode) {
+    return 'barcode'
+  }
+
+  return 'custom'
+}
+
+function repairReasonFromReviewItem(item: FoodReviewItem): TrustRepairReasonCode {
+  const reason = item.reason.toLowerCase()
+
+  if (reason.includes('macro')) {
+    return 'missing_macros'
+  }
+
+  if (reason.includes('serving') || reason.includes('basis')) {
+    return 'missing_serving_basis'
+  }
+
+  if (reason.includes('conflict')) {
+    return 'provider_conflict'
+  }
+
+  return 'low_confidence'
+}
+
+export function buildTrustRepairTasks(input: {
+  date: string
+  entries: FoodLogEntry[]
+  foodReviewQueue?: FoodReviewItem[]
+}): TrustRepairTask[] {
+  const tasksById = new Map<string, TrustRepairTask>()
+
+  for (const entry of input.entries) {
+    if (entry.deletedAt) {
+      continue
+    }
+
+    const evidence =
+      entry.snapshot.trustEvidence ??
+      classifyFoodTrustEvidence({
+        snapshot: entry.snapshot,
+        sourceId: entry.foodId ?? entry.id,
+      })
+    const shouldRepair = evidence.status !== 'trusted' || entry.needsReview === true
+
+    if (!shouldRepair) {
+      continue
+    }
+
+    const task: TrustRepairTask = {
+      id: `trust-repair:${input.date}:${entry.id}`,
+      foodId: entry.foodId,
+      logEntryId: entry.id,
+      source: evidence.source,
+      reasonCode: repairReasonFromEvidence(evidence),
+      status: 'open',
+      blockingCoachProof: evidence.status !== 'trusted' || entry.needsReview === true,
+    }
+    tasksById.set(task.id, task)
+  }
+
+  for (const item of input.foodReviewQueue ?? []) {
+    if (item.status !== 'pending') {
+      continue
+    }
+
+    if (item.linkedEntryDate && item.linkedEntryDate !== input.date) {
+      continue
+    }
+
+    const task: TrustRepairTask = {
+      id: `trust-repair:${input.date}:${item.id}`,
+      foodId: item.linkedFoodId,
+      logEntryId: item.linkedEntryId,
+      source: repairSourceFromReviewItem(item),
+      reasonCode: repairReasonFromReviewItem(item),
+      status: 'open',
+      blockingCoachProof: true,
+    }
+    tasksById.set(task.id, task)
+  }
+
+  return [...tasksById.values()].sort((left, right) => left.id.localeCompare(right.id))
 }
 
 export function getFoodTrustLabel(evidence: FoodTrustEvidence): string {

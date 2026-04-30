@@ -6,6 +6,7 @@ import { DateNavigator } from '../components/DateNavigator'
 import { DayStatusCard } from '../components/DayStatusCard'
 import { MealSection } from '../components/MealSection'
 import { CutOsCommandCard } from '../components/cut-os/CutOsCommandCard'
+import { DailyGuardrailStrip } from '../components/cut-os/DailyGuardrailStrip'
 import type { RecentCombinationOption } from '../components/log/RecentCombinationsStrip'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import type {
@@ -14,6 +15,7 @@ import type {
   ActivityEntry,
   CoachingInsight,
   CutDayPlan,
+  DailyGuardrailRoute,
   CutOsActionTarget,
   CutOsSurfaceModel,
   DayConfounderMarker,
@@ -596,6 +598,62 @@ export function LogScreen({
   const interventionGroups = useMemo(() => groupInterventions(interventions), [interventions])
   const primaryMeals: MealType[] = ['breakfast']
   const secondaryMeals = MEAL_TYPES.filter((meal) => meal !== 'breakfast')
+  const dailyGuardrailModel =
+    FEATURE_FLAGS.dailyGuardrailsV1 && cutOsSnapshot?.dailyGuardrails
+      ? cutOsSnapshot.dailyGuardrails
+      : null
+  const hasBlockingTrustRepair = dailyGuardrailModel?.trustRepairs.some(
+    (task) => task.status === 'open' && task.blockingCoachProof,
+  )
+  const hasActionableGuardrail = dailyGuardrailModel?.guardrails.some(
+    (guardrail) =>
+      guardrail.severity === 'block' &&
+      guardrail.id.startsWith('food-verdict:') === false &&
+      guardrail.id.startsWith('weight-stale:') === false,
+  )
+  const shouldShowDailyGuardrail =
+    dailyGuardrailModel !== null &&
+    (dailyGuardrailModel.surfaceConsistency.status === 'mismatch' ||
+      hasBlockingTrustRepair === true ||
+      hasActionableGuardrail === true)
+
+  function handleDailyGuardrailRoute(route: DailyGuardrailRoute, targetId?: string): void {
+    if (route === 'coach') {
+      onOpenCoach()
+      return
+    }
+
+    if (route === 'settings') {
+      onOpenSettings()
+      return
+    }
+
+    if (route === 'log') {
+      if (targetId) {
+        setCollapsedMeals((currentState) => ({
+          ...currentState,
+          breakfast: false,
+          lunch: false,
+          dinner: false,
+          snack: false,
+        }))
+        window.setTimeout(() => {
+          document.querySelector(`[data-entry-id="${CSS.escape(targetId)}"]`)?.scrollIntoView({
+            block: 'center',
+            behavior: 'smooth',
+          })
+        }, 0)
+        return
+      }
+
+      onOpenAddFood('breakfast')
+      return
+    }
+
+    if (route === 'weight' || route === 'workouts') {
+      onActivateCutOsTarget?.(route === 'weight' ? 'weigh_in' : 'train')
+    }
+  }
 
   useEffect(() => {
     const nextCounts = {
@@ -668,6 +726,10 @@ export function LogScreen({
           onOpenSettings={onOpenSettings}
         />
 
+        {shouldShowDailyGuardrail ? (
+          <DailyGuardrailStrip model={dailyGuardrailModel} onActivateRoute={handleDailyGuardrailRoute} />
+        ) : null}
+
         {cutOsSnapshot &&
         cutOsSnapshot.command.state !== 'setup_required' &&
         cutOsSnapshot.command.state !== 'collecting_proof' ? (
@@ -722,6 +784,7 @@ export function LogScreen({
                 onEditEntry={onEditEntry}
                 onAdjustEntryServings={onAdjustEntryServings}
                 onDeleteEntry={onDeleteEntry}
+                trustRepairs={dailyGuardrailModel?.trustRepairs}
           />
         ))}
 
@@ -752,6 +815,7 @@ export function LogScreen({
             onEditEntry={onEditEntry}
             onAdjustEntryServings={onAdjustEntryServings}
             onDeleteEntry={onDeleteEntry}
+            trustRepairs={dailyGuardrailModel?.trustRepairs}
           />
         ))}
 

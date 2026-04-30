@@ -80,6 +80,11 @@ const sharedPreviewFlags = {
   VITE_FF_NATIVE_DEVICE_PROOF_V1: 'true',
   VITE_FF_PAID_ACCOUNT_OPS_V1: 'true',
   VITE_FF_SUPPORT_OPS_V1: 'true',
+  VITE_FF_MISTAKE_PROOF_CUT_V1: 'true',
+  VITE_FF_DAILY_GUARDRAILS_V1: 'true',
+  VITE_FF_FOOD_TRUST_REPAIR_V1: 'true',
+  VITE_FF_COACH_MISTAKE_PROOF_V1: 'true',
+  VITE_FF_SURFACE_CONSISTENCY_GUARD_V1: 'true',
 }
 
 export function createPreviewEnv(buildIdPrefix, extraFlags = {}) {

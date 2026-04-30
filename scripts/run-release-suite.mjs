@@ -100,6 +100,9 @@ const scripts = [
   ...(isFeatureEnabled(releaseEnv.VITE_FF_MACRO_FACTOR_SURPASS_V1)
     ? ['test:macrofactor-surpass']
     : []),
+  ...(isFeatureEnabled(releaseEnv.VITE_FF_MISTAKE_PROOF_CUT_V1)
+    ? ['test:mistake-proof-core']
+    : []),
   'test:e2e:lane-guard',
   'test:e2e:personal-library-preview',
   'test:e2e:coach-preview',

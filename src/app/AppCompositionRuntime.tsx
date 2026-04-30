@@ -1647,6 +1647,44 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   )
   const effectiveCutOsSnapshot = cutOsActivation?.demoSurface ?? cutOsSnapshot
   const lastCutOsDiagnosticsKeyRef = useRef<string | null>(null)
+  const lastDailyGuardrailDiagnosticsKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!cutOsSnapshot?.dailyGuardrails) {
+      return
+    }
+
+    const guardrail = cutOsSnapshot.dailyGuardrails.primaryGuardrail
+    const diagnosticsKey = [
+      cutOsSnapshot.dailyGuardrails.date,
+      cutOsSnapshot.dailyGuardrails.readiness,
+      guardrail?.id ?? 'none',
+      cutOsSnapshot.dailyGuardrails.surfaceConsistency.status,
+    ].join(':')
+    if (lastDailyGuardrailDiagnosticsKeyRef.current === diagnosticsKey) {
+      return
+    }
+
+    lastDailyGuardrailDiagnosticsKeyRef.current = diagnosticsKey
+    void recordDiagnosticsEvent({
+      eventType:
+        cutOsSnapshot.dailyGuardrails.surfaceConsistency.status === 'mismatch'
+          ? 'surface_consistency.failed'
+          : 'daily_guardrails.computed',
+      severity: cutOsSnapshot.dailyGuardrails.readiness === 'blocked' ? 'warning' : 'info',
+      scope: 'diagnostics',
+      recordKey: cutOsSnapshot.dailyGuardrails.commandId,
+      message: guardrail
+        ? `Daily guardrail computed: ${guardrail.title}`
+        : 'Daily guardrail computed with no active blocker.',
+      payload: {
+        readiness: cutOsSnapshot.dailyGuardrails.readiness,
+        guardrailId: guardrail?.id,
+        trustRepairCount: cutOsSnapshot.dailyGuardrails.trustRepairs.length,
+        surfaceConsistency: cutOsSnapshot.dailyGuardrails.surfaceConsistency.status,
+      },
+    })
+  }, [cutOsSnapshot])
 
   useEffect(() => {
     if (!cutOsSnapshot) {

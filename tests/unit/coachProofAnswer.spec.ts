@@ -172,4 +172,52 @@ describe('coach proof answer', () => {
     expect(answer.citations.map((citation) => citation.id)).toEqual(['proof-scale'])
     expect(answer.safetyFlags.map((flag) => flag.id)).toContain('cut-os-proof-citation-missing')
   })
+
+  it('returns a repair answer instead of escalation when a daily guardrail is active', () => {
+    const surface = actionableSurface()
+    surface.dailyGuardrails = {
+      date: '2026-04-28',
+      commandId: '2026-04-28:diagnosis-true-stall',
+      readiness: 'blocked',
+      primaryGuardrail: {
+        id: 'food-repair:2026-04-28',
+        date: '2026-04-28',
+        severity: 'block',
+        source: 'food',
+        title: 'Repair food trust before escalation',
+        reason: 'One logged item cannot support coaching proof because serving basis is not verified.',
+        cta: { label: 'Review food', route: 'log', targetId: 'entry-1' },
+        proofIds: ['proof-food'],
+      },
+      guardrails: [],
+      trustRepairs: [
+        {
+          id: 'trust-repair:2026-04-28:entry-1',
+          logEntryId: 'entry-1',
+          source: 'custom',
+          reasonCode: 'missing_serving_basis',
+          status: 'open',
+          blockingCoachProof: true,
+        },
+      ],
+      surfaceConsistency: {
+        checkedAt: '2026-04-28T08:00:00.000Z',
+        status: 'verified',
+        surfaces: [],
+        mismatchReasons: [],
+      },
+    }
+
+    const answer = buildCoachProofAnswer({
+      question: 'Should I cut calories?',
+      mode: 'deep',
+      contextSnapshot: contextSnapshot(),
+      cutOsSurface: surface,
+    })
+
+    expect(answer.answerType).toBe('safety-limited')
+    expect(answer.answer).toContain('Review food')
+    expect(answer.answer).not.toContain('Use the explicit Cut OS action button')
+    expect(answer.safetyFlags.some((flag) => flag.severity === 'blocked')).toBe(true)
+  })
 })

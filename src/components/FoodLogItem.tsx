@@ -1,6 +1,6 @@
 import { AlertCircle, ChevronRight, Minus, Plus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { ResolvedFoodLogEntry } from '../types'
+import type { ResolvedFoodLogEntry, TrustRepairTask } from '../types'
 
 interface FoodLogItemProps {
   entry: ResolvedFoodLogEntry
@@ -8,6 +8,7 @@ interface FoodLogItemProps {
   onDecreaseServings: () => void
   onIncreaseServings: () => void
   onDelete: () => void
+  trustRepair?: TrustRepairTask
 }
 
 const SWIPE_WIDTH = 88
@@ -17,12 +18,32 @@ function formatMacros(entry: ResolvedFoodLogEntry): string {
   return `${Math.round(entry.nutrition.calories)} cal  •  ${Math.round(entry.nutrition.protein)}P  •  ${Math.round(entry.nutrition.carbs)}C  •  ${Math.round(entry.nutrition.fat)}F`
 }
 
+function formatTrustRepair(task: TrustRepairTask): string {
+  switch (task.reasonCode) {
+    case 'missing_macros':
+      return 'Missing macros'
+    case 'missing_serving_basis':
+      return 'Serving basis needs review'
+    case 'provider_conflict':
+      return 'Provider conflict'
+    case 'low_confidence':
+      return 'Low confidence'
+    case 'unreviewed_ai':
+      return 'AI result needs review'
+    case 'impossible_value':
+      return 'Impossible value'
+    default:
+      return 'Needs review'
+  }
+}
+
 export function FoodLogItem({
   entry,
   onEdit,
   onDecreaseServings,
   onIncreaseServings,
   onDelete,
+  trustRepair,
 }: FoodLogItemProps) {
   const touchState = useRef<{
     startX: number
@@ -139,7 +160,15 @@ export function FoodLogItem({
                   {entry.snapshot.brand ? `${entry.snapshot.brand} • ` : ''}
                   {servingLabel}
                 </p>
-                {entry.needsReview ? (
+                {trustRepair ? (
+                  <p
+                    data-testid="trust-repair-chip"
+                    className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-200"
+                  >
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    {formatTrustRepair(trustRepair)}
+                  </p>
+                ) : entry.needsReview ? (
                   <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
                     <AlertCircle className="h-3.5 w-3.5" />
                     Needs review

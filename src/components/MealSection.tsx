@@ -14,6 +14,7 @@ import {
   type MealType,
   type NutritionTotals,
   type ResolvedFoodLogEntry,
+  type TrustRepairTask,
 } from '../types'
 import { FEATURE_FLAGS } from '../config/featureFlags'
 import { recordUiTelemetry } from '../utils/uiTelemetry'
@@ -37,6 +38,7 @@ interface MealSectionProps {
   onEditEntry: (entryId: string) => void
   onAdjustEntryServings: (entryId: string, nextServings: number) => void
   onDeleteEntry: (entryId: string) => void
+  trustRepairs?: TrustRepairTask[]
 }
 
 function formatSubtotal(totals: NutritionTotals): string {
@@ -88,6 +90,7 @@ export function MealSection({
   onEditEntry,
   onAdjustEntryServings,
   onDeleteEntry,
+  trustRepairs = [],
 }: MealSectionProps) {
   const isPremiumMealLedger = FEATURE_FLAGS.premiumUiV1 && FEATURE_FLAGS.premiumMealLedgerV2
 
@@ -241,6 +244,7 @@ export function MealSection({
                   onDecreaseServings={() => onAdjustEntryServings(entry.id, Math.max(0.5, entry.servings - 0.5))}
                   onIncreaseServings={() => onAdjustEntryServings(entry.id, entry.servings + 0.5)}
                   onDelete={() => onDeleteEntry(entry.id)}
+                  trustRepair={trustRepairs.find((task) => task.logEntryId === entry.id && task.status === 'open')}
                 />
               ))}
             </>
