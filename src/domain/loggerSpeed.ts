@@ -9,7 +9,6 @@ const METHOD_LIMITS: Partial<Record<LoggerSpeedMetric['method'], { seconds: numb
   search: { seconds: 7, taps: 3 },
   barcode: { seconds: 20, taps: 4 },
   label_ocr: { seconds: 30, taps: 5 },
-  ai_photo: { seconds: 45, taps: 5 },
   custom: { seconds: 25, taps: 5 },
 }
 

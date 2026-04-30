@@ -18,7 +18,6 @@ test('unified logger keeps every paid logging method reachable in one add-food s
   const addFoodDialog = getAddFoodDialog(page)
 
   await expect(addFoodDialog.getByPlaceholder(/search your (saved foods|library first)/i)).toBeVisible()
-  await expect(addFoodDialog.getByRole('button', { name: /^AI meal photo$/i })).toBeVisible()
   await expect(addFoodDialog.getByRole('button', { name: /^scan barcode$/i })).toBeVisible()
   await expect(addFoodDialog.getByRole('button', { name: /^scan nutrition label$/i })).toBeVisible()
   await expect(addFoodDialog.getByRole('button', { name: /^create custom food$/i })).toBeVisible()
@@ -37,7 +36,7 @@ test('common food logging path stays within the faster-than-MacroFactor budget',
   expect(elapsedSeconds).toBeLessThanOrEqual(7)
 })
 
-test('barcode miss keeps label OCR, AI photo, and custom fallback one tap away', async ({ page }) => {
+test('barcode miss keeps label OCR and custom fallback one tap away', async ({ page }) => {
   await openMealSheet(page)
   const addFoodDialog = getAddFoodDialog(page)
 
@@ -46,7 +45,6 @@ test('barcode miss keeps label OCR, AI photo, and custom fallback one tap away',
 
   await safeClick(addFoodDialog.getByRole('button', { name: /^back to foods$/i }))
   await safeFill(await getAddFoodSearchInput(page), 'definitely-missing-barcode-item')
-  await expect(addFoodDialog.getByRole('button', { name: /^AI meal photo$/i })).toBeVisible()
   await expect(addFoodDialog.getByRole('button', { name: /^scan nutrition label$/i })).toBeVisible()
   await expect(addFoodDialog.getByRole('button', { name: /^create custom food$/i })).toBeVisible()
 })

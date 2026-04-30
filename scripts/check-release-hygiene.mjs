@@ -5,6 +5,7 @@ const IGNORED_PREFIXES = [
   'dist/',
   'test-results/',
   'tmp/',
+  '.gstack/',
   'node_modules/',
   'supabase/.temp/',
 ]

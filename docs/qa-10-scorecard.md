@@ -31,13 +31,12 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `cut_os_historical_validation_green` | `npm run test:cut-os:replay` verifies replay counts for true stalls, spike suppression, training precedence, food trust blocks, false escalations, and missed actionable days |
 | `server_deploy_clean` | `npm run test:server:function-typecheck` and `npm run test:server:deploy-clean` verify API/server TypeScript and deploy-log output are clean |
 | `standalone_cut_9_candidate` | `npm run test:standalone-cut-9` passes food trust, first-10 activation, Coach proof, Cut OS replay, server typecheck, and deploy-log gates on the same working tree |
-| `logger_faster_than_macrofactor` | `npm run test:logger-speed` verifies the unified Add Food session keeps search, barcode, label OCR, AI photo, custom, and advanced methods reachable without reopening sheets, and keeps common-food logging inside the 7-second budget |
-| `ai_meal_capture_usable` | `npm run test:ai-meal-capture` verifies AI meal photos create review-required editable drafts and never become coaching-trusted raw macros |
+| `logger_faster_than_macrofactor` | `npm run test:logger-speed` verifies the unified Add Food session keeps search, barcode, label OCR, custom, saved foods, and advanced methods reachable without reopening sheets, and keeps common-food logging inside the 7-second budget |
 | `food_database_trusted` | `npm run test:food-db-trust` verifies provider hit rate, trusted-hit rate, and conflict visibility predicates |
 | `cut_os_more_defensible` | `npm run test:cut-os:benchmark` verifies benchmark replay coverage plus training-preservation precedence |
 | `paid_ops_ready` | `npm run test:paid-ops` verifies billing state reconciliation and redacted support bundles |
 | `native_device_green` | `npm run test:native-device-proof` verifies a current-build physical-device manifest in strict production mode and reports pending evidence locally when no real device proof exists |
-| `macrofactor_surpass_candidate` | `npm run test:macrofactor-surpass` passes logger speed, AI meal capture, food database trust, Cut OS benchmark, paid ops, and native-device proof rails |
+| `macrofactor_surpass_candidate` | `npm run test:macrofactor-surpass` passes logger speed, food database trust, Cut OS benchmark, paid ops, and native-device proof rails |
 | `daily_reliability_green` | `npm run test:mistake-proof-core` verifies daily guardrails, visible trust repair, surface consistency, Coach repair answers, and food trust classification |
 | `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:release:production` |
 
@@ -53,7 +52,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `npm run test:release:accessible` | All locally accessible rails pass; external rails either pass or are explicitly pending | Pending latest run |
 | `npm run test:release:proof` | Strict deployed proof passes with Sentry smoke/alerts, Supabase verification, device QA, and committed readiness evidence | Pending real deployment/device evidence |
 | `npm run test:standalone-cut-9` | Food trust, activation, Coach proof, Cut OS replay, server typecheck, and deploy-log scanner pass | 2026-04-30: passed locally; deploy-log scanner enforces supplied logs and production strict mode |
-| `npm run test:macrofactor-surpass` | Logger speed, AI meal capture, provider trust, Cut OS benchmark, paid ops, and native-device proof rails pass | Pending latest run |
+| `npm run test:macrofactor-surpass` | Logger speed, provider trust, Cut OS benchmark, paid ops, and native-device proof rails pass | Pending latest run |
 | `npm run test:mistake-proof-core` | Daily guardrails, mistake-proof Log, surface consistency, Coach proof, and food trust gates pass | Pending latest run |
 | `npm run test:server:function-typecheck` | API/server functions typecheck with 0 diagnostics | 2026-04-30: passed |
 | `npm run test:server:deploy-clean` | Vercel deploy log has 0 TypeScript diagnostics, warnings, or function packaging warnings | 2026-04-30: local no-log mode passed; production strict mode requires a supplied deploy log |

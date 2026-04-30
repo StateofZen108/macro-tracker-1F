@@ -66,7 +66,6 @@ export type LoggerMethod =
   | 'search'
   | 'barcode'
   | 'label_ocr'
-  | 'ai_photo'
   | 'quick_add'
   | 'custom'
   | 'recipe'
@@ -85,7 +84,6 @@ export type FoodDataProviderTrustProvider =
   | 'usda'
   | 'fatsecret'
   | 'user_library'
-  | 'ai_photo'
   | 'label_ocr'
   | 'import'
 
@@ -96,24 +94,6 @@ export interface FoodDataProviderTrust {
   hitRate: number
   trustedHitRate: number
   conflictRate: number
-}
-
-export interface AiMealCaptureEntry {
-  name: string
-  calories: number
-  protein: number
-  carbs: number
-  fat: number
-  confidence: number
-  servingBasis: FoodTrustServingBasis
-}
-
-export interface AiMealCaptureResult {
-  id: string
-  imageEvidenceId: string
-  textHint?: string
-  entries: AiMealCaptureEntry[]
-  status: 'review_required' | 'trusted_after_review' | 'rejected'
 }
 
 export interface CutOsValidationBenchmark {
@@ -1864,7 +1844,7 @@ export type MorningCommandTarget = 'log' | 'train' | 'progress' | 'review_queue'
 
 export type CommandConfidence = 'high' | 'medium' | 'low'
 
-export type CaptureConvenienceSource = 'voice' | 'meal_photo'
+export type CaptureConvenienceSource = 'voice'
 
 export interface MorningStatusItem {
   id:

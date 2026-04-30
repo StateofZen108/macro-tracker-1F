@@ -530,20 +530,13 @@ export function DashboardScreen({
                   Review first
                 </span>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="mt-3 grid gap-2">
                 <button
                   type="button"
                   className="action-button-secondary w-full"
                   onClick={() => onOpenCaptureConvenience('voice')}
                 >
                   Voice capture
-                </button>
-                <button
-                  type="button"
-                  className="action-button-secondary w-full"
-                  onClick={() => onOpenCaptureConvenience('meal_photo')}
-                >
-                  Meal photo
                 </button>
               </div>
             </div>

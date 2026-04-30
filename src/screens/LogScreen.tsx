@@ -611,10 +611,14 @@ export function LogScreen({
       guardrail.id.startsWith('food-verdict:') === false &&
       guardrail.id.startsWith('weight-stale:') === false,
   )
+  const hasFoodProofGuardrail = dailyGuardrailModel?.guardrails.some((guardrail) =>
+    guardrail.id.startsWith('food-verdict:'),
+  )
   const shouldShowDailyGuardrail =
     dailyGuardrailModel !== null &&
     (dailyGuardrailModel.surfaceConsistency.status === 'mismatch' ||
       hasBlockingTrustRepair === true ||
+      (hasFoodProofGuardrail === true && resolvedEntries.length > 0) ||
       hasActionableGuardrail === true)
 
   function handleDailyGuardrailRoute(route: DailyGuardrailRoute, targetId?: string): void {

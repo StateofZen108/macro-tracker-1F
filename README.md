@@ -15,7 +15,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - Add-food flow with:
   - recent foods and local search
   - quick actions like `Add 1x`
-  - unified logger entry points for search, barcode, label OCR, AI meal photo, quick add, custom food, recipes, and imports
+  - unified logger entry points for search, barcode, label OCR, quick add, custom food, saved foods, recipes, and imports
   - remembered `last amount` shortcuts
   - optional keep-open behavior for batch logging
   - custom-serving add flow
@@ -68,10 +68,6 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - mandatory review before save
   - reviewed nutrient rows stored on the saved food
   - live extraction only when `/api/label-ocr/extract` is deployed with a server-side `GEMINI_API_KEY`
-- AI meal-photo capture:
-  - exposed from the same Add Food session as search, barcode, OCR, and custom foods
-  - creates editable review-required drafts by default
-  - never feeds Coach or Cut OS proof until reviewed
 - Food database trust scoring:
   - provider-level hit rate, trusted-hit rate, and conflict rate helpers
   - release predicates for `>=90%` corpus hit rate and `>=80%` trusted-hit rate

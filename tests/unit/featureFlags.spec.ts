@@ -204,7 +204,7 @@ describe('feature flags', () => {
       serverFunctionTypecheckGateV1: true,
       macroFactorSurpassV1: true,
       unifiedLoggerV1: true,
-      aiMealCaptureV1: true,
+      aiMealCaptureV1: false,
       foodDatabaseTrustV1: true,
       cutOsExpenditureValidationV1: true,
       coachLiveProviderV1: true,
@@ -429,6 +429,24 @@ describe('feature flags', () => {
     expect(flags.foodTrustRepairV1).toBe(false)
     expect(flags.coachMistakeProofV1).toBe(false)
     expect(flags.surfaceConsistencyGuardV1).toBe(false)
+  })
+
+  it('enables the paid Cut OS preview preset in production while keeping AI meal photo retired', () => {
+    const flags = buildFeatureFlags({
+      MODE: 'production',
+      VITE_APP_FEATURE_PRESET: 'paid-cut-os-preview',
+    })
+
+    expect(flags.premiumUiV1).toBe(true)
+    expect(flags.paidCutOsV1).toBe(true)
+    expect(flags.standaloneCutNineV1).toBe(true)
+    expect(flags.macroFactorSurpassV1).toBe(true)
+    expect(flags.mistakeProofCutV1).toBe(true)
+    expect(flags.dailyGuardrailsV1).toBe(true)
+    expect(flags.foodTrustRepairV1).toBe(true)
+    expect(flags.coachMistakeProofV1).toBe(true)
+    expect(flags.surfaceConsistencyGuardV1).toBe(true)
+    expect(flags.aiMealCaptureV1).toBe(false)
   })
 
   it('downgrades premium finish flags when their prerequisites are disabled', () => {

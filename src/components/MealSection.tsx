@@ -93,6 +93,10 @@ export function MealSection({
   trustRepairs = [],
 }: MealSectionProps) {
   const isPremiumMealLedger = FEATURE_FLAGS.premiumUiV1 && FEATURE_FLAGS.premiumMealLedgerV2
+  const entryIds = new Set(entries.map((entry) => entry.id))
+  const mealTrustRepairs = trustRepairs.filter(
+    (task) => task.status === 'open' && task.logEntryId && entryIds.has(task.logEntryId),
+  )
 
   useEffect(() => {
     if (isPremiumMealLedger) {
@@ -148,6 +152,14 @@ export function MealSection({
                   <span className="macro-color-protein">{Math.round(totals.protein)}P</span>
                   <span className="macro-color-fat">{Math.round(totals.fat)}F</span>
                   <span className="macro-color-carbs">{Math.round(totals.carbs)}C</span>
+                  {mealTrustRepairs.length ? (
+                    <span
+                      data-testid="meal-trust-repair-chip"
+                      className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] uppercase tracking-[0.12em] text-amber-800 dark:bg-amber-500/15 dark:text-amber-200"
+                    >
+                      {mealTrustRepairs.length} repair
+                    </span>
+                  ) : null}
                 </div>
                 <div className="mt-2 max-w-[15rem]">
                   <MealMacroRail totals={totals} />

@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
+  "buildCommand": "if [ \"$VERCEL_ENV\" = \"preview\" ]; then VITE_APP_FEATURE_PRESET=paid-cut-os-preview npm run build; else npm run build; fi",
   "functions": {
     "api/sync/bootstrap.ts": {
       "maxDuration": 30

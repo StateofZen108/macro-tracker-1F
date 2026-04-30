@@ -20,6 +20,7 @@ test-results
 !.env.example
 tmp-*.png
 tmp/
+.gstack/
 supabase/.temp/
 
 # Editor directories and files

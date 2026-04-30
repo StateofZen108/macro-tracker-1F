@@ -33,7 +33,7 @@ type RepeatCandidateView = {
 }
 
 type QuickActionButton = {
-  key: 'scanner' | 'ocr' | 'custom' | 'ai_photo'
+  key: 'scanner' | 'ocr' | 'custom'
   label: string
   icon: typeof Camera | typeof Plus
   disabled: boolean
@@ -53,7 +53,7 @@ export function buildOrderedQuickActionButtons(
       .filter((entry) => entry.visible)
       .sort((left, right) => left.order - right.order)
       .reduce<QuickActionButton[]>((ordered, entry) => {
-        const button = byId.get(entry.id)
+        const button = byId.get(entry.id as QuickActionButton['key'])
         if (button) {
           ordered.push({
             ...button,
@@ -162,7 +162,6 @@ export interface BrowsePaneProps {
   onOpenScanner: () => void
   onOpenOcr: () => void
   onOpenVoiceCapture: () => void
-  onOpenMealPhotoCapture: () => void
   lastLookupResult?: BarcodeLookupResult | null
   onReviewLastScan: () => void
   quickFoods: Food[]
@@ -360,7 +359,6 @@ export function BrowsePane({
   onOpenScanner,
   onOpenOcr,
   onOpenVoiceCapture,
-  onOpenMealPhotoCapture,
   lastLookupResult,
   onReviewLastScan,
   quickFoods,
@@ -418,17 +416,6 @@ export function BrowsePane({
       })
     : null
   const quickActionButtons: QuickActionButton[] = [
-    ...(FEATURE_FLAGS.aiMealCaptureV1 && captureConvenienceEnabled
-      ? [
-          {
-            key: 'ai_photo' as const,
-            label: 'AI meal photo',
-            icon: Camera,
-            disabled: !isOnline,
-            onClick: onOpenMealPhotoCapture,
-          },
-        ]
-      : []),
     {
       key: 'scanner',
       label: 'Scan barcode',
@@ -565,20 +552,13 @@ export function BrowsePane({
               Collapse
             </button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2">
             <button
               type="button"
               className="action-button-secondary w-full"
               onClick={onOpenVoiceCapture}
             >
               Voice capture
-            </button>
-            <button
-              type="button"
-              className="action-button-secondary w-full"
-              onClick={onOpenMealPhotoCapture}
-            >
-              Meal photo
             </button>
           </div>
         </div>
@@ -642,7 +622,7 @@ export function BrowsePane({
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                {captureDraft.source === 'meal_photo' ? 'Meal photo draft' : 'Capture draft'}
+                Capture draft
               </p>
               <p className="mt-1 font-semibold text-slate-900 dark:text-white">{captureDraft.suggestedName}</p>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
@@ -659,17 +639,9 @@ export function BrowsePane({
             </button>
           </div>
 
-          {captureDraft.photoPreviewUrl ? (
-            <img
-              src={captureDraft.photoPreviewUrl}
-              alt="Meal photo draft"
-              className="h-40 w-full rounded-[20px] object-cover"
-            />
-          ) : null}
-
           <div className="flex flex-wrap gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              {captureDraft.source === 'meal_photo' ? 'meal photo' : 'voice'}
+              voice
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               {captureDraft.confidence} confidence

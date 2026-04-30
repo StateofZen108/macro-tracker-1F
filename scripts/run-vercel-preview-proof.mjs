@@ -6,12 +6,14 @@ import {
   findVercelDeployLogAdvisories,
   findVercelDeployLogViolations,
 } from './check-vercel-deploy-log-clean.mjs'
+import { runPreviewFeatureParity } from './check-preview-feature-parity.mjs'
 import { runPreviewSmoke } from './check-vercel-preview-smoke.mjs'
 
 const REPORT_PATH = resolve('tmp', 'vercel-preview-proof.json')
 const DEFAULT_LOG_PATH = resolve('test-results', 'vercel-deploy.log')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const vercelCommand = process.platform === 'win32' ? 'vercel.cmd' : 'vercel'
+const PAID_CUT_OS_PREVIEW_PRESET = 'paid-cut-os-preview'
 
 function truthy(value) {
   return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
@@ -130,6 +132,10 @@ export function resolveDeploymentCommitProof({
 }
 
 export async function runVercelPreviewProof({ env = process.env } = {}) {
+  const proofEnv = {
+    ...env,
+    VITE_APP_FEATURE_PRESET: env.VITE_APP_FEATURE_PRESET || PAID_CUT_OS_PREVIEW_PRESET,
+  }
   const strict = env.VERCEL_PREVIEW_PROOF_STRICT === undefined ? true : truthy(env.VERCEL_PREVIEW_PROOF_STRICT)
   const logPath = resolve(env.VERCEL_DEPLOY_LOG_PATH || DEFAULT_LOG_PATH)
   const gitSha = readGitSha()
@@ -158,7 +164,7 @@ export async function runVercelPreviewProof({ env = process.env } = {}) {
   report.rails.push({ id: 'clean_tree', status: 'passed' })
 
   let createdByProofScript = false
-  const typecheck = runNpmScript('test:server:function-typecheck', env)
+  const typecheck = runNpmScript('test:server:function-typecheck', proofEnv)
   report.rails.push({
     id: 'server_typecheck',
     status: typecheck.status === 0 ? 'passed' : 'failed',
@@ -185,7 +191,7 @@ export async function runVercelPreviewProof({ env = process.env } = {}) {
         '--meta',
         `VERCEL_GIT_COMMIT_SHA=${gitSha}`,
       ],
-      { env },
+      { env: proofEnv },
     )
     report.rails.push({
       id: 'vercel_deploy',
@@ -215,7 +221,7 @@ export async function runVercelPreviewProof({ env = process.env } = {}) {
   }
   report.rails.push({ id: 'preview_url', status: 'passed', evidence: previewUrl })
 
-  const inspect = runCommand(vercelCommand, ['inspect', previewUrl, '--format=json'], { env })
+  const inspect = runCommand(vercelCommand, ['inspect', previewUrl, '--format=json'], { env: proofEnv })
   report.rails.push({
     id: 'vercel_inspect',
     status: inspect.status === 0 ? 'passed' : 'failed',
@@ -249,7 +255,7 @@ export async function runVercelPreviewProof({ env = process.env } = {}) {
     return report
   }
 
-  const logs = runCommand(vercelCommand, ['inspect', previewUrl, '--logs'], { env })
+  const logs = runCommand(vercelCommand, ['inspect', previewUrl, '--logs'], { env: proofEnv })
   const logText = logs.output || inspect.output
   writeFileEnsuringDir(logPath, logText)
   report.generatedFiles.push(logPath)
@@ -277,7 +283,7 @@ export async function runVercelPreviewProof({ env = process.env } = {}) {
 
   const smoke = await runPreviewSmoke({
     env: {
-      ...env,
+      ...proofEnv,
       VERCEL_PREVIEW_URL: previewUrl,
     },
   })
@@ -289,6 +295,24 @@ export async function runVercelPreviewProof({ env = process.env } = {}) {
     reason: smoke.reason,
   })
   if (smoke.status !== 'passed') {
+    writeReport(report)
+    return report
+  }
+
+  const parity = await runPreviewFeatureParity({
+    env: {
+      ...proofEnv,
+      VERCEL_PREVIEW_URL: previewUrl,
+    },
+  })
+  report.featureParity = parity
+  report.rails.push({
+    id: 'preview_feature_parity',
+    status: parity.status === 'passed' ? 'passed' : 'failed',
+    evidence: 'tmp/preview-feature-parity-report.json',
+    reason: parity.failures?.join('; '),
+  })
+  if (parity.status !== 'passed') {
     writeReport(report)
     return report
   }

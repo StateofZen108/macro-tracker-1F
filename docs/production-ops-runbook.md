@@ -25,6 +25,14 @@ This command runs the full local release suite, then automatically runs Sentry s
 
 Branch previews are not considered verified just because Vercel reports `READY`. The preview proof must also prove that the deployed commit matches the branch, the real Vercel deploy log has zero app-owned TypeScript diagnostics or Vercel/function warnings, and the protected preview can be smoked through the automation bypass.
 
+Preview paid builds use one build-time feature preset instead of dozens of hand-set flags:
+
+```powershell
+$env:VITE_APP_FEATURE_PRESET='paid-cut-os-preview'
+```
+
+The preset enables the paid Cut OS, premium mobile UI, standalone-cut, MacroFactor-surpass, and mistake-proof trust rails while keeping AI meal photo permanently disabled. `npm run test:preview-feature-parity` loads the protected preview and checks `window.__MT_FEATURE_FLAGS__` so a Vercel `READY` deployment cannot be called verified if it was built with the wrong feature envelope.
+
 Run the preview proof from a clean tree:
 
 ```powershell
@@ -46,6 +54,7 @@ The proof writes:
 
 - `test-results/vercel-deploy.log`: real output from `vercel inspect <preview> --logs`
 - `tmp/vercel-preview-smoke-report.json`: protected smoke status
+- `tmp/preview-feature-parity-report.json`: deployed feature-preset parity
 - `tmp/vercel-preview-proof.json`: combined commit/log/smoke proof
 
 The protected smoke sends `x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET` and `x-vercel-set-bypass-cookie: true`, stores the returned bypass cookie, then reruns the smoke in Playwright. If the secret is missing and the preview returns Vercel login or `401`, the result is `blocked_by_protection`, not green. Do not disable Deployment Protection to make this pass; configure the bypass secret instead.

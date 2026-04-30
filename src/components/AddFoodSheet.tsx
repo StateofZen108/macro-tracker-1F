@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { lazy, Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type {
   ActionResult,
   BarcodeLookupResult,
@@ -340,7 +340,6 @@ export function AddFoodSheet({
   const scannerControlsRef = useRef<ScannerControls | null>(null)
   const browseContentRef = useRef<HTMLDivElement | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
-  const mealPhotoInputRef = useRef<HTMLInputElement | null>(null)
   const pendingBrowseRestoreRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
   const handledInitialCaptureRef = useRef<string | null>(null)
   const handledInitialModeRef = useRef<string | null>(null)
@@ -1153,49 +1152,13 @@ export function AddFoodSheet({
     createDescribeDraftFromText(capturedPhrase, 'Voice capture')
   }
 
-  function buildMealPhotoSuggestedName(fileName: string): string {
-    const baseName = fileName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim()
-    return baseName || 'Meal from photo'
-  }
-
-  function handleOpenMealPhotoCapture(): void {
-    mealPhotoInputRef.current?.click()
-  }
-
-  function handleMealPhotoSelection(event: ChangeEvent<HTMLInputElement>): void {
-    const selectedFile = event.target.files?.[0]
-    event.target.value = ''
-    if (!selectedFile) {
-      return
-    }
-
-    setDescribeDraft(null)
-    setSelectedFoodId(null)
-    setServings(1)
-    setActionError(null)
-    setNextCaptureDraft({
-      id:
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-          ? crypto.randomUUID()
-          : `capture-${Date.now()}`,
-      source: 'meal_photo',
-      confidence: 'low',
-      rawLabel: selectedFile.name,
-      suggestedName: buildMealPhotoSuggestedName(selectedFile.name),
-      suggestedAmount: 1,
-      suggestedUnit: 'plate',
-      photoPreviewUrl: URL.createObjectURL(selectedFile),
-      createdAt: new Date().toISOString(),
-    })
-  }
-
   function handleApplyCaptureDraft(): void {
     if (!captureDraft) {
       return
     }
 
     openFoodForm({
-      title: captureDraft.source === 'meal_photo' ? 'Review meal photo draft' : 'Review capture draft',
+      title: 'Review capture draft',
       submitLabel: 'Review and save',
       source: 'custom',
       submitMode: 'create',
@@ -1209,10 +1172,7 @@ export function AddFoodSheet({
         fat: 0,
         source: 'custom',
       },
-      noticeMessage:
-        captureDraft.source === 'meal_photo'
-          ? 'Meal-photo capture is a draft only. Review the food before saving or logging it.'
-          : 'Capture draft is low confidence. Review the food before saving or logging it.',
+      noticeMessage: 'Capture draft is low confidence. Review the food before saving or logging it.',
       acceptedQuery: captureDraft.suggestedName,
       returnMode: 'browse',
     })
@@ -1494,10 +1454,7 @@ export function AddFoodSheet({
     window.setTimeout(() => {
       if (source === 'voice') {
         handleStartVoiceCapture()
-        return
       }
-
-      handleOpenMealPhotoCapture()
     }, 0)
   })
 
@@ -2051,16 +2008,6 @@ export function AddFoodSheet({
       isDirty={sheetDirty}
       discardMessage="Your add-food progress will be lost if you close this sheet."
     >
-      <input
-        ref={mealPhotoInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        aria-label="Choose meal photo"
-        tabIndex={-1}
-        onChange={handleMealPhotoSelection}
-      />
       {sheetMode === 'form' ? (
         <Suspense fallback={<div className="px-4 py-6 text-sm text-slate-600 dark:text-slate-300">Loading food form...</div>}>
           <FoodForm
@@ -2401,15 +2348,6 @@ export function AddFoodSheet({
                   handleStartVoiceCapture()
                 },
                 'Discard your current selection and switch to voice capture?',
-              )
-            }
-            onOpenMealPhotoCapture={() =>
-              requestDiscard(
-                () => {
-                  setActionError(null)
-                  handleOpenMealPhotoCapture()
-                },
-                'Discard your current selection and switch to meal-photo capture?',
               )
             }
             lastLookupResult={lastLookupResult}

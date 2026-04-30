@@ -101,6 +101,104 @@ export interface FeatureFlags {
   surfaceConsistencyGuardV1: boolean
 }
 
+export type FeatureFlagPreset = 'paid-cut-os-preview'
+
+export const PAID_CUT_OS_PREVIEW_PRESET: FeatureFlagPreset = 'paid-cut-os-preview'
+
+const PAID_CUT_OS_PREVIEW_FLAGS: Array<keyof FeatureFlags> = [
+  'foodCatalogSearch',
+  'savedMeals',
+  'favoriteFoods',
+  'importTrustV1',
+  'barcodeTruthUiV1',
+  'labelOcrTrustV1',
+  'nutritionOverviewV1',
+  'coachEngineV1',
+  'weeklyDecisionSync',
+  'weeklyDecisionCard',
+  'coachMethodV2',
+  'psmfPhaseV2',
+  'recoveryLayerV1',
+  'garminConnectV1',
+  'recoveryHybridGates',
+  'coachEngineV3',
+  'nutritionOverviewV2',
+  'foodTruthV2',
+  'garminIntelligenceV2',
+  'bodyMetricsV1',
+  'progressPhotosV1',
+  'workoutsV1',
+  'dashboardV1',
+  'cutModeV1',
+  'loggingShortcutsV1',
+  'workoutsAnalyticsV2',
+  'bodyProgressCompareV1',
+  'dashboardInsightsV2',
+  'workoutRecordsV1',
+  'bodyMetricVisibilityV1',
+  'commandHomeV1',
+  'repeatLoggingV2',
+  'trainingGuidanceV2',
+  'progressStoryV1',
+  'quietSettingsV1',
+  'captureConvenienceV1',
+  'cutDayOsV1',
+  'phaseTemplatesV1',
+  'trainingPreservationV1',
+  'progressProofV2',
+  'quietPowerV1',
+  'commandSurfaceV2',
+  'loggingMaturityV1',
+  'trainingTrustV1',
+  'progressProofFinishV1',
+  'cohesionFinishV1',
+  'premiumDesignV1',
+  'premiumUiV1',
+  'premiumLogSummaryV2',
+  'premiumFastLogToolbarV2',
+  'premiumMealLedgerV2',
+  'premiumProofStripV1',
+  'mobileIaV1',
+  'commandSurfacePolishV1',
+  'screenFinishV1',
+  'settingsHubV1',
+  'motionSystemV1',
+  'adaptiveCutIntelligenceV1',
+  'adaptiveCutReviewSurfaceV1',
+  'paidCutOsV1',
+  'cutOsImportFocusV1',
+  'coachProofAnswerV1',
+  'macroFactorCorpusGateV1',
+  'standaloneCutNineV1',
+  'foodTrustConfidenceV3',
+  'firstTenMinuteActivationV1',
+  'coachProofDefaultV2',
+  'cutOsReplayValidationV1',
+  'serverFunctionTypecheckGateV1',
+  'macroFactorSurpassV1',
+  'unifiedLoggerV1',
+  'foodDatabaseTrustV1',
+  'cutOsExpenditureValidationV1',
+  'coachLiveProviderV1',
+  'trainingPreservationOsV1',
+  'nativeDeviceProofV1',
+  'paidAccountOpsV1',
+  'supportOpsV1',
+  'mistakeProofCutV1',
+  'dailyGuardrailsV1',
+  'foodTrustRepairV1',
+  'coachMistakeProofV1',
+  'surfaceConsistencyGuardV1',
+]
+
+export function resolveFeatureFlagPreset(value: string | boolean | undefined): FeatureFlagPreset | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+
+  return value.trim() === PAID_CUT_OS_PREVIEW_PRESET ? PAID_CUT_OS_PREVIEW_PRESET : null
+}
+
 export function resolveFeatureFlag(
   value: string | boolean | undefined,
   mode: string,
@@ -125,6 +223,7 @@ export function resolveFeatureFlag(
 
 export function buildFeatureFlags(env: Record<string, string | boolean | undefined>): FeatureFlags {
   const mode = typeof env.MODE === 'string' && env.MODE.trim() ? env.MODE : 'development'
+  const preset = resolveFeatureFlagPreset(env.VITE_APP_FEATURE_PRESET)
 
   const resolvedFlags: FeatureFlags = {
     foodCatalogSearch: resolveFeatureFlag(env.VITE_FF_FOOD_CATALOG_SEARCH, mode),
@@ -228,6 +327,14 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     coachMistakeProofV1: resolveFeatureFlag(env.VITE_FF_COACH_MISTAKE_PROOF_V1, mode),
     surfaceConsistencyGuardV1: resolveFeatureFlag(env.VITE_FF_SURFACE_CONSISTENCY_GUARD_V1, mode),
   }
+
+  if (preset === PAID_CUT_OS_PREVIEW_PRESET) {
+    for (const flag of PAID_CUT_OS_PREVIEW_FLAGS) {
+      resolvedFlags[flag] = true
+    }
+  }
+
+  resolvedFlags.aiMealCaptureV1 = false
 
   if (!resolvedFlags.catalogProviderV2) {
     resolvedFlags.describeFood = false
@@ -521,7 +628,12 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     resolvedFlags.coachMistakeProofV1 = false
   }
 
+  resolvedFlags.aiMealCaptureV1 = false
+
   return resolvedFlags
 }
 
+export const FEATURE_FLAG_PRESET = resolveFeatureFlagPreset(
+  (import.meta.env as Record<string, string | boolean | undefined>).VITE_APP_FEATURE_PRESET,
+)
 export const FEATURE_FLAGS = buildFeatureFlags(import.meta.env as Record<string, string | boolean | undefined>)

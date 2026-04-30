@@ -4,7 +4,6 @@ export const UNIFIED_LOGGER_METHODS: LoggerMethod[] = [
   'search',
   'barcode',
   'label_ocr',
-  'ai_photo',
   'quick_add',
   'custom',
   'recipe',

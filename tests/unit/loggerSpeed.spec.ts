@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildLoggerSpeedMetric, evaluateLoggerSpeedGate } from '../../src/domain/loggerSpeed'
 
 describe('logger speed gate', () => {
-  it('passes common, packaged, label, AI-photo, and custom logging budgets', () => {
+  it('passes common, packaged, label, and custom logging budgets', () => {
     const metrics = [
       buildLoggerSpeedMetric({
         method: 'search',
@@ -21,13 +21,6 @@ describe('logger speed gate', () => {
       buildLoggerSpeedMetric({
         method: 'label_ocr',
         durationsSeconds: [24, 28, 30],
-        tapCounts: [4, 5, 5],
-        successes: 19,
-        attempts: 20,
-      }),
-      buildLoggerSpeedMetric({
-        method: 'ai_photo',
-        durationsSeconds: [32, 41, 45],
         tapCounts: [4, 5, 5],
         successes: 19,
         attempts: 20,
