@@ -2,7 +2,7 @@ import type {
   CatalogProviderAdapter,
   NormalizedBarcodeLookupResult,
   NormalizedCatalogSearchPage,
-} from '../../src/types'
+} from '../../src/types.js'
 
 export type RemoteCatalogResponse = NormalizedCatalogSearchPage
 

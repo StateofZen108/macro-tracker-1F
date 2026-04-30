@@ -1,5 +1,7 @@
 import { Camera, Plus, Search, Star, Undo2, X } from 'lucide-react'
 import { useState, type RefObject } from 'react'
+import { FEATURE_FLAGS } from '../../config/featureFlags'
+import { classifyFoodTrustEvidence, getFoodTrustDetail, getFoodTrustLabel } from '../../domain/foodTrust'
 import type {
   BarcodeLookupResult,
   CaptureConvenienceDraft,
@@ -217,6 +219,31 @@ function SectionHeader({
   )
 }
 
+function FoodTrustBadge({ food }: { food: Food }) {
+  if (!FEATURE_FLAGS.foodTrustConfidenceV3) {
+    return null
+  }
+
+  const evidence = food.trustEvidence ?? classifyFoodTrustEvidence({ food })
+  const tone =
+    evidence.status === 'trusted'
+      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200'
+      : evidence.status === 'blocked'
+        ? 'bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-200'
+        : 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200'
+
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${tone}`}
+      title={getFoodTrustDetail(evidence)}
+      data-testid="food-trust-badge"
+      data-food-trust-status={evidence.status}
+    >
+      {getFoodTrustLabel(evidence)}
+    </span>
+  )
+}
+
 function LocalFoodCard({
   food,
   mode,
@@ -257,9 +284,12 @@ function LocalFoodCard({
               {food.servingUnit}
             </p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            {badge ?? food.source}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {badge ?? food.source}
+            </span>
+            <FoodTrustBadge food={food} />
+          </div>
         </div>
         <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
           {describeFood(food)}
@@ -683,6 +713,9 @@ export function BrowsePane({
                 <p className="mt-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                   {describeFoodWithServings(selectedFood, servings)}
                 </p>
+                <div className="mt-3">
+                  <FoodTrustBadge food={selectedFood} />
+                </div>
               </div>
             <div className="flex items-center gap-2">
               {mode === 'add' && onToggleFavoriteFood ? (

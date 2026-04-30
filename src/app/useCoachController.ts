@@ -156,7 +156,8 @@ export function useCoachController({
 
   function handleCoachQuestion(question: string, mode: typeof uiPrefs.preferredAskCoachMode): void {
     const snapshot = buildCoachContextSnapshot()
-    const result = FEATURE_FLAGS.coachProofAnswerV1
+    const localProofEnabled = FEATURE_FLAGS.coachProofDefaultV2 || FEATURE_FLAGS.coachProofAnswerV1
+    const result = localProofEnabled
       ? answerQuestionWithProof(question, mode, snapshot, cutOsSurface)
       : queueQuestion(question, mode, snapshot)
     if (!result.ok) {
@@ -279,7 +280,11 @@ export function useCoachController({
 
   return {
     coachAvailabilityNote:
-      networkStatus === 'offline' ? 'offline' : coachConfig.provider === 'none' ? 'notConfigured' : 'ready',
+      networkStatus === 'offline'
+        ? 'offline'
+        : FEATURE_FLAGS.coachProofDefaultV2 || coachConfig.provider !== 'none'
+          ? 'ready'
+          : 'notConfigured',
     handleCoachQuestion,
     handleCoachProposal,
     handleChangePreferredMode,

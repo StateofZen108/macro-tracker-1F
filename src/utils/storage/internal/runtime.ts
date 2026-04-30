@@ -25,6 +25,7 @@ import type {
   DietPhaseEvent,
   Food,
   FoodLogEntry,
+  FoodTrustEvidence,
   LabelNutritionField,
   LabelNutritionFieldKey,
   LabelNutritionPanel,
@@ -1417,6 +1418,7 @@ function normalizeFoodRecord(food: Food): Food {
     sourceQuality,
     sourceQualityNote: food.sourceQualityNote?.trim() || undefined,
     importTrust: normalizeImportTrust(food),
+    trustEvidence: normalizeFoodTrustEvidence(food.trustEvidence),
     searchAliases,
     remoteReferences: normalizeRemoteReferences(food.remoteReferences),
     usageCount: Number.isFinite(food.usageCount) ? food.usageCount : 0,
@@ -2291,6 +2293,68 @@ function normalizeSnapshot(snapshot: FoodSnapshot): FoodSnapshot {
     source: snapshot.source ?? 'custom',
     fiber: snapshot.fiber ?? undefined,
     barcode: snapshot.barcode?.trim() || undefined,
+    trustEvidence: snapshot.trustEvidence,
+  }
+}
+
+function normalizeFoodTrustEvidence(rawValue: unknown): FoodTrustEvidence | undefined {
+  if (!isRecord(rawValue)) {
+    return undefined
+  }
+
+  const source =
+    rawValue.source === 'barcode' ||
+    rawValue.source === 'ocr' ||
+    rawValue.source === 'catalog' ||
+    rawValue.source === 'custom' ||
+    rawValue.source === 'import'
+      ? rawValue.source
+      : null
+  const sourceId = readString(rawValue.sourceId)
+  const status =
+    rawValue.status === 'trusted' ||
+    rawValue.status === 'review_required' ||
+    rawValue.status === 'blocked'
+      ? rawValue.status
+      : null
+  const servingBasis =
+    rawValue.servingBasis === 'verified' ||
+    rawValue.servingBasis === 'inferred' ||
+    rawValue.servingBasis === 'missing'
+      ? rawValue.servingBasis
+      : null
+  const macroCompleteness =
+    rawValue.macroCompleteness === 'complete' ||
+    rawValue.macroCompleteness === 'partial' ||
+    rawValue.macroCompleteness === 'missing'
+      ? rawValue.macroCompleteness
+      : null
+  const confidence = readNumber(rawValue.confidence)
+
+  if (!source || !sourceId || !status || !servingBasis || !macroCompleteness || confidence === null) {
+    return undefined
+  }
+
+  return {
+    source,
+    sourceId,
+    status,
+    confidence: Math.max(0, Math.min(1, confidence)),
+    servingBasis,
+    macroCompleteness,
+    providerConflict: rawValue.providerConflict === true,
+    reasons: Array.isArray(rawValue.reasons)
+      ? rawValue.reasons.filter(
+          (issue): issue is FoodTrustEvidence['reasons'][number] =>
+            issue === 'missing_macros' ||
+            issue === 'estimated_serving' ||
+            issue === 'unknown_serving_basis' ||
+            issue === 'per100_fallback' ||
+            issue === 'provider_conflict' ||
+            issue === 'low_ocr_confidence',
+        )
+      : [],
+    reviewedAt: readOptionalString(rawValue.reviewedAt),
   }
 }
 
@@ -2774,6 +2838,7 @@ function buildSnapshotFromFood(food: Food): FoodSnapshot {
     fiber: food.fiber,
     source: food.source,
     barcode: food.barcode,
+    trustEvidence: food.trustEvidence,
   })
 }
 
@@ -2887,6 +2952,7 @@ function parseFoodSnapshot(rawValue: unknown): FoodSnapshot | null {
     nutrients,
     source,
     barcode: readOptionalString(rawValue.barcode),
+    trustEvidence: normalizeFoodTrustEvidence(rawValue.trustEvidence),
   })
 }
 
@@ -3002,6 +3068,7 @@ function parseFoodRecordStrict(rawFood: unknown, index: number): ActionResult<Fo
           ? (rawFood.importTrust as unknown as Food['importTrust'])
           : undefined,
       }),
+      trustEvidence: normalizeFoodTrustEvidence(rawFood.trustEvidence),
       usageCount: readNumber(rawFood.usageCount) ?? 0,
       createdAt: readString(rawFood.createdAt) ?? new Date().toISOString(),
       updatedAt: readOptionalString(rawFood.updatedAt),

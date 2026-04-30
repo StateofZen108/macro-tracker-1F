@@ -111,6 +111,17 @@ describe('Cut OS activation', () => {
     expect(model?.primaryAction.settingsFocusTarget).toBe('macrofactor_history_import')
     expect(model?.primaryAction.autoOpenFilePicker).toBe(true)
     expect(model?.secondaryActions.map((action) => action.id)).toContain('try_demo')
+    expect(model?.secondaryActions.map((action) => action.id)).toEqual(
+      expect.arrayContaining(['start_logging', 'add_weigh_in', 'set_cut_target', 'ask_coach']),
+    )
+    expect(model?.steps.map((step) => step.id)).toEqual([
+      'import_history',
+      'log_first_food',
+      'set_cut_target',
+      'weigh_in',
+      'ask_coach',
+    ])
+    expect(model?.steps.find((step) => step.id === 'import_history')?.status).toBe('active')
     expect(model?.proofReceipt.find((item) => item.id === 'food_trust')?.status).toBe('ready')
   })
 
@@ -148,6 +159,7 @@ describe('Cut OS activation', () => {
     expect(demoSurface.setup.every((item) => item.status === 'complete')).toBe(true)
     expect(activation?.state).toBe('demo_active')
     expect(activation?.demoSurface?.command.diagnosisId).toBe(demoSurface.command.diagnosisId)
+    expect(activation?.steps.every((step) => step.status === 'complete')).toBe(true)
     expect(activation?.proofReceipt.every((item) => item.status === 'ready')).toBe(true)
   })
 })

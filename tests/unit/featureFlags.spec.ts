@@ -87,6 +87,12 @@ describe('feature flags', () => {
       cutOsImportFocusV1: false,
       coachProofAnswerV1: false,
       macroFactorCorpusGateV1: false,
+      standaloneCutNineV1: false,
+      foodTrustConfidenceV3: false,
+      firstTenMinuteActivationV1: false,
+      coachProofDefaultV2: false,
+      cutOsReplayValidationV1: false,
+      serverFunctionTypecheckGateV1: false,
     })
   })
 
@@ -175,6 +181,12 @@ describe('feature flags', () => {
       cutOsImportFocusV1: true,
       coachProofAnswerV1: true,
       macroFactorCorpusGateV1: true,
+      standaloneCutNineV1: true,
+      foodTrustConfidenceV3: true,
+      firstTenMinuteActivationV1: true,
+      coachProofDefaultV2: true,
+      cutOsReplayValidationV1: true,
+      serverFunctionTypecheckGateV1: true,
     })
   })
 
@@ -282,6 +294,12 @@ describe('feature flags', () => {
       cutOsImportFocusV1: false,
       coachProofAnswerV1: false,
       macroFactorCorpusGateV1: false,
+      standaloneCutNineV1: false,
+      foodTrustConfidenceV3: false,
+      firstTenMinuteActivationV1: false,
+      coachProofDefaultV2: false,
+      cutOsReplayValidationV1: false,
+      serverFunctionTypecheckGateV1: false,
     })
   })
 
@@ -356,6 +374,11 @@ describe('feature flags', () => {
     expect(flags.cutOsImportFocusV1).toBe(false)
     expect(flags.coachProofAnswerV1).toBe(false)
     expect(flags.macroFactorCorpusGateV1).toBe(false)
+    expect(flags.standaloneCutNineV1).toBe(false)
+    expect(flags.foodTrustConfidenceV3).toBe(false)
+    expect(flags.firstTenMinuteActivationV1).toBe(false)
+    expect(flags.coachProofDefaultV2).toBe(false)
+    expect(flags.cutOsReplayValidationV1).toBe(false)
   })
 
   it('downgrades premium finish flags when their prerequisites are disabled', () => {

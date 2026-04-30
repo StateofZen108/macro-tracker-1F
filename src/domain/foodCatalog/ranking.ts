@@ -1,4 +1,4 @@
-import type { UnifiedFoodMatchKind, UnifiedFoodSearchContext, UnifiedFoodSearchResult } from './types'
+import type { UnifiedFoodMatchKind, UnifiedFoodSearchContext, UnifiedFoodSearchResult } from './types.js'
 
 function normalizeQuery(value: string): string {
   return value.trim().toLowerCase()

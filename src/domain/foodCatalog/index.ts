@@ -6,9 +6,9 @@ export {
   pruneCatalogCache,
   saveCatalogHitsToCache,
   searchCatalogCache,
-} from './cache'
-export { resolveFoodIdentityMatch } from './identity'
-export { detectUnifiedFoodMatchKind, rankUnifiedFoodSearchResults } from './ranking'
+} from './cache.js'
+export { resolveFoodIdentityMatch } from './identity.js'
+export { detectUnifiedFoodMatchKind, rankUnifiedFoodSearchResults } from './ranking.js'
 export type {
   CatalogFoodRecord,
   CatalogProvider,
@@ -19,4 +19,4 @@ export type {
   UnifiedFoodSearchContext,
   UnifiedFoodSearchResult,
   UnifiedFoodSource,
-} from './types'
+} from './types.js'

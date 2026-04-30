@@ -1,4 +1,4 @@
-import type { FavoriteFood, Food, Recipe } from '../../types'
+import type { FavoriteFood, Food, Recipe } from '../../types.js'
 
 export interface SyncIntegrityDataset {
   foods: Food[]

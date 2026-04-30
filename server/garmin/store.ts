@@ -11,7 +11,7 @@ import type {
   GarminSecretEnvelope,
   GarminSyncActor,
   GarminWellnessEntry,
-} from './types'
+} from './types.js'
 
 export interface GarminStateDocument {
   version: 1

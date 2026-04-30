@@ -1,10 +1,10 @@
-import { getFoodIdentityKey, normalizeFoodIdentity } from '../foods/dedupe'
-import type { Food } from '../../types'
+import { getFoodIdentityKey, normalizeFoodIdentity } from '../foods/dedupe.js'
+import type { Food } from '../../types.js'
 import type {
   CatalogFoodRecord,
   FoodIdentityInput,
   FoodIdentityMatch,
-} from './types'
+} from './types.js'
 
 interface ResolveFoodIdentityOptions {
   localFoods: Food[]

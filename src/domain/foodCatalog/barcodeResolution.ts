@@ -4,7 +4,7 @@ import type {
   CatalogProvider,
   Food,
   ImportTrustLevel,
-} from '../../types'
+} from '../../types.js'
 
 export interface BarcodeLookupResolution {
   source: 'local_barcode' | 'local_remote_reference' | 'remote'

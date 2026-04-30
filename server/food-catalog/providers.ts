@@ -1,8 +1,8 @@
-import type { ActionResult, BarcodeLookupResult } from '../../src/types.ts'
-import type { ServerCatalogProviderAdapter, RemoteCatalogResponse } from './types.ts'
-import { lookupFatSecretBarcode, searchFatSecretCatalog } from './fatsecret.ts'
-import { lookupOpenFoodFactsBarcode, searchOpenFoodFactsCatalog } from './openFoodFacts.ts'
-import { searchUsdaFdcCatalog } from './usdaFdc.ts'
+import type { ActionResult, BarcodeLookupResult } from '../../src/types.js'
+import type { ServerCatalogProviderAdapter, RemoteCatalogResponse } from './types.js'
+import { lookupFatSecretBarcode, searchFatSecretCatalog } from './fatsecret.js'
+import { lookupOpenFoodFactsBarcode, searchOpenFoodFactsCatalog } from './openFoodFacts.js'
+import { searchUsdaFdcCatalog } from './usdaFdc.js'
 
 interface CatalogSearchOptions {
   locale?: 'en-GB' | 'en-US'

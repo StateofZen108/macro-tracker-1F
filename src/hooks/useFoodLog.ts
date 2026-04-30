@@ -8,6 +8,8 @@ import {
   saveFoodLogWithUsages,
 } from '../utils/storage/logs'
 import { dismissFoodReviewItem, resolveFoodReviewItem } from '../utils/storage/foodReviewQueue'
+import { classifyFoodTrustEvidence } from '../domain/foodTrust'
+import { upsertFoodTrustEvidence } from '../utils/storage/foodTrustEvidence'
 import { buildEntrySnapshot } from '../utils/storage/foods'
 import { subscribeToStorage } from '../utils/storage/core'
 
@@ -48,15 +50,21 @@ export function useFoodLog(date: string) {
 
   function addEntry(meal: MealType, food: Food, servings: number): ActionResult<FoodLogEntry> {
     const now = new Date().toISOString()
+    const trustEvidence = food.trustEvidence ?? classifyFoodTrustEvidence({ food })
+    void upsertFoodTrustEvidence(trustEvidence)
     const newEntry: FoodLogEntry = {
       id: crypto.randomUUID(),
       foodId: food.id,
-      snapshot: buildEntrySnapshot(food),
+      snapshot: {
+        ...buildEntrySnapshot(food),
+        trustEvidence,
+      },
       date,
       meal,
       servings,
       createdAt: now,
       updatedAt: now,
+      needsReview: trustEvidence.status !== 'trusted' || undefined,
     }
 
     const currentEntries = sortEntries(loadFoodLog(date))
@@ -76,14 +84,20 @@ export function useFoodLog(date: string) {
     servings: number,
   ): ActionResult<FoodLogEntry> {
     const now = new Date().toISOString()
+    const trustEvidence = snapshot.trustEvidence ?? classifyFoodTrustEvidence({ snapshot })
+    void upsertFoodTrustEvidence(trustEvidence)
     const newEntry: FoodLogEntry = {
       id: crypto.randomUUID(),
-      snapshot,
+      snapshot: {
+        ...snapshot,
+        trustEvidence,
+      },
       date,
       meal,
       servings,
       createdAt: now,
       updatedAt: now,
+      needsReview: trustEvidence.status !== 'trusted' || undefined,
     }
 
     const result = updateDateEntries(date, (currentEntries) => [...currentEntries, newEntry])
@@ -111,14 +125,19 @@ export function useFoodLog(date: string) {
   function replaceEntryFood(entryId: string, food: Food): ActionResult<void> {
     const currentEntries = sortEntries(loadFoodLog(date))
     const currentEntry = currentEntries.find((entry) => entry.id === entryId)
+    const trustEvidence = food.trustEvidence ?? classifyFoodTrustEvidence({ food, reviewedAt: new Date().toISOString() })
+    void upsertFoodTrustEvidence(trustEvidence)
     const nextEntries = currentEntries.map((entry) =>
       entry.id === entryId
         ? {
             ...entry,
             foodId: food.id,
-            snapshot: buildEntrySnapshot(food),
+            snapshot: {
+              ...buildEntrySnapshot(food),
+              trustEvidence,
+            },
             updatedAt: new Date().toISOString(),
-            needsReview: false,
+            needsReview: trustEvidence.status !== 'trusted' || undefined,
             reviewItemId: undefined,
           }
         : entry,

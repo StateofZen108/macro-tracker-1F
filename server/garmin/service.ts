@@ -5,13 +5,13 @@ import {
   encryptGarminTokenBundle,
   readGarminTokenKeyRingFromEnv,
   type GarminTokenKeyRing,
-} from './crypto'
+} from './crypto.js'
 import {
   buildGarminPkceChallenge,
   createGarminProviderAdapter,
   GarminProviderError,
   isGarminProviderConfigured,
-} from './provider'
+} from './provider.js'
 import {
   applyGarminSyncFailure,
   applyGarminSyncSuccess,
@@ -27,7 +27,7 @@ import {
   saveGarminAuthSession,
   saveGarminConnectionRecord,
   type GarminStateStore,
-} from './store'
+} from './store.js'
 import type {
   GarminAuthSession,
   GarminAutomationMode,
@@ -40,7 +40,7 @@ import type {
   GarminSyncResult,
   GarminTokenBundle,
   GarminWellnessEntry,
-} from './types'
+} from './types.js'
 
 const INITIAL_BACKFILL_DAYS = 30
 const INCREMENTAL_OVERLAP_DAYS = 3

@@ -3,8 +3,8 @@ import type {
   BootstrapStatusSummary,
   SyncPullResponse,
   SyncPushResponse,
-} from '../../types'
-import type { SyncRecordDraft } from './shared'
+} from '../../types.js'
+import type { SyncRecordDraft } from './shared.js'
 
 function buildHeaders(accessToken: string): HeadersInit {
   return {

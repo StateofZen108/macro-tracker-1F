@@ -1,11 +1,11 @@
-import type { Food, FoodDraft } from '../../types'
+import type { Food, FoodDraft } from '../../types.js'
 
 export function normalizeFoodIdentity(value: string | undefined): string {
   return value?.trim().toLowerCase() ?? ''
 }
 
 export function getFoodIdentityKey(
-  food: Pick<FoodDraft, 'name' | 'brand' | 'servingSize' | 'servingUnit'>,
+  food: Pick<FoodDraft, 'name' | 'servingSize' | 'servingUnit'> & { brand?: string },
 ): string {
   return [
     normalizeFoodIdentity(food.name),

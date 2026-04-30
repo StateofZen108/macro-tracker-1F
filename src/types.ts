@@ -46,6 +46,21 @@ export type ImportTrustBlockingIssue =
   | 'per100_fallback'
   | 'provider_conflict'
   | 'low_ocr_confidence'
+export type FoodTrustStatus = 'trusted' | 'review_required' | 'blocked'
+export type FoodTrustEvidenceSource = 'barcode' | 'ocr' | 'catalog' | 'custom' | 'import'
+export type FoodTrustServingBasis = 'verified' | 'inferred' | 'missing'
+export type FoodTrustMacroCompleteness = 'complete' | 'partial' | 'missing'
+export interface FoodTrustEvidence {
+  source: FoodTrustEvidenceSource
+  sourceId: string
+  status: FoodTrustStatus
+  confidence: number
+  servingBasis: FoodTrustServingBasis
+  macroCompleteness: FoodTrustMacroCompleteness
+  providerConflict: boolean
+  reasons: ImportTrustBlockingIssue[]
+  reviewedAt?: string
+}
 export type LabelNutritionFieldKey =
   | 'calories'
   | 'protein'
@@ -370,6 +385,9 @@ export type DiagnosticsEventType =
   | 'serving_basis_conflict_detected'
   | 'barcode_provider_failed'
   | 'food_truth_rollout_alert'
+  | 'food_trust.evidence_classified'
+  | 'food_trust.review_promoted'
+  | 'food_trust.user_edit_won'
   | 'pwa_update_waiting_detected'
   | 'pwa_update_waiting_cleared'
   | 'pwa_update_auto_apply_deferred'
@@ -389,6 +407,16 @@ export type DiagnosticsEventType =
   | 'coach.proof_answer_failed'
   | 'coach.proof_answer_blocked'
   | 'coach.proof_citation_missing'
+  | 'coach.local_proof_disabled'
+  | 'activation.first_ten_rendered'
+  | 'activation.snapshot_reconciled'
+  | 'cut_os.replay_validation_completed'
+  | 'cut_os.replay_stale'
+  | 'server.typecheck_completed'
+  | 'server.typecheck_invalidated'
+  | 'deploy.log_clean_verified'
+  | 'deploy.warning_blocked_release'
+  | 'release.standalone_cut_9_verified'
   | 'qa.device_evidence_recorded'
   | 'qa.device_evidence_failed'
   | 'qa.device_evidence_invalidated'
@@ -563,6 +591,8 @@ export type CutOsActivationActionId =
   | 'try_demo'
   | 'start_logging'
   | 'add_weigh_in'
+  | 'set_cut_target'
+  | 'ask_coach'
   | 'set_training'
   | 'review_food'
   | 'open_coach'
@@ -593,9 +623,42 @@ export interface CutOsActivationModel {
   summary: string
   primaryAction: CutOsActivationAction
   secondaryActions: CutOsActivationAction[]
+  steps: ActivationStep[]
   proofReceipt: CutOsActivationProofReceiptItem[]
   nextProof: CutOsSetupChecklistItem | null
   demoSurface: CutOsSurfaceModel | null
+}
+
+export interface ActivationStep {
+  id: 'import_history' | 'log_first_food' | 'set_cut_target' | 'weigh_in' | 'ask_coach'
+  status: 'todo' | 'active' | 'complete' | 'blocked'
+  routeTarget: 'settings_import' | 'log' | 'weight' | 'coach'
+  blocking: boolean
+}
+
+export type CoachLocalAnswerMode = 'proof_answer' | 'setup_answer' | 'provider_queue'
+
+export interface CutOsHistoricalReplayReport {
+  buildId: string
+  checkedAt: string
+  replayWindow: {
+    start: string
+    end: string
+  }
+  reconstructedDays: number
+  trueStallsDetected: number
+  expectedSpikesSuppressed: number
+  trainingLeaksPrioritized: number
+  foodTrustBlocksCaught: number
+  falseEscalations: number
+  missedActionableDays: number
+}
+
+export interface ServerFunctionTypecheckReport {
+  checkedAt: string
+  command: string
+  diagnostics: Array<{ file: string; code: string; message: string }>
+  passed: boolean
 }
 
 export interface MacrofactorReplayReport {
@@ -676,6 +739,7 @@ export interface Food {
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
   importTrust?: ImportTrust
+  trustEvidence?: FoodTrustEvidence
   searchAliases?: string[]
   remoteReferences?: FoodRemoteReference[]
   usageCount: number
@@ -709,6 +773,7 @@ export interface FoodDraft {
   sourceQuality?: FoodSourceQuality
   sourceQualityNote?: string
   importTrust?: ImportTrust
+  trustEvidence?: FoodTrustEvidence
   searchAliases?: string[]
   remoteReferences?: FoodRemoteReference[]
   barcode?: string
@@ -765,6 +830,7 @@ export interface FoodSnapshot {
   source: FoodSource
   barcode?: string
   nutrients?: NutrientProfileV1
+  trustEvidence?: FoodTrustEvidence
 }
 
 export interface FoodLogEntry {

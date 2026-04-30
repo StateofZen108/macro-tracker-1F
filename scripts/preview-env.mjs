@@ -64,6 +64,12 @@ const sharedPreviewFlags = {
   VITE_FF_CUT_OS_IMPORT_FOCUS_V1: 'true',
   VITE_FF_COACH_PROOF_ANSWER_V1: 'true',
   VITE_FF_MACRO_FACTOR_CORPUS_GATE_V1: 'true',
+  VITE_FF_STANDALONE_CUT_NINE_V1: 'true',
+  VITE_FF_FOOD_TRUST_CONFIDENCE_V3: 'true',
+  VITE_FF_FIRST_TEN_MINUTE_ACTIVATION_V1: 'true',
+  VITE_FF_COACH_PROOF_DEFAULT_V2: 'true',
+  VITE_FF_CUT_OS_REPLAY_VALIDATION_V1: 'true',
+  VITE_FF_SERVER_FUNCTION_TYPECHECK_GATE_V1: 'true',
 }
 
 export function createPreviewEnv(buildIdPrefix, extraFlags = {}) {

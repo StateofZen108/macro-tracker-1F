@@ -37,7 +37,7 @@ async function handleGet(request: Request): Promise<Response> {
     }
 
     const result = await lookupBarcodeProviders(barcode)
-    if (!result.ok) {
+    if (result.ok === false) {
       logApiEvent({
         event: 'food_catalog_barcode',
         status: 404,

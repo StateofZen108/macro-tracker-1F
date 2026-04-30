@@ -1,4 +1,5 @@
 import type {
+  ActivationStep,
   CutOsActivationAction,
   CutOsActivationModel,
   CutOsActivationProofReceiptItem,
@@ -119,6 +120,79 @@ function buildProofReceipt(setup: CutOsSetupChecklistItem[]): CutOsActivationPro
           ? 'blocked'
           : 'pending',
   }))
+}
+
+function setupById(setup: CutOsSetupChecklistItem[], id: string): CutOsSetupChecklistItem | null {
+  return setup.find((item) => item.id === id) ?? null
+}
+
+function stepStatus(
+  item: CutOsSetupChecklistItem | null,
+  nextProof: CutOsSetupChecklistItem | null,
+): ActivationStep['status'] {
+  if (item?.status === 'complete') {
+    return 'complete'
+  }
+
+  if (item?.id === 'food_trust' && item.routeTarget === 'review_food') {
+    return 'blocked'
+  }
+
+  return item && nextProof?.id === item.id ? 'active' : 'todo'
+}
+
+function buildActivationSteps(
+  setup: CutOsSetupChecklistItem[],
+  nextProof: CutOsSetupChecklistItem | null,
+): ActivationStep[] {
+  const importItem = setupById(setup, 'import_or_backfill') ?? setupById(setup, 'history_days')
+  const logItem = setupById(setup, 'logged_intake_days')
+  const weighItem = setupById(setup, 'weigh_ins')
+  const foodTrustItem = setupById(setup, 'food_trust')
+  const targetReady = setup.every((item) => item.status === 'complete')
+
+  return [
+    {
+      id: 'import_history',
+      status: stepStatus(importItem, nextProof),
+      routeTarget: 'settings_import',
+      blocking: importItem?.status !== 'complete',
+    },
+    {
+      id: 'log_first_food',
+      status: stepStatus(logItem, nextProof),
+      routeTarget: 'log',
+      blocking: logItem?.status !== 'complete' || foodTrustItem?.status === 'pending',
+    },
+    {
+      id: 'set_cut_target',
+      status: targetReady ? 'complete' : 'todo',
+      routeTarget: 'settings_import',
+      blocking: false,
+    },
+    {
+      id: 'weigh_in',
+      status: stepStatus(weighItem, nextProof),
+      routeTarget: 'weight',
+      blocking: weighItem?.status !== 'complete',
+    },
+    {
+      id: 'ask_coach',
+      status: targetReady ? 'complete' : 'todo',
+      routeTarget: 'coach',
+      blocking: false,
+    },
+  ]
+}
+
+function completeActivationSteps(): ActivationStep[] {
+  return [
+    { id: 'import_history', status: 'complete', routeTarget: 'settings_import', blocking: false },
+    { id: 'log_first_food', status: 'complete', routeTarget: 'log', blocking: false },
+    { id: 'set_cut_target', status: 'complete', routeTarget: 'settings_import', blocking: false },
+    { id: 'weigh_in', status: 'complete', routeTarget: 'weight', blocking: false },
+    { id: 'ask_coach', status: 'complete', routeTarget: 'coach', blocking: false },
+  ]
 }
 
 function selectNextProof(setup: CutOsSetupChecklistItem[]): CutOsSetupChecklistItem | null {
@@ -318,6 +392,7 @@ export function buildCutOsActivationModel(input: {
           { settingsFocusTarget: 'macrofactor_history_import', autoOpenFilePicker: true },
         ),
       ],
+      steps: completeActivationSteps(),
       proofReceipt: buildProofReceipt(demoSurface.setup),
       nextProof: null,
       demoSurface,
@@ -332,6 +407,12 @@ export function buildCutOsActivationModel(input: {
   const primaryAction = actionForSetupItem(nextProof)
   const secondaryActions: CutOsActivationAction[] = [
     startDemoAction(),
+    routeAction(
+      'add_weigh_in',
+      'Weigh in',
+      'Add today\'s scale proof.',
+      'weigh_in',
+    ),
     primaryAction.id === 'start_logging'
       ? routeAction(
           'import_history',
@@ -346,15 +427,28 @@ export function buildCutOsActivationModel(input: {
           'Create a clean local proof day right now.',
           'log',
         ),
+    routeAction(
+      'set_cut_target',
+      'Set cut target',
+      'Confirm the target the command will protect.',
+      'settings',
+    ),
+    routeAction(
+      'ask_coach',
+      'Ask Coach',
+      'Get a setup answer from the current proof packet.',
+      'coach',
+    ),
   ]
 
   return {
     state: 'needs_proof',
     headline: 'Build your Cut OS in 10 minutes',
     summary:
-      'Import history or run the sealed demo to see the daily command, proof stack, blocker list, and next action before you commit to logging from scratch.',
+      'Import, log, weigh, set the cut target, then ask Coach from the same proof packet.',
     primaryAction,
-    secondaryActions,
+    secondaryActions: secondaryActions.filter((action) => action.id !== primaryAction.id),
+    steps: buildActivationSteps(input.surface.setup, nextProof),
     proofReceipt: buildProofReceipt(input.surface.setup),
     nextProof,
     demoSurface: null,

@@ -14,6 +14,7 @@ import type {
   CoachFeedback,
   CutOsSurfaceModel,
 } from '../types'
+import { FEATURE_FLAGS } from '../config/featureFlags'
 import { buildCoachProofAnswer } from '../domain/coachProofAnswer'
 import {
   loadCoachConfig,
@@ -89,6 +90,10 @@ export function useCoach(isOnline: boolean) {
   const coachState: CoachState = useMemo(() => {
     if (!isOnline) {
       return 'offline'
+    }
+
+    if (FEATURE_FLAGS.coachProofDefaultV2) {
+      return coachQueue.length > 0 ? 'queued' : 'ready'
     }
 
     if (coachConfig.provider === 'none') {

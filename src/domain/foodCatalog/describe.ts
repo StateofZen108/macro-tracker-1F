@@ -1,5 +1,5 @@
-import type { DescribeFoodDraftV1, Food } from '../../types'
-import { normalizeFoodSearchText } from './search'
+import type { DescribeFoodDraftV1, Food } from '../../types.js'
+import { normalizeFoodSearchText } from './search.js'
 
 const MULTI_ITEM_PATTERN = /,|\band\b|\+|\bwith\b/i
 const MAX_TEXT_LENGTH = 400

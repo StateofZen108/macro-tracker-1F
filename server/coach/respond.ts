@@ -1,5 +1,5 @@
-import type { CoachProviderAdapter, CoachProviderName, CoachProviderRequest } from './provider'
-import { buildNotConfiguredResponse } from './provider'
+import type { CoachProviderAdapter, CoachProviderName, CoachProviderRequest } from './provider.js'
+import { buildNotConfiguredResponse } from './provider.js'
 
 class PlaceholderProvider implements CoachProviderAdapter {
   name: CoachProviderName

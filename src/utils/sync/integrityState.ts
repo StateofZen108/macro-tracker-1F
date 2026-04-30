@@ -1,4 +1,4 @@
-import type { ActionResult, SyncIntegrityState } from '../../types'
+import type { ActionResult, SyncIntegrityState } from '../../types.js'
 import { createExtraSingletonStore } from '../storage/extraStore'
 
 const STORAGE_KEY = 'mt_sync_integrity_state'

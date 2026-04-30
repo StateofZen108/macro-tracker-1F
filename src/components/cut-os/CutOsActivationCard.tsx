@@ -1,5 +1,5 @@
 import { ArrowRight, CheckCircle2, CircleDot, Play, ShieldCheck, TriangleAlert } from 'lucide-react'
-import type { CutOsActivationAction, CutOsActivationModel } from '../../types'
+import type { ActivationStep, CutOsActivationAction, CutOsActivationModel } from '../../types'
 
 interface CutOsActivationCardProps {
   model: CutOsActivationModel
@@ -44,6 +44,39 @@ function actionIcon(action: CutOsActivationAction) {
   return <ArrowRight className="h-4 w-4" />
 }
 
+function stepLabel(step: ActivationStep): string {
+  switch (step.id) {
+    case 'import_history':
+      return 'Import'
+    case 'log_first_food':
+      return 'Log'
+    case 'set_cut_target':
+      return 'Target'
+    case 'weigh_in':
+      return 'Weigh'
+    case 'ask_coach':
+      return 'Coach'
+    default:
+      return step.id
+  }
+}
+
+function stepTone(step: ActivationStep): string {
+  if (step.status === 'complete') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-400/20 dark:bg-emerald-500/10 dark:text-emerald-100'
+  }
+
+  if (step.status === 'blocked') {
+    return 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-400/20 dark:bg-rose-500/10 dark:text-rose-100'
+  }
+
+  if (step.status === 'active') {
+    return 'border-teal-300 bg-teal-50 text-teal-900 dark:border-teal-400/30 dark:bg-teal-500/10 dark:text-teal-100'
+  }
+
+  return 'border-black/5 bg-white/70 text-slate-700 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-200'
+}
+
 export function CutOsActivationCard({
   model,
   onActivateAction,
@@ -66,37 +99,50 @@ export function CutOsActivationCard({
 
   return (
     <section
-      className="app-card space-y-4 px-4 py-4"
+      className="app-card space-y-3 px-3 py-3"
       data-testid="cut-os-activation"
       data-cut-os-activation-state={model.state}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.24em] text-teal-700 dark:text-teal-300">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-teal-700 dark:text-teal-300">
             10-minute activation
           </p>
-          <h2 className="mt-1 text-2xl font-semibold text-slate-950 dark:text-white">
+          <h2 className="mt-1 text-xl font-semibold leading-tight text-slate-950 dark:text-white">
             {model.headline}
           </h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
+          <p className="mt-1 text-xs leading-snug text-slate-600 dark:text-slate-300">
             {model.summary}
           </p>
         </div>
         {model.nextProof ? (
-          <span className="status-chip">
+          <span className="status-chip px-2 py-1 text-[10px] tracking-[0.08em]">
             Next proof: {model.nextProof.label}
           </span>
         ) : (
-          <span className="status-chip bg-emerald-100 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
+          <span className="status-chip bg-emerald-100 px-2 py-1 text-[10px] tracking-[0.08em] text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
             Proof ready
           </span>
         )}
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="grid grid-cols-5 gap-1" data-testid="cut-os-activation-steps">
+        {model.steps.map((step) => (
+          <div
+            key={step.id}
+            className={`min-w-0 rounded-xl border px-1 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.06em] ${stepTone(step)}`}
+            data-testid={`activation-step-${step.id}`}
+            data-activation-status={step.status}
+          >
+            <span className="block truncate">{stepLabel(step)}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5">
         <button
           type="button"
-          className="action-button flex-1 gap-2"
+          className="action-button col-span-3 min-h-[40px] gap-2 px-3 py-2 text-xs sm:col-span-1"
           onClick={() => activate(model.primaryAction)}
         >
           {model.primaryAction.label}
@@ -106,10 +152,10 @@ export function CutOsActivationCard({
           <button
             key={action.id}
             type="button"
-            className="action-button-secondary flex-1 gap-2"
+            className="action-button-secondary min-h-[40px] min-w-0 gap-1.5 px-2 py-2 text-xs"
             onClick={() => activate(action)}
           >
-            {action.label}
+            <span className="truncate">{action.label}</span>
             {actionIcon(action)}
           </button>
         ))}

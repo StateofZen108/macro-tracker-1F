@@ -17,7 +17,7 @@ export type {
   GarminTokenBundle,
   GarminTokenStore,
   GarminWellnessEntry,
-} from './types'
+} from './types.js'
 export {
   decryptGarminSecret,
   decryptGarminTokenBundle,
@@ -25,7 +25,7 @@ export {
   encryptGarminTokenBundle,
   readGarminTokenKeyRingFromEnv,
   rotateGarminTokenBundle,
-} from './crypto'
+} from './crypto.js'
 export {
   applyGarminSyncFailure,
   applyGarminSyncSuccess,
@@ -43,14 +43,14 @@ export {
   saveGarminAuthSession,
   saveGarminConnectionRecord,
   saveGarminWellnessEntries,
-} from './store'
+} from './store.js'
 export {
   buildGarminPkceChallenge,
   createGarminProviderAdapter,
   GarminProviderError,
   isGarminProviderConfigured,
-} from './provider'
+} from './provider.js'
 export {
   createGarminService,
   GarminServiceError,
-} from './service'
+} from './service.js'

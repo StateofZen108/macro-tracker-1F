@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react'
 import { ScreenHeader } from '../components/ScreenHeader'
 import { CutOsActivationCard } from '../components/cut-os/CutOsActivationCard'
 import { CutOsCommandCard } from '../components/cut-os/CutOsCommandCard'
+import { CutOsValidationCard } from '../components/cut-os/CutOsValidationCard'
 import { FEATURE_FLAGS } from '../config/featureFlags'
+import { buildCurrentCutOsReplayReport } from '../domain/cutOsReplay'
 import type {
   ActionResult,
   BenchmarkReport,
@@ -111,6 +113,16 @@ export function DashboardScreen({
   const latestBenchmark = benchmarkReports[0] ?? null
   const latestFastCheckInRun = settings.lastFastCheckInRun ?? null
   const pendingReviewItems = foodReviewQueue.filter((item) => item.status === 'pending')
+  const cutOsReplayReport = useMemo(
+    () =>
+      FEATURE_FLAGS.cutOsReplayValidationV1
+        ? buildCurrentCutOsReplayReport({
+            buildId: import.meta.env.VITE_APP_BUILD_ID ?? 'local-client',
+            surface: cutOsSnapshot,
+          })
+        : null,
+    [cutOsSnapshot],
+  )
   const effectiveCommandDensity = useMemo(() => {
     if (!morningSnapshot) {
       return 'balanced'
@@ -419,6 +431,10 @@ export function DashboardScreen({
           onActivateTarget={openCutOsAction}
           showHistory
         />
+      ) : null}
+
+      {cutOsReplayReport && cutOsSnapshot && cutOsActivation?.state !== 'needs_proof' ? (
+        <CutOsValidationCard report={cutOsReplayReport} />
       ) : null}
 
       {morningSnapshot && commandHomeEnabled ? (

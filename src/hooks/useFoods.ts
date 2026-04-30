@@ -1,5 +1,6 @@
 import { useState, useSyncExternalStore } from 'react'
 import { FEATURE_FLAGS } from '../config/featureFlags'
+import { classifyFoodTrustEvidence } from '../domain/foodTrust'
 import { findDuplicateFoodMatch } from '../domain/foods/dedupe'
 import {
   buildImportedFoodDraft,
@@ -9,10 +10,11 @@ import {
   normalizeSearchAlias,
   resolveFoodLibraryMatch,
 } from '../domain/foods/personalLibrary'
-import type { ActionResult, AppActionError, Food, FoodDraft } from '../types'
+import type { ActionResult, AppActionError, Food, FoodDraft, FoodTrustStatus } from '../types'
 import { recordDiagnosticsEvent } from '../utils/diagnostics'
 import { isSyncEnabled } from '../utils/sync/core'
 import { queueFoodReviewItem } from '../utils/storage/foodReviewQueue'
+import { upsertFoodTrustEvidence } from '../utils/storage/foodTrustEvidence'
 import {
   getFoodReferenceCount,
   loadFoods,
@@ -75,6 +77,7 @@ function normalizeDraft(draft: FoodDraft): FoodDraft {
     sourceQuality: draft.sourceQuality ?? undefined,
     sourceQualityNote: draft.sourceQualityNote?.trim() || undefined,
     importTrust: draft.importTrust ?? undefined,
+    trustEvidence: draft.trustEvidence ?? undefined,
     searchAliases: normalizedAliases?.length ? normalizedAliases : undefined,
     remoteReferences: normalizeRemoteReferences(draft.remoteReferences),
   }
@@ -112,8 +115,13 @@ function maybeQueueImportedFoodReview(food: Food, draft: FoodDraft): void {
     return
   }
 
+  const trustEvidence = food.trustEvidence ?? classifyFoodTrustEvidence({ food })
   const trustLevel = draft.importTrust?.level
-  if (trustLevel !== 'exact_review' && trustLevel !== 'blocked') {
+  if (
+    trustLevel !== 'exact_review' &&
+    trustLevel !== 'blocked' &&
+    trustEvidence.status === 'trusted'
+  ) {
     return
   }
 
@@ -121,12 +129,12 @@ function maybeQueueImportedFoodReview(food: Food, draft: FoodDraft): void {
     source: buildReviewQueueSource(draft),
     title: food.name,
     reason:
-      trustLevel === 'blocked'
+      trustEvidence.status === 'blocked' || trustLevel === 'blocked'
         ? 'This imported food is blocked from trusted autolog until you confirm its serving basis and macro truth.'
         : 'This imported food needs manual review before it should be treated as trusted food truth.',
     linkedFoodId: food.id,
     barcode: food.barcode,
-    trustLevel,
+    trustLevel: trustLevel ?? (trustEvidence.status === 'blocked' ? 'blocked' : 'exact_review'),
   })
 
   void recordDiagnosticsEvent({
@@ -141,7 +149,7 @@ function maybeQueueImportedFoodReview(food: Food, draft: FoodDraft): void {
       : `Unable to add ${food.name} to the persistent food review queue.`,
     payload: {
       source: buildReviewQueueSource(draft),
-      trustLevel,
+      trustLevel: trustLevel ?? trustEvidence.status,
     },
   })
 }
@@ -190,12 +198,17 @@ export function useFoods() {
     }
 
     const now = new Date().toISOString()
-    const createdFood: Food = {
+    const createdFoodBase: Food = {
       id: crypto.randomUUID(),
       ...normalizedDraft,
       usageCount: 0,
       createdAt: now,
       updatedAt: now,
+    }
+    const trustEvidence = normalizedDraft.trustEvidence ?? classifyFoodTrustEvidence({ food: createdFoodBase })
+    const createdFood: Food = {
+      ...createdFoodBase,
+      trustEvidence,
     }
 
     const nextFoods = sortFoodsByName([...loadFoods(), createdFood])
@@ -206,6 +219,19 @@ export function useFoods() {
       setLastError(result.error)
     } else {
       setLastError(null)
+      void upsertFoodTrustEvidence(trustEvidence)
+      void recordDiagnosticsEvent({
+        eventType: 'food_trust.evidence_classified',
+        severity: trustEvidence.status === 'trusted' ? 'info' : 'warning',
+        scope: 'diagnostics',
+        recordKey: createdFood.id,
+        message: `${createdFood.name} food trust classified as ${trustEvidence.status}.`,
+        payload: {
+          source: trustEvidence.source,
+          status: trustEvidence.status,
+          reasons: trustEvidence.reasons,
+        },
+      })
     }
 
     return result
@@ -227,13 +253,16 @@ export function useFoods() {
     }
 
     const now = new Date().toISOString()
+    let updatedTrustEvidence: Food['trustEvidence']
+    let updatedFoodName = ''
+    let previousTrustStatus: FoodTrustStatus | undefined
     const nextFoods = sortFoodsByName(
       loadFoods().map((food) => {
         if (food.id !== foodId || food.source === 'seed') {
           return food
         }
 
-        return {
+        const updatedFood: Food = {
           ...food,
           ...normalizedDraft,
           provider: normalizedDraft.provider ?? food.provider,
@@ -247,10 +276,40 @@ export function useFoods() {
           labelNutrition: normalizedDraft.labelNutrition ?? food.labelNutrition,
           updatedAt: now,
         }
+        const trustEvidence = normalizedDraft.trustEvidence ?? classifyFoodTrustEvidence({
+          food: updatedFood,
+          reviewedAt: now,
+        })
+        updatedTrustEvidence = trustEvidence
+        updatedFoodName = updatedFood.name
+        previousTrustStatus = food.trustEvidence?.status
+        return {
+          ...updatedFood,
+          trustEvidence,
+        }
       }),
     )
 
     const result = saveFoods(nextFoods)
+
+    if (result.ok && updatedTrustEvidence) {
+      void upsertFoodTrustEvidence(updatedTrustEvidence)
+      void recordDiagnosticsEvent({
+        eventType:
+          previousTrustStatus === 'trusted' && updatedTrustEvidence.status !== 'trusted'
+            ? 'food_trust.user_edit_won'
+            : 'food_trust.evidence_classified',
+        severity: updatedTrustEvidence.status === 'trusted' ? 'info' : 'warning',
+        scope: 'diagnostics',
+        recordKey: foodId,
+        message: `${updatedFoodName} food trust classified as ${updatedTrustEvidence.status}.`,
+        payload: {
+          source: updatedTrustEvidence.source,
+          status: updatedTrustEvidence.status,
+          reasons: updatedTrustEvidence.reasons,
+        },
+      })
+    }
 
     setLastError(result.ok ? null : result.error)
     return result
@@ -420,11 +479,16 @@ export function useFoods() {
       match.kind === 'activeRemoteReferenceMatch' ||
       match.kind === 'activeIdentityMatch'
     ) {
-      const { food: mergedFood, aliasesTrimmed } = mergeImportedFood({
+      const { food: mergedFoodBase, aliasesTrimmed } = mergeImportedFood({
         existingFood: match.food,
         draft: normalizedDraft,
         acceptedQuery: options?.acceptedQuery,
       })
+      const trustEvidence = classifyFoodTrustEvidence({ food: mergedFoodBase })
+      const mergedFood: Food = {
+        ...mergedFoodBase,
+        trustEvidence,
+      }
       const nextFoods = sortFoodsByName(
         loadFoods().map((food) => (food.id === match.food.id ? mergedFood : food)),
       )
@@ -448,6 +512,19 @@ export function useFoods() {
       }
 
       setLastError(null)
+      void upsertFoodTrustEvidence(trustEvidence)
+      void recordDiagnosticsEvent({
+        eventType: 'food_trust.evidence_classified',
+        severity: trustEvidence.status === 'trusted' ? 'info' : 'warning',
+        scope: 'diagnostics',
+        recordKey: mergedFood.id,
+        message: `${mergedFood.name} import trust classified as ${trustEvidence.status}.`,
+        payload: {
+          source: trustEvidence.source,
+          status: trustEvidence.status,
+          reasons: trustEvidence.reasons,
+        },
+      })
       maybeQueueImportedFoodReview(mergedFood, normalizedDraft)
       return ok(mergedFood)
     }

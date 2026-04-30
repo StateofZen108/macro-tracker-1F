@@ -1,6 +1,6 @@
-import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality.ts'
-import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types.ts'
-import type { RemoteCatalogResponse } from './types.ts'
+import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality.js'
+import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types.js'
+import type { RemoteCatalogResponse } from './types.js'
 
 type FetchLike = typeof fetch
 

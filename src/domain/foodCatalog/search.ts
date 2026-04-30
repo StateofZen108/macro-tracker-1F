@@ -8,8 +8,8 @@ import type {
   UnifiedFoodSearchMatchKind,
   UnifiedFoodSearchResult,
   UnifiedFoodSearchResultSource,
-} from '../../types'
-import { getFoodIdentityKey, normalizeFoodIdentity } from '../foods/dedupe'
+} from '../../types.js'
+import { getFoodIdentityKey, normalizeFoodIdentity } from '../foods/dedupe.js'
 
 const MATCH_BASE: Record<UnifiedFoodSearchMatchKind, number> = {
   barcode: 1000,

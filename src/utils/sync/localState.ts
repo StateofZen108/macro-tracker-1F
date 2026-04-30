@@ -1,4 +1,4 @@
-import type { ActionResult, BootstrapStatusSummary, FavoriteFood, Recipe, SyncCounts } from '../../types'
+import type { ActionResult, BootstrapStatusSummary, FavoriteFood, Recipe, SyncCounts } from '../../types.js'
 import {
   loadCoachingDecisionHistory,
   saveCoachingDecisionHistory,

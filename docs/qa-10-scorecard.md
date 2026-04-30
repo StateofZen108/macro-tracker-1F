@@ -25,6 +25,12 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `production_readiness_green` | `npm run test:production-readiness` validates a committed readiness manifest with device QA, Sentry smoke event, migration verification, and module budget proof |
 | `accessible_rails_green` | `npm run test:release:accessible` runs every local rail and any configured external rail, writing `tmp/production-rails-accessible-report.json` with exact pending blockers |
 | `production_proof_green` | `npm run test:release:proof` passes against a non-local HTTPS deployment and writes `tmp/production-proof-report.json`; commit mode writes committed device/readiness evidence |
+| `food_trust_green` | `npm run test:food-trust` verifies barcode, OCR, custom, missing-basis, conflict, and import trust classification; Add Food surfaces trust state without blocking logging |
+| `first_ten_self_evident` | `npm run test:activation` verifies a cold S22 user sees Import history, Log first food, Weigh in, Set cut target, and Ask Coach actions without scroll |
+| `coach_paid_path_green` | `npm run test:coach-proof` verifies local proof/setup answers are the paid default and the Coach path does not depend on provider setup |
+| `cut_os_historical_validation_green` | `npm run test:cut-os:replay` verifies replay counts for true stalls, spike suppression, training precedence, food trust blocks, false escalations, and missed actionable days |
+| `server_deploy_clean` | `npm run test:server:function-typecheck` and `npm run test:server:deploy-clean` verify API/server TypeScript and deploy-log output are clean |
+| `standalone_cut_9_candidate` | `npm run test:standalone-cut-9` passes food trust, first-10 activation, Coach proof, Cut OS replay, server typecheck, and deploy-log gates on the same working tree |
 | `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:release:production` |
 
 ## Gate Status
@@ -38,6 +44,9 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `npm run test:module-budgets` | Public root module budgets pass | 2026-04-28: passed |
 | `npm run test:release:accessible` | All locally accessible rails pass; external rails either pass or are explicitly pending | Pending latest run |
 | `npm run test:release:proof` | Strict deployed proof passes with Sentry smoke/alerts, Supabase verification, device QA, and committed readiness evidence | Pending real deployment/device evidence |
+| `npm run test:standalone-cut-9` | Food trust, activation, Coach proof, Cut OS replay, server typecheck, and deploy-log scanner pass | 2026-04-30: passed locally; deploy-log scanner enforces supplied logs and production strict mode |
+| `npm run test:server:function-typecheck` | API/server functions typecheck with 0 diagnostics | 2026-04-30: passed |
+| `npm run test:server:deploy-clean` | Vercel deploy log has 0 TypeScript diagnostics, warnings, or function packaging warnings | 2026-04-30: local no-log mode passed; production strict mode requires a supplied deploy log |
 | `npm run test:history-import:corpus` | MacroFactor corpus cases pass | 2026-04-28: passed, 5/5 corpus tests |
 | `npm run test:unit` | 0 failed tests | 2026-04-28: passed, 265 tests passed; existing documented skips/todos unchanged |
 | `npx playwright test tests/e2e --config=playwright.config.ts` | 0 failed tests | 2026-04-28: passed, 54/54 S22 tests |
@@ -53,6 +62,9 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 - Weight must show hold/no-apply for one clean slow week and step-lever apply for two clean slow weeks.
 - Coach export must mirror the same command, diagnosis, proofs, setup checklist, active action, and action history.
 - Coach answers must cite the same Cut OS proof packet locally before any live provider is configured.
+- Food logging trust must be explicit for barcode, OCR, catalog, custom, and imported entries; non-trusted foods stay loggable but cannot silently feed Cut OS proof.
+- Historical validation must show visible engine replay numbers, not static explanation copy.
+- Server/API deploy cleanliness must include both local typecheck and Vercel deploy-log scanning.
 - Import preview must never initialize storage or read storage directly.
 - MacroFactor corpus coverage must include food+weight, weights-only, and unsupported day-total export shapes with exact expected counts/warnings.
 - Bottom-sheet dirty discard must stay above the parent sheet and keep its buttons center-hittable.

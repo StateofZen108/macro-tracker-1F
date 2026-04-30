@@ -1,6 +1,6 @@
-import type { SyncDeadLetterItem, SyncMutation, SyncScope, SyncState, SyncStatus } from '../../types'
-import { recordDiagnosticsEvent } from '../diagnostics'
-import { loadPersistedSyncSnapshot, persistSyncSnapshot } from '../persistence/appDb'
+import type { SyncDeadLetterItem, SyncMutation, SyncScope, SyncState, SyncStatus } from '../../types.js'
+import { recordDiagnosticsEvent } from '../diagnostics.js'
+import { loadPersistedSyncSnapshot, persistSyncSnapshot } from '../persistence/appDb.js'
 
 const SYNC_STORAGE_KEYS = {
   state: 'mt_sync_state',

@@ -1632,12 +1632,17 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     loadCutOsActivationState,
   )
   const cutOsActivation = useMemo<CutOsActivationModel | null>(
-    () =>
-      buildCutOsActivationModel({
+    () => {
+      if (!FEATURE_FLAGS.firstTenMinuteActivationV1) {
+        return null
+      }
+
+      return buildCutOsActivationModel({
         date: todayDateKey,
         surface: cutOsSnapshot,
         activationState: cutOsActivationState,
-      }),
+      })
+    },
     [cutOsActivationState, cutOsSnapshot, todayDateKey],
   )
   const effectiveCutOsSnapshot = cutOsActivation?.demoSurface ?? cutOsSnapshot

@@ -16,8 +16,8 @@ import type {
   UserSettings,
   WellnessEntry,
   WeightEntry,
-} from '../../types'
-import { enqueueSyncMutation, isSyncEnabled, touchLocalRecordUpdatedAt } from './core'
+} from '../../types.js'
+import { enqueueSyncMutation, isSyncEnabled, touchLocalRecordUpdatedAt } from './core.js'
 
 function serialize(value: unknown): string {
   return JSON.stringify(value)

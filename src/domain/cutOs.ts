@@ -22,6 +22,7 @@ import type {
   WorkoutDashboardSnapshot,
 } from '../types'
 import { addDays, enumerateDateKeys, parseDateKey } from '../utils/dates'
+import { classifyFoodTrustEvidence } from './foodTrust'
 
 const MINIMUM_CALENDAR_DAYS = 14
 const MINIMUM_LOGGED_DAYS = 10
@@ -381,11 +382,28 @@ export function buildFoodTrustVerdict(input: {
       (!item.linkedEntryDate ||
         (item.linkedEntryDate >= windowStart && item.linkedEntryDate <= input.date)),
   )
+  const blockedEntry = windowDates.some((date) =>
+    (input.logsByDate[date] ?? []).some((entry) => {
+      if (entry.deletedAt) {
+        return false
+      }
+
+      const evidence = entry.snapshot.trustEvidence ?? classifyFoodTrustEvidence({ snapshot: entry.snapshot })
+      return evidence.status === 'blocked'
+    }),
+  )
   const untrustedEntry = windowDates.some((date) =>
-    (input.logsByDate[date] ?? []).some((entry) => !entry.deletedAt && entry.needsReview),
+    (input.logsByDate[date] ?? []).some((entry) => {
+      if (entry.deletedAt) {
+        return false
+      }
+
+      const evidence = entry.snapshot.trustEvidence ?? classifyFoodTrustEvidence({ snapshot: entry.snapshot })
+      return entry.needsReview || evidence.status !== 'trusted'
+    }),
   )
 
-  if (pendingReview || untrustedEntry) {
+  if (blockedEntry || pendingReview || untrustedEntry) {
     return 'review_required'
   }
 

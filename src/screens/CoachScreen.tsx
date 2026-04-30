@@ -4,6 +4,9 @@ import { CoachMessageCard } from '../components/coach/CoachMessageCard'
 import { CutReviewCard } from '../components/CutReviewCard'
 import { CutOsActionHistory } from '../components/cut-os/CutOsActionHistory'
 import { CutOsProofStack } from '../components/cut-os/CutOsProofStack'
+import { CutOsValidationCard } from '../components/cut-os/CutOsValidationCard'
+import { FEATURE_FLAGS } from '../config/featureFlags'
+import { buildCurrentCutOsReplayReport } from '../domain/cutOsReplay'
 import type {
   CoachActionProposal,
   CoachFeedback,
@@ -66,8 +69,8 @@ function stateCopy(state: CoachState): { title: string; description: string } {
 
   if (state === 'notConfigured') {
     return {
-      title: 'Provider not configured',
-      description: 'Ask Coach is built, but no AI provider is connected yet. Questions will be saved locally.',
+      title: 'Live provider optional',
+      description: 'Local Cut OS answers work from your proof packet. Connect a live provider only if you want external AI later.',
     }
   }
 
@@ -80,7 +83,7 @@ function stateCopy(state: CoachState): { title: string; description: string } {
 
   return {
     title: 'Coach ready',
-    description: 'This build has the coach surface and local queue in place.',
+    description: 'Ask Coach answers from your Cut OS command, proof stack, blockers, setup checklist, and action history.',
   }
 }
 
@@ -136,6 +139,16 @@ export function CoachScreen({
     [feedback],
   )
   const stateBanner = stateCopy(coachState)
+  const cutOsReplayReport = useMemo(
+    () =>
+      FEATURE_FLAGS.cutOsReplayValidationV1
+        ? buildCurrentCutOsReplayReport({
+            buildId: import.meta.env.VITE_APP_BUILD_ID ?? 'local-client',
+            surface: cutOsSnapshot,
+          })
+        : null,
+    [cutOsSnapshot],
+  )
 
   function exportCutOsPacket(): void {
     if (!cutOsSnapshot) {
@@ -203,6 +216,7 @@ export function CoachScreen({
 
           <CutOsProofStack proofs={cutOsSnapshot.proofs} />
           <CutOsActionHistory records={cutOsSnapshot.actionHistory} />
+          {cutOsReplayReport ? <CutOsValidationCard report={cutOsReplayReport} compact embedded /> : null}
         </section>
       ) : null}
 
@@ -370,7 +384,7 @@ export function CoachScreen({
           </div>
 
           <div className="rounded-[22px] border border-black/5 bg-white/70 px-4 py-3 dark:border-white/10 dark:bg-slate-900/70">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Provider scaffold</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Optional live provider</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {(['none', 'gemini', 'openai', 'anthropic'] as const).map((provider) => (
                 <button
@@ -419,7 +433,7 @@ export function CoachScreen({
                 setQuestion('')
               }}
             >
-              Queue question
+              {coachState === 'ready' ? 'Ask Coach' : 'Queue question'}
             </button>
             <button type="button" className="action-button-secondary flex-1" onClick={onClearThread}>
               Clear local thread
@@ -496,7 +510,7 @@ export function CoachScreen({
           ))
         ) : (
           <div className="app-card px-4 py-6 text-sm text-slate-600 dark:text-slate-300">
-            Your local coach thread will appear here after you queue a question or apply a starter prompt.
+            Your local coach thread will appear here after you ask a question or use a starter prompt.
           </div>
         )}
       </section>

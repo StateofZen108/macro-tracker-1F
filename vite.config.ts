@@ -54,7 +54,18 @@ export default defineConfig(({ mode }) => {
               return 'coach-proof-answer'
             }
 
-            if (id.includes('src/domain/cutOsActivation')) {
+            if (
+              id.includes('src/domain/foodTrust') ||
+              id.includes('src/utils/storage/foodTrustEvidence')
+            ) {
+              return 'food-trust'
+            }
+
+            if (
+              id.includes('src/domain/cutOsActivation') ||
+              id.includes('src/domain/cutOsReplay') ||
+              id.includes('src/components/cut-os/CutOsValidationCard')
+            ) {
               return 'cut-os-activation'
             }
 
@@ -62,8 +73,11 @@ export default defineConfig(({ mode }) => {
               return 'app-shell-nav'
             }
 
-            if (id.includes('src/components/DateNavigator')) {
-              return 'date-navigator'
+            if (
+              id.includes('src/components/DailySummaryBar') ||
+              id.includes('src/components/MealSection')
+            ) {
+              return 'log-ledger'
             }
 
             if (

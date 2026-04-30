@@ -18,7 +18,7 @@ import type {
   UserSettings,
   WellnessEntry,
   WeightEntry,
-} from '../../types'
+} from '../../types.js'
 
 export interface SyncSettingsTargetsPayload {
   updatedAt: string
@@ -122,7 +122,9 @@ function isoCompare(left: string | undefined, right: string | undefined): number
   return (left ?? '').localeCompare(right ?? '')
 }
 
-function getRecordTimestamp(record: { createdAt?: string; updatedAt?: string; deletedAt?: string }): string {
+function getRecordTimestamp<T extends { createdAt?: string; updatedAt?: string; deletedAt?: string }>(
+  record: T,
+): string {
   return record.deletedAt ?? record.updatedAt ?? record.createdAt ?? new Date(0).toISOString()
 }
 

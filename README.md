@@ -48,6 +48,10 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 
 - Seed foods plus custom foods
 - Immutable log snapshots, so editing a food does not rewrite history
+- Food trust evidence for barcode, OCR, catalog, custom, and imported entries:
+  - exact barcode/catalog hits, reviewed OCR, reviewed custom foods, and complete verified imports are trusted
+  - incomplete macros, inferred serving basis, low confidence, and provider conflicts are review-required
+  - missing calories/macros, impossible serving values, and unresolved source conflicts are blocked from coaching proof
 - Duplicate detection when creating foods
 - Archive-first food lifecycle instead of normal hard delete
 - Reference-aware food handling for historical safety
@@ -106,10 +110,10 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - proposal cards
   - provider scaffold selector
 - Current default behavior:
-  - no provider is configured
   - proof-bound Cut OS answers are generated locally when a command/proof packet exists
   - setup-incomplete questions get an insufficient-data answer instead of generic fat-loss advice
-  - live-provider questions can still be queued once provider fallback mode is used
+  - no provider setup is required for the paid-feeling default path
+  - live-provider questions can still be queued once provider fallback mode is deliberately selected
 - Supported scaffold targets:
   - `none`
   - `gemini`
@@ -170,6 +174,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - Cold users see a first-viewport "Build your Cut OS in 10 minutes" activation card. It prioritizes MacroFactor import, a sealed sample-athlete demo, and the next proof needed before standard setup detail.
 - Tapping the MacroFactor import activation CTA opens Settings directly on the MacroFactor import control. If the browser blocks automatic file-picker open, the import button remains focused and visible.
 - Demo mode is read-only against real stores: it renders a synthetic `CutOsSurfaceModel` across the app and only writes `mt_cut_os_activation`.
+- Historical validation (`src/domain/cutOsReplay.ts`) replays local/imported history through the current Cut OS engine and surfaces reconstructed days, stall detection, spike suppression, training precedence, food-trust blocks, false escalations, and missed actionable days.
 
 ### Reliability and platform behavior
 
@@ -202,6 +207,9 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - Sentry alert verification via API or recorded manual attestation
   - optional live Supabase RLS verification via `npm run test:supabase:rls-live`
   - physical-device QA evidence for camera, barcode, OCR, PWA, offline, and dirty-sheet paths
+  - standalone-cut 9/10 gates via `npm run test:standalone-cut-9`
+  - server function typecheck via `npm run test:server:function-typecheck`
+  - Vercel deploy-log cleanliness via `npm run test:server:deploy-clean`
 
 ## What is intentionally not shipped yet
 

@@ -1,8 +1,8 @@
-import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality.ts'
-import { fetchFoodByBarcode as fetchOpenFoodFactsBarcode } from '../../src/utils/openFoodFacts.ts'
-import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types.ts'
-import type { ActionResult, BarcodeLookupResult } from '../../src/types.ts'
-import type { RemoteCatalogResponse } from './types.ts'
+import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality.js'
+import { fetchFoodByBarcode as fetchOpenFoodFactsBarcode } from '../../src/utils/openFoodFacts.js'
+import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types.js'
+import type { ActionResult, BarcodeLookupResult } from '../../src/types.js'
+import type { RemoteCatalogResponse } from './types.js'
 
 type FetchLike = typeof fetch
 

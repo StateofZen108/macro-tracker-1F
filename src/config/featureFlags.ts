@@ -78,6 +78,12 @@ export interface FeatureFlags {
   cutOsImportFocusV1: boolean
   coachProofAnswerV1: boolean
   macroFactorCorpusGateV1: boolean
+  standaloneCutNineV1: boolean
+  foodTrustConfidenceV3: boolean
+  firstTenMinuteActivationV1: boolean
+  coachProofDefaultV2: boolean
+  cutOsReplayValidationV1: boolean
+  serverFunctionTypecheckGateV1: boolean
 }
 
 export function resolveFeatureFlag(
@@ -185,6 +191,12 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     cutOsImportFocusV1: resolveFeatureFlag(env.VITE_FF_CUT_OS_IMPORT_FOCUS_V1, mode),
     coachProofAnswerV1: resolveFeatureFlag(env.VITE_FF_COACH_PROOF_ANSWER_V1, mode),
     macroFactorCorpusGateV1: resolveFeatureFlag(env.VITE_FF_MACRO_FACTOR_CORPUS_GATE_V1, mode),
+    standaloneCutNineV1: resolveFeatureFlag(env.VITE_FF_STANDALONE_CUT_NINE_V1, mode),
+    foodTrustConfidenceV3: resolveFeatureFlag(env.VITE_FF_FOOD_TRUST_CONFIDENCE_V3, mode),
+    firstTenMinuteActivationV1: resolveFeatureFlag(env.VITE_FF_FIRST_TEN_MINUTE_ACTIVATION_V1, mode),
+    coachProofDefaultV2: resolveFeatureFlag(env.VITE_FF_COACH_PROOF_DEFAULT_V2, mode),
+    cutOsReplayValidationV1: resolveFeatureFlag(env.VITE_FF_CUT_OS_REPLAY_VALIDATION_V1, mode),
+    serverFunctionTypecheckGateV1: resolveFeatureFlag(env.VITE_FF_SERVER_FUNCTION_TYPECHECK_GATE_V1, mode),
   }
 
   if (!resolvedFlags.catalogProviderV2) {
@@ -406,6 +418,22 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     resolvedFlags.cutOsImportFocusV1 = false
     resolvedFlags.coachProofAnswerV1 = false
     resolvedFlags.macroFactorCorpusGateV1 = false
+    resolvedFlags.standaloneCutNineV1 = false
+    resolvedFlags.firstTenMinuteActivationV1 = false
+    resolvedFlags.coachProofDefaultV2 = false
+    resolvedFlags.cutOsReplayValidationV1 = false
+  }
+
+  if (!resolvedFlags.foodTruthV2) {
+    resolvedFlags.standaloneCutNineV1 = false
+    resolvedFlags.foodTrustConfidenceV3 = false
+  }
+
+  if (!resolvedFlags.standaloneCutNineV1) {
+    resolvedFlags.foodTrustConfidenceV3 = false
+    resolvedFlags.firstTenMinuteActivationV1 = false
+    resolvedFlags.coachProofDefaultV2 = false
+    resolvedFlags.cutOsReplayValidationV1 = false
   }
 
   return resolvedFlags

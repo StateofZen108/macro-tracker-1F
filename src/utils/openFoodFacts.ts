@@ -1,6 +1,6 @@
-import { assessCatalogImportQuality } from '../domain/foodCatalog/importQuality.ts'
-import { resolveProviderServingBasis } from '../domain/foodCatalog/servingBasis.ts'
-import type { ActionResult, BarcodeLookupResult, ImportedFoodCandidate } from '../types.ts'
+import { assessCatalogImportQuality } from '../domain/foodCatalog/importQuality.js'
+import { resolveProviderServingBasis } from '../domain/foodCatalog/servingBasis.js'
+import type { ActionResult, BarcodeLookupResult, ImportedFoodCandidate } from '../types.js'
 
 const MAIN_MACROS = ['calories', 'protein', 'carbs', 'fat'] as const
 

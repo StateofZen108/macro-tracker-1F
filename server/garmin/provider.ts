@@ -12,7 +12,7 @@ import type {
   GarminProviderTokenExchangeInput,
   GarminTokenBundle,
   GarminWellnessEntry,
-} from './types'
+} from './types.js'
 
 type FetchLike = typeof fetch
 

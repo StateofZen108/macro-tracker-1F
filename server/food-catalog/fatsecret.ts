@@ -1,13 +1,13 @@
-import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality.ts'
-import { normalizeMetricUnit, parseMetricServingText } from '../../src/domain/foodCatalog/servingBasis.ts'
-import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types.ts'
+import { assessCatalogImportQuality } from '../../src/domain/foodCatalog/importQuality.js'
+import { normalizeMetricUnit, parseMetricServingText } from '../../src/domain/foodCatalog/servingBasis.js'
+import type { RemoteCatalogHit } from '../../src/domain/foodCatalog/types.js'
 import type {
   ActionResult,
   BarcodeLookupResult,
   CatalogProvider,
   ImportedFoodCandidate,
-} from '../../src/types.ts'
-import type { RemoteCatalogResponse } from './types.ts'
+} from '../../src/types.js'
+import type { RemoteCatalogResponse } from './types.js'
 
 type FetchLike = typeof fetch
 

@@ -1,4 +1,4 @@
-import type { SyncRecordEnvelope, SyncScope } from '../../types'
+import type { SyncRecordEnvelope, SyncScope } from '../../types.js'
 
 export type FutureSyncScope = never
 export type SupportedSyncScope = SyncScope | FutureSyncScope

@@ -7,7 +7,7 @@ import {
 import type {
   GarminSecretEnvelope,
   GarminTokenBundle,
-} from './types'
+} from './types.js'
 
 export interface GarminTokenKeyRing {
   current: {

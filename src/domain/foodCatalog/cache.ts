@@ -1,5 +1,5 @@
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
-import type { CatalogFoodRecord, RemoteCatalogHit } from './types'
+import type { CatalogFoodRecord, RemoteCatalogHit } from './types.js'
 
 export const FOOD_CATALOG_CACHE_DB_NAME = 'macrotracker-food-catalog'
 const FOOD_CATALOG_CACHE_DB_VERSION = 1
