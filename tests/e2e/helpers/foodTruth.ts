@@ -8,6 +8,7 @@ import {
   getAddFoodDialog,
   getSelectedFoodCard,
   getSelectedFoodServingMeta,
+  goToLog,
   openMealSheet,
   resetApp,
 } from './app.ts'
@@ -304,6 +305,8 @@ async function seedFoodTruthState(
   }, input)
 
   await page.reload({ waitUntil: 'domcontentloaded' })
+  await goToLog(page)
+  await expect(page.locator('[data-meal-section="breakfast"]').first()).toBeVisible({ timeout: 10000 })
 }
 
 async function openBarcodeScanner(page: Page) {

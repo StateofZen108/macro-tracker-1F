@@ -107,6 +107,7 @@ export const PAID_CUT_OS_PREVIEW_PRESET: FeatureFlagPreset = 'paid-cut-os-previe
 
 const PAID_CUT_OS_PREVIEW_FLAGS: Array<keyof FeatureFlags> = [
   'foodCatalogSearch',
+  'personalLibraryV1',
   'savedMeals',
   'favoriteFoods',
   'importTrustV1',

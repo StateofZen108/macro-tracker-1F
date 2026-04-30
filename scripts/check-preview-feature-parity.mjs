@@ -9,6 +9,7 @@ const REQUIRED_TRUE_FLAGS = [
   'premiumLogSummaryV2',
   'premiumFastLogToolbarV2',
   'premiumMealLedgerV2',
+  'personalLibraryV1',
   'paidCutOsV1',
   'cutOsImportFocusV1',
   'coachProofAnswerV1',
