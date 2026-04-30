@@ -11,10 +11,27 @@ const WARNING_PATTERNS = [
   { code: 'nodeNextDiagnostic', pattern: /moduleResolution.*NodeNext|relative import paths need explicit file extensions/i },
 ]
 
+const ADVISORY_PATTERNS = [
+  { code: 'npmDeprecation', pattern: /\bnpm\s+warn\s+deprecated\b/i },
+]
+
 export function findVercelDeployLogViolations(logText) {
   const lines = String(logText).split(/\r?\n/)
   return lines.flatMap((line, index) =>
     WARNING_PATTERNS
+      .filter(({ pattern }) => pattern.test(line))
+      .map(({ code }) => ({
+        code,
+        lineNumber: index + 1,
+        line: line.trim(),
+      })),
+  )
+}
+
+export function findVercelDeployLogAdvisories(logText) {
+  const lines = String(logText).split(/\r?\n/)
+  return lines.flatMap((line, index) =>
+    ADVISORY_PATTERNS
       .filter(({ pattern }) => pattern.test(line))
       .map(({ code }) => ({
         code,
@@ -58,11 +75,13 @@ function runCli() {
   }
 
   const violations = findVercelDeployLogViolations(log.text)
+  const advisories = findVercelDeployLogAdvisories(log.text)
   const report = {
     checkedAt: new Date().toISOString(),
     source: log.source,
     passed: violations.length === 0,
     violations,
+    advisories,
   }
   mkdirSync(resolve('tmp'), { recursive: true })
   writeFileSync(resolve('tmp/vercel-deploy-log-clean-report.json'), `${JSON.stringify(report, null, 2)}\n`)

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../server/food-catalog/fatsecret', () => ({
   lookupFatSecretBarcode: vi.fn(),
+  readFatSecretFailure: vi.fn((result) => (result.ok === false ? result : null)),
+  readFatSecretSuccess: vi.fn((result) => (result.ok === true ? result : null)),
   searchFatSecretCatalog: vi.fn(),
 }))
 
@@ -264,4 +266,61 @@ describe('lookupBarcodeProviders', () => {
     }
     expect(lookupOpenFoodFactsBarcode).toHaveBeenCalledOnce()
   })
+
+  it.each(['notConfigured', 'notFound'] as const)(
+    'falls back to OFF without provider failure metadata when FatSecret returns %s',
+    async (code) => {
+      process.env.VITE_FF_BARCODE_PROVIDER_FATSECRET_V1 = 'true'
+
+      const { lookupFatSecretBarcode } = await import('../../server/food-catalog/fatsecret')
+      const { lookupOpenFoodFactsBarcode } = await import('../../server/food-catalog/openFoodFacts')
+      vi.mocked(lookupFatSecretBarcode).mockResolvedValue({
+        ok: false,
+        error: {
+          provider: 'fatsecret',
+          code,
+          message: `FatSecret ${code}`,
+        },
+      })
+      vi.mocked(lookupOpenFoodFactsBarcode).mockResolvedValue({
+        ok: true,
+        data: {
+          candidate: {
+            provider: 'open_food_facts',
+            remoteKey: 'off-456',
+            barcode: '0123456789012',
+            name: 'Fallback Food',
+            servingSize: 100,
+            servingUnit: 'g',
+            calories: 120,
+            protein: 10,
+            carbs: 12,
+            fat: 4,
+            source: 'api',
+            verification: 'needsConfirmation',
+            nutritionBasis: '100g',
+            importConfidence: 'weak_match',
+            sourceQuality: 'medium',
+            importTrust: {
+              level: 'exact_review',
+              servingBasis: '100g',
+              servingBasisSource: 'per100g_fallback',
+              blockingIssues: ['per100_fallback'],
+            },
+          },
+          missingFields: [],
+        },
+      })
+
+      const { lookupBarcodeProviders } = await import('../../server/food-catalog/providers')
+      const response = await lookupBarcodeProviders('0123456789012')
+
+      expect(response.ok).toBe(true)
+      if (response.ok) {
+        expect(response.data.candidate.provider).toBe('open_food_facts')
+        expect(response.data.providerFailures).toEqual([])
+      }
+      expect(lookupOpenFoodFactsBarcode).toHaveBeenCalledOnce()
+    },
+  )
 })

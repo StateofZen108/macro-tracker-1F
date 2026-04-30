@@ -44,7 +44,7 @@ type FatSecretFailureCode =
   | 'notFound'
   | 'invalidResponse'
 
-type FatSecretResult<T> =
+export type FatSecretResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: FatSecretProviderFailure & { code: FatSecretFailureCode } }
 
@@ -88,6 +88,18 @@ function providerFailure(
     message,
     retryAfterSeconds,
   }
+}
+
+export function readFatSecretSuccess<T>(
+  result: FatSecretResult<T>,
+): Extract<FatSecretResult<T>, { ok: true }> | null {
+  return result.ok === true ? result : null
+}
+
+export function readFatSecretFailure<T>(
+  result: FatSecretResult<T>,
+): Extract<FatSecretResult<T>, { ok: false }> | null {
+  return result.ok === false ? result : null
 }
 
 function emptyResponse(query: string): RemoteCatalogResponse {
@@ -758,11 +770,16 @@ export async function lookupFatSecretBarcode(
     },
   )
 
-  if (!response.ok) {
-    return response
+  const responseFailure = readFatSecretFailure(response)
+  if (responseFailure) {
+    return {
+      ok: false,
+      error: responseFailure.error,
+    }
   }
 
-  const payload = response.data
+  const responseSuccess = readFatSecretSuccess(response)
+  const payload = responseSuccess?.data
   const food =
     typeof payload === 'object' && payload !== null && typeof (payload as Record<string, unknown>).food === 'object'
       ? ((payload as Record<string, unknown>).food as FatSecretFoodRecord)
@@ -800,9 +817,11 @@ export async function lookupFatSecretBarcodeWithFallback(
   options: FatSecretLookupOptions = {},
 ): Promise<ActionResult<BarcodeLookupResult>> {
   const result = await lookupFatSecretBarcode(barcode, options)
-  if (!result.ok) {
-    return fail(result.error.code, result.error.message)
+  const failure = readFatSecretFailure(result)
+  if (failure) {
+    return fail(failure.error.code, failure.error.message)
   }
 
-  return ok(result.data)
+  const success = readFatSecretSuccess(result)
+  return success ? ok(success.data) : fail('invalidResponse', 'FatSecret barcode lookup returned an invalid result.')
 }

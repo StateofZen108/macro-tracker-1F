@@ -21,6 +21,37 @@ npm run test:release:accessible
 
 This command runs the full local release suite, then automatically runs Sentry smoke, live Supabase RLS verification, device QA evidence validation, readiness-manifest validation, and the strict production release gate only when the required credentials, tools, and manifests are present. It writes `tmp/production-rails-accessible-report.json` and exits green when all accessible rails pass, even if external rails are explicitly pending.
 
+## Branch Preview Proof
+
+Branch previews are not considered verified just because Vercel reports `READY`. The preview proof must also prove that the deployed commit matches the branch, the real Vercel deploy log has zero app-owned TypeScript diagnostics or Vercel/function warnings, and the protected preview can be smoked through the automation bypass.
+
+Run the preview proof from a clean tree:
+
+```powershell
+$env:VERCEL_PREVIEW_PROOF_STRICT='true'
+$env:VERCEL_AUTOMATION_BYPASS_SECRET='<vercel-deployment-protection-bypass-secret>'
+npm run deploy:vercel:preview-proof
+```
+
+If a preview URL already exists, provide it explicitly:
+
+```powershell
+$env:VERCEL_PREVIEW_URL='https://<branch-preview>.vercel.app'
+npm run deploy:vercel:preview-proof
+```
+
+When `VERCEL_PREVIEW_URL` is supplied for an existing deployment, Vercel inspect metadata must expose a commit SHA matching the current branch. When the proof script creates the manual preview itself, commit binding is recorded as `local_clean_tree_deploy`: the script first requires a clean tree, then deploys that exact local HEAD, because Vercel inspect does not expose `--meta` values for manual deployments.
+
+The proof writes:
+
+- `test-results/vercel-deploy.log`: real output from `vercel inspect <preview> --logs`
+- `tmp/vercel-preview-smoke-report.json`: protected smoke status
+- `tmp/vercel-preview-proof.json`: combined commit/log/smoke proof
+
+The protected smoke sends `x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET` and `x-vercel-set-bypass-cookie: true`, stores the returned bypass cookie, then reruns the smoke in Playwright. If the secret is missing and the preview returns Vercel login or `401`, the result is `blocked_by_protection`, not green. Do not disable Deployment Protection to make this pass; configure the bypass secret instead.
+
+Deploy-log cleanliness blocks on app-owned `error TS`, Vercel warnings, NodeNext/module diagnostics, and function packaging warnings. Third-party `npm warn deprecated` lines are recorded as advisories and remain governed by `npm audit`.
+
 To close the strict production proof rails, run the proof orchestrator against a deployed HTTPS build:
 
 ```powershell

@@ -1,6 +1,11 @@
 import type { ActionResult, BarcodeLookupResult } from '../../src/types.js'
 import type { ServerCatalogProviderAdapter, RemoteCatalogResponse } from './types.js'
-import { lookupFatSecretBarcode, searchFatSecretCatalog } from './fatsecret.js'
+import {
+  lookupFatSecretBarcode,
+  readFatSecretFailure,
+  readFatSecretSuccess,
+  searchFatSecretCatalog,
+} from './fatsecret.js'
 import { lookupOpenFoodFactsBarcode, searchOpenFoodFactsCatalog } from './openFoodFacts.js'
 import { searchUsdaFdcCatalog } from './usdaFdc.js'
 
@@ -83,21 +88,23 @@ export async function lookupBarcodeProviders(
     const fatSecretResult = await lookupFatSecretBarcode(barcode, {
       locale: 'en-US',
     })
-    if (fatSecretResult.ok) {
+    const fatSecretSuccess = readFatSecretSuccess(fatSecretResult)
+    if (fatSecretSuccess) {
       return {
         ok: true,
         data: {
-          ...fatSecretResult.data,
+          ...fatSecretSuccess.data,
           providerFailures,
         },
       }
     }
 
-    if (
-      fatSecretResult.error.code !== 'notConfigured' &&
-      fatSecretResult.error.code !== 'notFound'
-    ) {
-      providerFailures.push(fatSecretResult.error)
+    const fatSecretFailure = readFatSecretFailure(fatSecretResult)
+    if (fatSecretFailure) {
+      const failure = fatSecretFailure.error
+      if (failure.code !== 'notConfigured' && failure.code !== 'notFound') {
+        providerFailures.push(failure)
+      }
     }
   }
 
