@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildBypassHeaders,
   extractBypassCookies,
   isVercelProtectionResponse,
   resolvePreviewSmokeConfig,
@@ -43,5 +44,22 @@ describe('Vercel preview smoke helpers', () => {
     headers.append('set-cookie', '_vercel_jwt=abc; Path=/; HttpOnly; Secure')
 
     expect(extractBypassCookies(headers)).toEqual(['_vercel_jwt=abc'])
+  })
+
+  it('requests the Vercel bypass cookie only on the setup request', () => {
+    expect(buildBypassHeaders({ bypassSecret: 'secret', requestCookie: true })).toEqual({
+      'x-vercel-protection-bypass': 'secret',
+      'x-vercel-set-bypass-cookie': 'true',
+    })
+
+    expect(
+      buildBypassHeaders({
+        bypassSecret: 'secret',
+        cookies: ['_vercel_jwt=abc'],
+      }),
+    ).toEqual({
+      'x-vercel-protection-bypass': 'secret',
+      cookie: '_vercel_jwt=abc',
+    })
   })
 })

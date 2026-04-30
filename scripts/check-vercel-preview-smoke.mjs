@@ -44,19 +44,39 @@ export function extractBypassCookies(headers) {
     .filter((value) => value && value.includes('='))
 }
 
+export function buildBypassHeaders({ bypassSecret = '', requestCookie = false, cookies = [] } = {}) {
+  const headers = {}
+  if (bypassSecret) {
+    headers['x-vercel-protection-bypass'] = bypassSecret
+    if (requestCookie) {
+      headers['x-vercel-set-bypass-cookie'] = 'true'
+    }
+  }
+  if (cookies.length) {
+    headers.cookie = cookies.join('; ')
+  }
+  return headers
+}
+
 function writeReport(report) {
   mkdirSync(dirname(REPORT_PATH), { recursive: true })
   writeFileSync(REPORT_PATH, `${JSON.stringify(report, null, 2)}\n`)
 }
 
-async function fetchWithBypass(url, bypassSecret) {
-  const headers = {}
-  if (bypassSecret) {
-    headers['x-vercel-protection-bypass'] = bypassSecret
-    headers['x-vercel-set-bypass-cookie'] = 'true'
+async function requestBypassCookie(url, bypassSecret) {
+  if (!bypassSecret) {
+    return []
   }
+  const response = await fetch(url, {
+    headers: buildBypassHeaders({ bypassSecret, requestCookie: true }),
+    redirect: 'manual',
+  })
+  return extractBypassCookies(response.headers)
+}
+
+async function fetchWithBypass(url, bypassSecret, cookies) {
   return fetch(url, {
-    headers,
+    headers: buildBypassHeaders({ bypassSecret, cookies }),
     redirect: 'follow',
   })
 }
@@ -169,12 +189,14 @@ export async function runPreviewSmoke({ env = process.env } = {}) {
     return report
   }
 
-  const response = await fetchWithBypass(config.previewUrl, config.bypassSecret)
+  const cookies = await requestBypassCookie(config.previewUrl, config.bypassSecret)
+  const response = await fetchWithBypass(config.previewUrl, config.bypassSecret, cookies)
   const body = await response.text()
-  const cookies = extractBypassCookies(response.headers)
+  const responseCookies = extractBypassCookies(response.headers)
+  const allCookies = [...cookies, ...responseCookies]
   report.httpStatus = response.status
   report.finalUrl = response.url
-  report.bypassCookieCount = cookies.length
+  report.bypassCookieCount = allCookies.length
 
   if (isVercelProtectionResponse({ status: response.status, url: response.url, body })) {
     report.status = 'blocked_by_protection'
@@ -192,7 +214,7 @@ export async function runPreviewSmoke({ env = process.env } = {}) {
     return report
   }
 
-  const browserResult = await verifyWithPlaywright(config.previewUrl, config.bypassSecret, cookies)
+  const browserResult = await verifyWithPlaywright(config.previewUrl, config.bypassSecret, allCookies)
   report.status = browserResult.status
   report.reason = browserResult.reason
   writeReport(report)
