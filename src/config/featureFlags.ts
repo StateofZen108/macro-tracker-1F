@@ -84,6 +84,16 @@ export interface FeatureFlags {
   coachProofDefaultV2: boolean
   cutOsReplayValidationV1: boolean
   serverFunctionTypecheckGateV1: boolean
+  macroFactorSurpassV1: boolean
+  unifiedLoggerV1: boolean
+  aiMealCaptureV1: boolean
+  foodDatabaseTrustV1: boolean
+  cutOsExpenditureValidationV1: boolean
+  coachLiveProviderV1: boolean
+  trainingPreservationOsV1: boolean
+  nativeDeviceProofV1: boolean
+  paidAccountOpsV1: boolean
+  supportOpsV1: boolean
 }
 
 export function resolveFeatureFlag(
@@ -197,6 +207,16 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     coachProofDefaultV2: resolveFeatureFlag(env.VITE_FF_COACH_PROOF_DEFAULT_V2, mode),
     cutOsReplayValidationV1: resolveFeatureFlag(env.VITE_FF_CUT_OS_REPLAY_VALIDATION_V1, mode),
     serverFunctionTypecheckGateV1: resolveFeatureFlag(env.VITE_FF_SERVER_FUNCTION_TYPECHECK_GATE_V1, mode),
+    macroFactorSurpassV1: resolveFeatureFlag(env.VITE_FF_MACRO_FACTOR_SURPASS_V1, mode),
+    unifiedLoggerV1: resolveFeatureFlag(env.VITE_FF_UNIFIED_LOGGER_V1, mode),
+    aiMealCaptureV1: resolveFeatureFlag(env.VITE_FF_AI_MEAL_CAPTURE_V1, mode),
+    foodDatabaseTrustV1: resolveFeatureFlag(env.VITE_FF_FOOD_DATABASE_TRUST_V1, mode),
+    cutOsExpenditureValidationV1: resolveFeatureFlag(env.VITE_FF_CUT_OS_EXPENDITURE_VALIDATION_V1, mode),
+    coachLiveProviderV1: resolveFeatureFlag(env.VITE_FF_COACH_LIVE_PROVIDER_V1, mode),
+    trainingPreservationOsV1: resolveFeatureFlag(env.VITE_FF_TRAINING_PRESERVATION_OS_V1, mode),
+    nativeDeviceProofV1: resolveFeatureFlag(env.VITE_FF_NATIVE_DEVICE_PROOF_V1, mode),
+    paidAccountOpsV1: resolveFeatureFlag(env.VITE_FF_PAID_ACCOUNT_OPS_V1, mode),
+    supportOpsV1: resolveFeatureFlag(env.VITE_FF_SUPPORT_OPS_V1, mode),
   }
 
   if (!resolvedFlags.catalogProviderV2) {
@@ -434,6 +454,42 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     resolvedFlags.firstTenMinuteActivationV1 = false
     resolvedFlags.coachProofDefaultV2 = false
     resolvedFlags.cutOsReplayValidationV1 = false
+  }
+
+  if (!resolvedFlags.standaloneCutNineV1) {
+    resolvedFlags.macroFactorSurpassV1 = false
+  }
+
+  if (!resolvedFlags.macroFactorSurpassV1) {
+    resolvedFlags.unifiedLoggerV1 = false
+    resolvedFlags.aiMealCaptureV1 = false
+    resolvedFlags.foodDatabaseTrustV1 = false
+    resolvedFlags.cutOsExpenditureValidationV1 = false
+    resolvedFlags.coachLiveProviderV1 = false
+    resolvedFlags.trainingPreservationOsV1 = false
+    resolvedFlags.nativeDeviceProofV1 = false
+    resolvedFlags.paidAccountOpsV1 = false
+    resolvedFlags.supportOpsV1 = false
+  }
+
+  if (!resolvedFlags.captureConvenienceV1) {
+    resolvedFlags.aiMealCaptureV1 = false
+  }
+
+  if (!resolvedFlags.foodTrustConfidenceV3) {
+    resolvedFlags.foodDatabaseTrustV1 = false
+  }
+
+  if (!resolvedFlags.cutOsReplayValidationV1) {
+    resolvedFlags.cutOsExpenditureValidationV1 = false
+  }
+
+  if (!resolvedFlags.trainingPreservationV1) {
+    resolvedFlags.trainingPreservationOsV1 = false
+  }
+
+  if (!resolvedFlags.coachProofDefaultV2) {
+    resolvedFlags.coachLiveProviderV1 = false
   }
 
   return resolvedFlags

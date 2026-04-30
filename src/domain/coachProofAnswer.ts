@@ -120,6 +120,7 @@ export function buildCoachProofAnswer(input: CoachProofAnswerInput): CoachProofA
   const answer = [
     `Cut OS proof packet for ${surface.command.date}: ${sentence(surface.command.primaryAction)}`,
     `Today I would use the command CTA "${surface.command.cta.label}" because diagnosis ${surface.command.diagnosisId} is ${surface.diagnosis.verdict} with ${surface.command.confidence} confidence and ${surface.command.urgency} urgency.`,
+    'What would change my mind: a newly trusted food-review resolution, a fresh weigh-in that changes the scale verdict, or training evidence showing strength leakage would force a new command before escalation.',
     'I am not changing targets, logs, phases, or workouts from this answer. Use the explicit Cut OS action button if you want to apply the recommendation.',
     sentence(proofSummary),
     sentence(blockerSummary),

@@ -14,6 +14,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - Add-food flow with:
   - recent foods and local search
   - quick actions like `Add 1x`
+  - unified logger entry points for search, barcode, label OCR, AI meal photo, quick add, custom food, recipes, and imports
   - remembered `last amount` shortcuts
   - optional keep-open behavior for batch logging
   - custom-serving add flow
@@ -65,6 +66,14 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - mandatory review before save
   - reviewed nutrient rows stored on the saved food
   - live extraction only when `/api/label-ocr/extract` is deployed with a server-side `GEMINI_API_KEY`
+- AI meal-photo capture:
+  - exposed from the same Add Food session as search, barcode, OCR, and custom foods
+  - creates editable review-required drafts by default
+  - never feeds Coach or Cut OS proof until reviewed
+- Food database trust scoring:
+  - provider-level hit rate, trusted-hit rate, and conflict rate helpers
+  - release predicates for `>=90%` corpus hit rate and `>=80%` trusted-hit rate
+  - provider conflicts remain review-required instead of silently coaching from disputed macros
 
 ### Weight tab
 
@@ -112,6 +121,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - Current default behavior:
   - proof-bound Cut OS answers are generated locally when a command/proof packet exists
   - setup-incomplete questions get an insufficient-data answer instead of generic fat-loss advice
+  - answers state what new evidence would change the recommendation before any harder-cut escalation
   - no provider setup is required for the paid-feeling default path
   - live-provider questions can still be queued once provider fallback mode is deliberately selected
 - Supported scaffold targets:
@@ -175,6 +185,14 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - Tapping the MacroFactor import activation CTA opens Settings directly on the MacroFactor import control. If the browser blocks automatic file-picker open, the import button remains focused and visible.
 - Demo mode is read-only against real stores: it renders a synthetic `CutOsSurfaceModel` across the app and only writes `mt_cut_os_activation`.
 - Historical validation (`src/domain/cutOsReplay.ts`) replays local/imported history through the current Cut OS engine and surfaces reconstructed days, stall detection, spike suppression, training precedence, food-trust blocks, false escalations, and missed actionable days.
+- MacroFactor-surpass benchmark helpers (`src/domain/cutOsBenchmark.ts`, `src/domain/trainingPreservation.ts`) convert replay output into release-gated proof that the engine detects stalls, suppresses expected spikes, prioritizes training leaks, and avoids false escalations.
+
+### Paid operations and support
+
+- Paid account state reducer for anonymous local, trial, subscribed, past-due, cancelled, and support-locked states.
+- Stripe-like webhook reconciliation helper under `server/billing`.
+- Redacted support-bundle builder under `src/domain/supportBundle.ts` and `server/support`.
+- Support exports preserve structural diagnostics while redacting emails, tokens, authorization values, barcodes, food names, OCR text, images, notes, and base64 payloads.
 
 ### Reliability and platform behavior
 
@@ -208,6 +226,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
   - optional live Supabase RLS verification via `npm run test:supabase:rls-live`
   - physical-device QA evidence for camera, barcode, OCR, PWA, offline, and dirty-sheet paths
   - standalone-cut 9/10 gates via `npm run test:standalone-cut-9`
+  - MacroFactor-surpass gates via `npm run test:macrofactor-surpass`
   - server function typecheck via `npm run test:server:function-typecheck`
   - Vercel deploy-log cleanliness via `npm run test:server:deploy-clean`
 
@@ -217,6 +236,7 @@ It is designed for single-user daily use on mobile. Core tracking still works wi
 - Open Food Facts text search
 - Live Ask Coach answers from a configured AI provider. Local proof-bound Cut OS answers ship without provider setup.
 - Offline nutrition-label OCR
+- Fully automated production native-device evidence. The rail is machine-enforced, but camera/barcode/PWA install proof still requires a real device or configured real-device cloud lane.
 
 Cross-device sync intentionally does **not** yet include:
 

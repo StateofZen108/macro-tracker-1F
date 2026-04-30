@@ -167,8 +167,8 @@ function buildDefaultLoggingShortcutPreference(): NonNullable<UserSettings['logg
     prioritizeRecents: true,
     prioritizeFavorites: true,
     prioritizeSavedMeals: true,
-    enabledShortcutIds: ['scanner', 'ocr', 'custom'],
-    shortcutOrder: ['scanner', 'ocr', 'custom'],
+    enabledShortcutIds: ['ai_photo', 'scanner', 'ocr', 'custom'],
+    shortcutOrder: ['ai_photo', 'scanner', 'ocr', 'custom'],
     mealAwareLane: true,
     toolbarStyle: 'search_barcode',
     topShortcutId: 'scanner',
@@ -177,9 +177,10 @@ function buildDefaultLoggingShortcutPreference(): NonNullable<UserSettings['logg
 
 function buildDefaultLoggingShortcuts(): NonNullable<UserSettings['loggingShortcuts']> {
   return [
-    { id: 'scanner', order: 0, colorToken: 'teal', visible: true },
-    { id: 'ocr', order: 1, colorToken: 'slate', visible: true },
-    { id: 'custom', order: 2, colorToken: 'amber', visible: true },
+    { id: 'ai_photo', order: 0, colorToken: 'rose', visible: true },
+    { id: 'scanner', order: 1, colorToken: 'teal', visible: true },
+    { id: 'ocr', order: 2, colorToken: 'slate', visible: true },
+    { id: 'custom', order: 3, colorToken: 'amber', visible: true },
   ]
 }
 
@@ -1599,7 +1600,10 @@ function normalizeLoggingShortcutPreference(
           (
             shortcutId,
           ): shortcutId is NonNullable<UserSettings['loggingShortcutPreference']>['enabledShortcutIds'][number] =>
-            shortcutId === 'scanner' || shortcutId === 'ocr' || shortcutId === 'custom',
+            shortcutId === 'ai_photo' ||
+            shortcutId === 'scanner' ||
+            shortcutId === 'ocr' ||
+            shortcutId === 'custom',
         )
       : defaults.enabledShortcutIds,
     shortcutOrder: Array.isArray(preference.shortcutOrder)
@@ -1607,7 +1611,10 @@ function normalizeLoggingShortcutPreference(
           (
             shortcutId,
           ): shortcutId is NonNullable<UserSettings['loggingShortcutPreference']>['shortcutOrder'][number] =>
-            shortcutId === 'scanner' || shortcutId === 'ocr' || shortcutId === 'custom',
+            shortcutId === 'ai_photo' ||
+            shortcutId === 'scanner' ||
+            shortcutId === 'ocr' ||
+            shortcutId === 'custom',
         )
       : defaults.shortcutOrder,
     mealAwareLane:
@@ -1626,7 +1633,8 @@ function normalizeLoggingShortcutPreference(
     topShortcutId:
       preference.topShortcutId === 'scanner' ||
       preference.topShortcutId === 'ocr' ||
-      preference.topShortcutId === 'custom'
+      preference.topShortcutId === 'custom' ||
+      preference.topShortcutId === 'ai_photo'
         ? preference.topShortcutId
         : defaults.topShortcutId,
   }
@@ -1675,7 +1683,12 @@ function normalizeLoggingShortcuts(
         }
 
         const id =
-          entry.id === 'scanner' || entry.id === 'ocr' || entry.id === 'custom' ? entry.id : null
+          entry.id === 'ai_photo' ||
+          entry.id === 'scanner' ||
+          entry.id === 'ocr' ||
+          entry.id === 'custom'
+            ? entry.id
+            : null
         if (!id) {
           return []
         }

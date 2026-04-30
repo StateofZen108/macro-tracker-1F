@@ -33,7 +33,7 @@ type RepeatCandidateView = {
 }
 
 type QuickActionButton = {
-  key: 'scanner' | 'ocr' | 'custom'
+  key: 'scanner' | 'ocr' | 'custom' | 'ai_photo'
   label: string
   icon: typeof Camera | typeof Plus
   disabled: boolean
@@ -418,6 +418,17 @@ export function BrowsePane({
       })
     : null
   const quickActionButtons: QuickActionButton[] = [
+    ...(FEATURE_FLAGS.aiMealCaptureV1 && captureConvenienceEnabled
+      ? [
+          {
+            key: 'ai_photo' as const,
+            label: 'AI meal photo',
+            icon: Camera,
+            disabled: !isOnline,
+            onClick: onOpenMealPhotoCapture,
+          },
+        ]
+      : []),
     {
       key: 'scanner',
       label: 'Scan barcode',

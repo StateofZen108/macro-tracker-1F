@@ -93,6 +93,16 @@ describe('feature flags', () => {
       coachProofDefaultV2: false,
       cutOsReplayValidationV1: false,
       serverFunctionTypecheckGateV1: false,
+      macroFactorSurpassV1: false,
+      unifiedLoggerV1: false,
+      aiMealCaptureV1: false,
+      foodDatabaseTrustV1: false,
+      cutOsExpenditureValidationV1: false,
+      coachLiveProviderV1: false,
+      trainingPreservationOsV1: false,
+      nativeDeviceProofV1: false,
+      paidAccountOpsV1: false,
+      supportOpsV1: false,
     })
   })
 
@@ -187,6 +197,16 @@ describe('feature flags', () => {
       coachProofDefaultV2: true,
       cutOsReplayValidationV1: true,
       serverFunctionTypecheckGateV1: true,
+      macroFactorSurpassV1: true,
+      unifiedLoggerV1: true,
+      aiMealCaptureV1: true,
+      foodDatabaseTrustV1: true,
+      cutOsExpenditureValidationV1: true,
+      coachLiveProviderV1: true,
+      trainingPreservationOsV1: true,
+      nativeDeviceProofV1: true,
+      paidAccountOpsV1: true,
+      supportOpsV1: true,
     })
   })
 
@@ -300,6 +320,16 @@ describe('feature flags', () => {
       coachProofDefaultV2: false,
       cutOsReplayValidationV1: false,
       serverFunctionTypecheckGateV1: false,
+      macroFactorSurpassV1: false,
+      unifiedLoggerV1: false,
+      aiMealCaptureV1: false,
+      foodDatabaseTrustV1: false,
+      cutOsExpenditureValidationV1: false,
+      coachLiveProviderV1: false,
+      trainingPreservationOsV1: false,
+      nativeDeviceProofV1: false,
+      paidAccountOpsV1: false,
+      supportOpsV1: false,
     })
   })
 

@@ -51,6 +51,36 @@ export const API_ROUTE_CONFIGS = {
       failClosedWithoutStore: true,
     },
   },
+  mealAiAnalyze: {
+    routeId: 'meal_ai.analyze',
+    allowedMethods: ['POST'],
+    timeoutMs: 15_000,
+    bodyLimitBytes: 6 * MB,
+    rateLimit: {
+      limit: 10,
+      windowSeconds: 60,
+      scope: 'ip',
+      failClosedWithoutStore: true,
+    },
+  },
+  billingWebhook: {
+    routeId: 'billing.webhook',
+    allowedMethods: ['POST'],
+    timeoutMs: 10_000,
+    bodyLimitBytes: 256 * KB,
+  },
+  supportBundle: {
+    routeId: 'support.bundle',
+    allowedMethods: ['POST'],
+    timeoutMs: 10_000,
+    bodyLimitBytes: 512 * KB,
+    rateLimit: {
+      limit: 10,
+      windowSeconds: 60,
+      scope: 'ip',
+      failClosedWithoutStore: false,
+    },
+  },
   syncBootstrap: {
     routeId: 'sync.bootstrap',
     allowedMethods: ['POST'],
@@ -122,4 +152,3 @@ export const API_ROUTE_CONFIGS = {
     rateLimit: GARMIN_RATE_LIMIT,
   },
 } satisfies Record<string, ApiMiddlewareConfig>
-

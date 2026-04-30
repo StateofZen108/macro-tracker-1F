@@ -97,6 +97,9 @@ const scripts = [
   ...(isFeatureEnabled(releaseEnv.VITE_FF_STANDALONE_CUT_NINE_V1)
     ? ['test:standalone-cut-9']
     : []),
+  ...(isFeatureEnabled(releaseEnv.VITE_FF_MACRO_FACTOR_SURPASS_V1)
+    ? ['test:macrofactor-surpass']
+    : []),
   'test:e2e:lane-guard',
   'test:e2e:personal-library-preview',
   'test:e2e:coach-preview',

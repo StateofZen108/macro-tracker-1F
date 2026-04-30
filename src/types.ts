@@ -61,6 +61,94 @@ export interface FoodTrustEvidence {
   reasons: ImportTrustBlockingIssue[]
   reviewedAt?: string
 }
+
+export type LoggerMethod =
+  | 'search'
+  | 'barcode'
+  | 'label_ocr'
+  | 'ai_photo'
+  | 'quick_add'
+  | 'custom'
+  | 'recipe'
+  | 'import'
+
+export interface LoggerSpeedMetric {
+  method: LoggerMethod
+  medianSeconds: number
+  p90Seconds: number
+  tapsMedian: number
+  successRate: number
+}
+
+export type FoodDataProviderTrustProvider =
+  | 'open_food_facts'
+  | 'usda'
+  | 'fatsecret'
+  | 'user_library'
+  | 'ai_photo'
+  | 'label_ocr'
+  | 'import'
+
+export interface FoodDataProviderTrust {
+  provider: FoodDataProviderTrustProvider
+  coverageWindow: { checkedAt: string; locale: string }
+  lookupAttempts: number
+  hitRate: number
+  trustedHitRate: number
+  conflictRate: number
+}
+
+export interface AiMealCaptureEntry {
+  name: string
+  calories: number
+  protein: number
+  carbs: number
+  fat: number
+  confidence: number
+  servingBasis: FoodTrustServingBasis
+}
+
+export interface AiMealCaptureResult {
+  id: string
+  imageEvidenceId: string
+  textHint?: string
+  entries: AiMealCaptureEntry[]
+  status: 'review_required' | 'trusted_after_review' | 'rejected'
+}
+
+export interface CutOsValidationBenchmark {
+  replayWindow: { start: string; end: string }
+  targetEngineVersion: string
+  trueStallsDetected: number
+  falseEscalations: number
+  expectedSpikesSuppressed: number
+  trainingLeaksPrioritized: number
+  strengthLossAvoidanceSignals: number
+}
+
+export type PaidAccountState =
+  | 'anonymous_local'
+  | 'trial_active'
+  | 'subscribed'
+  | 'past_due'
+  | 'cancelled'
+  | 'support_locked'
+
+export interface AccountStateSnapshot {
+  state: PaidAccountState
+  customerId?: string
+  subscriptionId?: string
+  trialEndsAt?: string
+  currentPeriodEndsAt?: string
+  updatedAt: string
+}
+
+export interface SupportBundleRedactionResult {
+  exportedAt: string
+  sections: string[]
+  redactedKeys: string[]
+  payload: Record<string, unknown>
+}
 export type LabelNutritionFieldKey =
   | 'calories'
   | 'protein'
@@ -186,7 +274,7 @@ export type LoggingToolbarStyle =
   | 'search_barcode_custom'
   | 'four_custom'
   | 'none'
-export type LoggingShortcutId = 'scanner' | 'ocr' | 'custom'
+export type LoggingShortcutId = 'scanner' | 'ocr' | 'custom' | 'ai_photo'
 export type ToolbarColorToken = 'teal' | 'slate' | 'amber' | 'rose'
 export type WorkoutAnalyticsRange = '7d' | '30d' | '90d' | '365d' | 'all'
 export type WorkoutRecordMetric = 'volume' | 'reps' | 'estimated_1rm'

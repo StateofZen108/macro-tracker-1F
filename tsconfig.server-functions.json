@@ -10,6 +10,9 @@
   "include": [
     "api/**/*.ts",
     "server/**/*.ts",
+    "src/domain/accountState.ts",
+    "src/domain/aiMealCapture.ts",
+    "src/domain/supportBundle.ts",
     "src/domain/foodCatalog/**/*.ts",
     "src/utils/openFoodFacts.ts",
     "src/utils/labelOcrPayload.ts",

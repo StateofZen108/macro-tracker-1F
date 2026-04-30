@@ -266,6 +266,7 @@ const LOGGING_SHORTCUT_OPTIONS: Array<{
   label: string
   description: string
 }> = [
+  { id: 'ai_photo', label: 'AI meal photo', description: 'Fastest path for mixed plates that need review.' },
   { id: 'scanner', label: 'Barcode scanner', description: 'Fastest path for known packaged foods.' },
   { id: 'ocr', label: 'Nutrition label OCR', description: 'Good when the barcode path is incomplete.' },
   { id: 'custom', label: 'Custom food', description: 'Fastest path for your own manual entries.' },
@@ -284,6 +285,7 @@ const TOOLBAR_STYLE_OPTIONS: Array<{
 
 const TOOLBAR_COLOR_TOKENS: ToolbarColorToken[] = ['teal', 'slate', 'amber', 'rose']
 const DEFAULT_SHORTCUT_COLORS: Record<LoggingShortcutId, ToolbarColorToken> = {
+  ai_photo: 'rose',
   scanner: 'teal',
   ocr: 'amber',
   custom: 'slate',
