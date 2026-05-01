@@ -217,6 +217,7 @@ describe('coach proof answer', () => {
 
     expect(answer.answerType).toBe('safety-limited')
     expect(answer.answer).toContain('Review food')
+    expect(answer.answer).toContain('I am not changing targets')
     expect(answer.answer).not.toContain('Use the explicit Cut OS action button')
     expect(answer.safetyFlags.some((flag) => flag.severity === 'blocked')).toBe(true)
   })

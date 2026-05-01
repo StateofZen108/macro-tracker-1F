@@ -7,7 +7,6 @@ const REQUIRED_CHECKS = [
   'barcode_permission_granted',
   'barcode_manual_fallback',
   'ocr_capture_save',
-  'ai_meal_photo_review',
   'pwa_install_reopen',
   'offline_reopen_log',
   'discard_dialog_hit_test',

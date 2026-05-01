@@ -85,7 +85,7 @@ function repairAnswer(input: CoachProofAnswerInput): CoachProofAnswer {
     answer:
       `I would not escalate the cut from this packet yet. ${title}: ${sentence(reason)} ` +
       `The next action is "${action}", then I will recompute the daily command from the repaired proof. ` +
-      'Calories, macros, phases, and workouts stay unchanged from this answer.',
+      'I am not changing targets, logs, phases, or workouts from this answer. Calories and macros stay unchanged until you use an explicit action.',
     answerType: 'safety-limited',
     citations: [
       {

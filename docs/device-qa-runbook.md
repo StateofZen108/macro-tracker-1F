@@ -40,6 +40,8 @@ type DeviceQaResult = {
 | `offline_reopen_log` | Disable network, reopen installed app, log a food/Quick Add | Offline badge appears and local logging succeeds |
 | `discard_dialog_hit_test` | Dirty custom food/OCR form, close, keep editing, close, discard | Dialog buttons are center-hittable and focus does not escape behind the sheet |
 
+AI meal photo is intentionally not a required device check. The paid PWA logging trust surface is barcode, OCR label, manual barcode fallback, saved/custom foods, quick add, repeat logging, import, and explicit food review.
+
 ## Release Rule
 
 `device_qa_green` passes only when all required checks pass on at least one physical Android or iOS device for the candidate build. A blocked API can pass only when the limitation is browser-documented in the evidence row and the equivalent fallback check passes on the same build.

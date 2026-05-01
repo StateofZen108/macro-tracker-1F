@@ -21,6 +21,18 @@ npm run test:release:accessible
 
 This command runs the full local release suite, then automatically runs Sentry smoke, live Supabase RLS verification, device QA evidence validation, readiness-manifest validation, and the strict production release gate only when the required credentials, tools, and manifests are present. It writes `tmp/production-rails-accessible-report.json` and exits green when all accessible rails pass, even if external rails are explicitly pending.
 
+For the paid PWA 10/10 gate, use the umbrella orchestrators:
+
+```powershell
+npm run test:10
+npm run test:10:preview
+npm run test:10:production
+```
+
+`npm run test:10` runs every locally testable paid-PWA rail: mistake-proof daily loop, food trust, unified logger speed, local Coach proof, Cut OS replay/benchmark, paid account/support/recovery, visual-polish screenshots, release hygiene, server typecheck, deploy-log scanner, and accessible production rails. It writes `tmp/10-out-of-10-report.json`. External-only rails such as current-build physical-device evidence, live Sentry smoke, and live Supabase proof are recorded as `pending_external` locally instead of being treated as green.
+
+`npm run test:10:preview` adds protected Vercel preview proof and feature parity. `npm run test:10:production` is strict: pending external proof fails the run. AI meal photo is permanently excluded from these gates.
+
 ## Branch Preview Proof
 
 Branch previews are not considered verified just because Vercel reports `READY`. The preview proof must also prove that the deployed commit matches the branch, the real Vercel deploy log has zero app-owned TypeScript diagnostics or Vercel/function warnings, and the protected preview can be smoked through the automation bypass.
