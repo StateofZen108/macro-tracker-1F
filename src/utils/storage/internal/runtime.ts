@@ -4458,6 +4458,7 @@ function buildBackupCounts(backup: BackupFile): BackupPreview['counts'] {
     workoutSessions: backup.workoutSessions?.length ?? 0,
     progressionDecisions: backup.progressionDecisions?.length ?? 0,
     benchmarkReports: backup.benchmarkReports?.length ?? 0,
+    foodAuditEvents: backup.foodAuditEvents?.length ?? 0,
   }
 }
 

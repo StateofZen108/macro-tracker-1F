@@ -60,6 +60,106 @@ export interface FoodTrustEvidence {
   providerConflict: boolean
   reasons: ImportTrustBlockingIssue[]
   reviewedAt?: string
+  fieldEvidence?: FoodFieldEvidence[]
+  accuracyIssues?: FoodAccuracyIssue[]
+  proofEligible?: boolean
+}
+
+export type FoodEvidenceField =
+  | 'calories'
+  | 'protein'
+  | 'carbs'
+  | 'fat'
+  | 'servingSize'
+  | 'servingUnit'
+  | 'barcode'
+
+export type FoodEvidenceSource =
+  | 'barcode'
+  | 'catalog'
+  | 'ocr'
+  | 'custom'
+  | 'import'
+  | 'user_review'
+  | 'system'
+
+export interface FoodFieldEvidence {
+  field: FoodEvidenceField
+  value: string | number
+  source: FoodEvidenceSource
+  confidence: number
+  reviewedAt?: string
+}
+
+export type FoodAccuracyIssueCode =
+  | 'missing_macros'
+  | 'missing_serving_basis'
+  | 'macro_energy_mismatch'
+  | 'impossible_value'
+  | 'suspicious_density'
+  | 'provider_conflict'
+  | 'low_confidence'
+  | 'ocr_serving_mismatch'
+
+export type FoodAccuracyIssueSeverity = 'info' | 'review' | 'block'
+
+export interface FoodAccuracyIssue {
+  code: FoodAccuracyIssueCode
+  severity: FoodAccuracyIssueSeverity
+  field?: FoodEvidenceField
+  message: string
+  expected?: string
+  actual?: string
+  blocksCoachingProof: boolean
+}
+
+export interface FoodMacroSnapshot {
+  entryId: string
+  foodId?: string
+  date: string
+  meal: MealType
+  servings: number
+  name: string
+  brand?: string
+  servingSize: number
+  servingUnit: string
+  calories: number
+  protein: number
+  carbs: number
+  fat: number
+  trustStatus?: FoodTrustStatus
+  needsReview?: boolean
+}
+
+export type FoodAuditEventType = 'created' | 'edited' | 'deleted' | 'restored' | 'imported' | 'reviewed'
+export type FoodAuditActor = 'user' | 'barcode' | 'ocr' | 'catalog' | 'import' | 'system'
+
+export interface FoodAuditEvent {
+  id: string
+  operationId: string
+  entryId: string
+  date: string
+  eventType: FoodAuditEventType
+  actor: FoodAuditActor
+  before?: FoodMacroSnapshot
+  after?: FoodMacroSnapshot
+  trustBefore?: FoodTrustStatus
+  trustAfter?: FoodTrustStatus
+  issues: FoodAccuracyIssue[]
+  createdAt: string
+}
+
+export interface FoodProofSummary {
+  date: string
+  caloriesTotal: number
+  caloriesTrusted: number
+  caloriesReviewRequired: number
+  trustedEntryCount: number
+  reviewRequiredEntryCount: number
+  blockedEntryCount: number
+  repairTaskCount: number
+  proofEligible: boolean
+  auditEventCount: number
 }
 
 export type LoggerMethod =
@@ -350,6 +450,7 @@ export type DiagnosticsEventType =
   | 'ocr_extract_failed'
   | 'storage_migration_failed'
   | 'storage_recovery_triggered'
+  | 'food_audit_write_failed'
   | 'food_identity_conflict'
   | 'food_catalog_search_failed'
   | 'saved_meal_apply_failed'
@@ -2070,6 +2171,7 @@ export interface RecoveryExportPackManifest {
     workoutSessions: number
     progressionDecisions: number
     benchmarkReports: number
+    foodAuditEvents: number
   }
   media: {
     photoCount: number
@@ -2220,6 +2322,7 @@ export interface BackupFile {
   progressionDecisions?: ProgressionDecision[]
   encryptedSyncQueue?: EncryptedSyncEnvelope[]
   benchmarkReports?: BenchmarkReport[]
+  foodAuditEvents?: FoodAuditEvent[]
 }
 
 export interface BackupPreview {
@@ -2242,6 +2345,7 @@ export interface BackupPreview {
     workoutSessions: number
     progressionDecisions: number
     benchmarkReports: number
+    foodAuditEvents: number
   }
 }
 

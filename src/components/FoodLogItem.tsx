@@ -1,6 +1,6 @@
 import { AlertCircle, ChevronRight, Minus, Plus, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { ResolvedFoodLogEntry, TrustRepairTask } from '../types'
+import type { FoodTrustEvidence, ResolvedFoodLogEntry, TrustRepairTask } from '../types'
 
 interface FoodLogItemProps {
   entry: ResolvedFoodLogEntry
@@ -37,6 +37,48 @@ function formatTrustRepair(task: TrustRepairTask): string {
   }
 }
 
+function getTrustEvidence(entry: ResolvedFoodLogEntry): FoodTrustEvidence {
+  return (
+    entry.snapshot.trustEvidence ?? {
+      source: entry.snapshot.barcode ? 'barcode' : 'custom',
+      sourceId: entry.foodId ?? entry.id,
+      status: entry.needsReview ? 'review_required' : 'trusted',
+      confidence: entry.needsReview ? 0.5 : 0.85,
+      servingBasis:
+        entry.snapshot.servingSize > 0 && entry.snapshot.servingUnit.trim() ? 'verified' : 'missing',
+      macroCompleteness: 'complete',
+      providerConflict: false,
+      reasons: entry.needsReview ? ['estimated_serving'] : [],
+      proofEligible: !entry.needsReview,
+    }
+  )
+}
+
+function getTrustLabel(evidence: FoodTrustEvidence): string {
+  if (evidence.status === 'trusted') {
+    return 'Trusted'
+  }
+
+  return evidence.status === 'blocked' ? 'Blocked' : 'Review'
+}
+
+function getTrustDetail(evidence: FoodTrustEvidence): string {
+  const blockingIssue = evidence.accuracyIssues?.find((issue) => issue.blocksCoachingProof)
+  if (blockingIssue) {
+    return blockingIssue.message
+  }
+
+  if (evidence.status === 'trusted') {
+    return evidence.reviewedAt ? 'Reviewed and coaching-grade' : 'Complete macros and serving basis'
+  }
+
+  if (evidence.status === 'blocked') {
+    return 'Blocked from coaching proof'
+  }
+
+  return 'Review before coaching use'
+}
+
 export function FoodLogItem({
   entry,
   onEdit,
@@ -55,6 +97,13 @@ export function FoodLogItem({
   const [isRevealed, setIsRevealed] = useState(false)
 
   const servingLabel = `${entry.servings} x ${entry.snapshot.servingSize}${entry.snapshot.servingUnit}`
+  const trustEvidence = getTrustEvidence(entry)
+  const trustTone =
+    trustEvidence.status === 'trusted'
+      ? 'bg-teal-100 text-teal-800 dark:bg-teal-500/15 dark:text-teal-200'
+      : trustEvidence.status === 'blocked'
+        ? 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200'
+        : 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200'
 
   function resetSwipe(): void {
     setIsRevealed(false)
@@ -174,6 +223,13 @@ export function FoodLogItem({
                     Needs review
                   </p>
                 ) : null}
+                <p
+                  data-testid="food-trust-status"
+                  className={`mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${trustTone}`}
+                  title={getTrustDetail(trustEvidence)}
+                >
+                  {getTrustLabel(trustEvidence)}
+                </p>
               </div>
               <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400" />
             </div>

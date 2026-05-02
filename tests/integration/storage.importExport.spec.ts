@@ -19,6 +19,7 @@ describe('storage import/export', () => {
       saveCoachingDecisionHistory,
       loadCoachingDecisionHistory,
     } = await import('../../src/utils/storage/coachDecisions')
+    const { saveFoodAuditEvents, loadFoodAuditEvents } = await import('../../src/utils/storage/foodAudit')
     const { exportBackupFile, validateBackupText, applyBackupImport } = await import(
       '../../src/utils/storage/importExport'
     )
@@ -151,9 +152,39 @@ describe('storage import/export', () => {
         updatedAt: '2026-04-07T08:05:00.000Z',
       },
     ])
+    await saveFoodAuditEvents([
+      {
+        id: 'food-audit-1',
+        operationId: 'test-import-export',
+        entryId: 'entry-1',
+        date: '2026-04-10',
+        eventType: 'created',
+        actor: 'user',
+        after: {
+          entryId: 'entry-1',
+          foodId: 'custom-rice',
+          date: '2026-04-10',
+          meal: 'breakfast',
+          servings: 1,
+          name: 'Rice',
+          brand: 'Pantry',
+          servingSize: 1,
+          servingUnit: 'cup',
+          calories: 200,
+          protein: 4,
+          carbs: 45,
+          fat: 1,
+          trustStatus: 'trusted',
+        },
+        trustAfter: 'trusted',
+        issues: [],
+        createdAt: '2026-04-10T08:00:00.000Z',
+      },
+    ])
 
     const exported = exportBackupFile()
     expect(exported.ok).toBe(true)
+    expect(exported.ok ? exported.data.foodAuditEvents : []).toHaveLength(1)
     const preview = validateBackupText(JSON.stringify(exported.ok ? exported.data : {}))
     expect(preview.ok).toBe(true)
 
@@ -178,6 +209,7 @@ describe('storage import/export', () => {
     expect(loadActivityLog()).toHaveLength(1)
     expect(loadCheckInHistory()).toHaveLength(1)
     expect(loadCoachingDecisionHistory()).toHaveLength(1)
+    expect(loadFoodAuditEvents()).toHaveLength(1)
     expect(loadSettings().fatLossMode).toBe(seededSettings.fatLossMode)
     expect(loadSettings().coachingMinCalories).toBe(seededSettings.coachingMinCalories)
     expect(loadSettings().goalModeChangedAt).toBe(seededSettings.goalModeChangedAt)

@@ -85,8 +85,8 @@ function baseRails() {
     },
     {
       id: 'food_logging_trust_superior',
-      commands: ['test:logger-speed', 'test:food-trust', 'test:food-db-trust'],
-      evidence: 'tests/e2e/logger-speed.spec.ts; tests/unit/foodTrust.spec.ts; tests/unit/foodDatabaseTrust.spec.ts',
+      commands: ['test:logger-speed', 'test:food-trust', 'test:food-accuracy', 'test:food-audit', 'test:food-proof', 'test:food-db-trust'],
+      evidence: 'tests/e2e/logger-speed.spec.ts; tests/unit/foodTrust.spec.ts; tests/unit/foodAccuracy.spec.ts; tests/unit/foodAudit.spec.ts; tests/unit/foodProof.spec.ts; tests/e2e/food-proof.spec.ts; tests/unit/foodDatabaseTrust.spec.ts',
     },
     {
       id: 'coach_local_paid_superior',

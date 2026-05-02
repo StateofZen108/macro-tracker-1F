@@ -1,5 +1,5 @@
 import { useMemo, useState, useSyncExternalStore } from 'react'
-import type { ActionResult, AppActionError, Food, FoodLogEntry, FoodSnapshot, MealType } from '../types'
+import type { ActionResult, AppActionError, Food, FoodAuditActor, FoodLogEntry, FoodSnapshot, MealType } from '../types'
 import { isSyncEnabled } from '../utils/sync/core'
 import {
   loadFoodLog,
@@ -21,6 +21,57 @@ function sortEntries(entries: FoodLogEntry[]): FoodLogEntry[] {
   return [...entries].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 }
 
+function auditActorFromFood(food: Food): FoodAuditActor {
+  if (food.labelNutrition) {
+    return 'ocr'
+  }
+
+  if (food.barcode) {
+    return 'barcode'
+  }
+
+  if (food.provider || food.source === 'api') {
+    return 'catalog'
+  }
+
+  return 'user'
+}
+
+function auditActorFromSnapshot(snapshot: FoodSnapshot): FoodAuditActor {
+  if (snapshot.barcode) {
+    return 'barcode'
+  }
+
+  if (snapshot.source === 'api') {
+    return 'catalog'
+  }
+
+  return 'user'
+}
+
+function auditActorFromEntries(entries: FoodLogEntry[]): FoodAuditActor {
+  const actors = entries.map((entry) => auditActorFromSnapshot(entry.snapshot))
+  if (actors.includes('barcode')) {
+    return 'barcode'
+  }
+
+  if (actors.includes('catalog')) {
+    return 'catalog'
+  }
+
+  return 'user'
+}
+
+function recordFoodLogAudit(input: {
+  date: string
+  beforeEntries: FoodLogEntry[]
+  afterEntries: FoodLogEntry[]
+  actor?: FoodAuditActor
+  operationId?: string
+}): void {
+  void import('../utils/storage/foodLogAudit').then((module) => module.recordFoodLogAuditEvent(input))
+}
+
 export function useFoodLog(date: string) {
   const storedEntries = useSyncExternalStore(
     subscribeToStorage,
@@ -36,6 +87,7 @@ export function useFoodLog(date: string) {
   function updateDateEntries(
     targetDate: string,
     updater: (currentEntries: FoodLogEntry[]) => FoodLogEntry[],
+    actor: FoodAuditActor = 'user',
   ): ActionResult<void> {
     const currentDateEntries = sortEntries(loadFoodLog(targetDate))
     const nextEntries = sortEntries(updater(currentDateEntries).map((entry) => ({
@@ -43,6 +95,14 @@ export function useFoodLog(date: string) {
       deletedAt: entry.deletedAt ?? undefined,
     })))
     const result = saveFoodLog(targetDate, nextEntries)
+    if (result.ok) {
+      recordFoodLogAudit({
+        date: targetDate,
+        beforeEntries: currentDateEntries,
+        afterEntries: nextEntries,
+        actor,
+      })
+    }
 
     setLastError(result.ok ? null : result.error)
     return result
@@ -74,6 +134,12 @@ export function useFoodLog(date: string) {
       return result
     }
 
+    recordFoodLogAudit({
+      date,
+      beforeEntries: currentEntries,
+      afterEntries: sortEntries([...currentEntries, newEntry]),
+      actor: auditActorFromFood(food),
+    })
     setLastError(null)
     return ok(newEntry)
   }
@@ -100,7 +166,7 @@ export function useFoodLog(date: string) {
       needsReview: trustEvidence.status !== 'trusted' || undefined,
     }
 
-    const result = updateDateEntries(date, (currentEntries) => [...currentEntries, newEntry])
+    const result = updateDateEntries(date, (currentEntries) => [...currentEntries, newEntry], auditActorFromSnapshot(snapshot))
     if (!result.ok) {
       return result
     }
@@ -149,6 +215,14 @@ export function useFoodLog(date: string) {
       food.id,
       replacedEntry?.servings ?? 1,
     )
+    if (result.ok) {
+      recordFoodLogAudit({
+        date,
+        beforeEntries: currentEntries,
+        afterEntries: sortEntries(nextEntries),
+        actor: auditActorFromFood(food),
+      })
+    }
     setLastError(result.ok ? null : result.error)
     if (result.ok && currentEntry?.reviewItemId) {
       void resolveFoodReviewItem(currentEntry.reviewItemId, food.id)
@@ -199,7 +273,8 @@ export function useFoodLog(date: string) {
     nextEntries: FoodLogEntry[],
     usageSourceEntries: FoodLogEntry[] = nextEntries,
   ): ActionResult<void> {
-    const tombstonedEntries = sortEntries(loadFoodLog(date).filter((entry) => entry.deletedAt))
+    const currentEntries = sortEntries(loadFoodLog(date))
+    const tombstonedEntries = sortEntries(currentEntries.filter((entry) => entry.deletedAt))
     const persistedEntries = sortEntries([...nextEntries, ...tombstonedEntries])
     const usageUpdates = usageSourceEntries.flatMap((entry) =>
       entry.foodId
@@ -218,6 +293,14 @@ export function useFoodLog(date: string) {
         ? saveFoodLogWithUsages(date, persistedEntries, usageUpdates)
         : saveFoodLog(date, persistedEntries)
 
+    if (result.ok) {
+      recordFoodLogAudit({
+        date,
+        beforeEntries: currentEntries,
+        afterEntries: persistedEntries,
+        actor: auditActorFromEntries(usageSourceEntries),
+      })
+    }
     setLastError(result.ok ? null : result.error)
     return result
   }

@@ -1,5 +1,5 @@
 import { Barcode, Beaker, Copy, Plus, Search, Settings2, Zap } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { CoachingCard } from '../components/CoachingCard'
 import { DailySummaryBar } from '../components/DailySummaryBar'
 import { DateNavigator } from '../components/DateNavigator'
@@ -31,6 +31,8 @@ import type {
 import { MEAL_TYPES } from '../types'
 import { buildMealTotals, resolveLogEntries, sumNutrition } from '../utils/macros'
 import { recordUiTelemetry } from '../utils/uiTelemetry'
+
+const FoodProofPanel = lazy(() => import('../components/log/FoodProofPanel'))
 
 interface LogScreenProps {
   date: string
@@ -732,6 +734,12 @@ export function LogScreen({
 
         {shouldShowDailyGuardrail ? (
           <DailyGuardrailStrip model={dailyGuardrailModel} onActivateRoute={handleDailyGuardrailRoute} />
+        ) : null}
+
+        {resolvedEntries.length > 0 ? (
+          <Suspense fallback={null}>
+            <FoodProofPanel date={date} entries={entries} trustRepairs={dailyGuardrailModel?.trustRepairs} />
+          </Suspense>
         ) : null}
 
         {cutOsSnapshot &&

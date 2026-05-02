@@ -103,6 +103,9 @@ const scripts = [
   ...(isFeatureEnabled(releaseEnv.VITE_FF_MISTAKE_PROOF_CUT_V1)
     ? ['test:mistake-proof-core']
     : []),
+  'test:food-accuracy',
+  'test:food-audit',
+  'test:food-proof',
   'test:e2e:lane-guard',
   'test:e2e:personal-library-preview',
   'test:e2e:coach-preview',

@@ -21,7 +21,14 @@ import { loadBenchmarkReports, saveBenchmarkReports } from './benchmarkReports'
 import { loadEncryptedSyncQueue, saveEncryptedSyncQueue } from './encryptedSync'
 import { loadFavoriteFoods, saveFavoriteFoods } from './favorites'
 import { loadFoods } from './foods'
+import {
+  appendFoodAuditEvents,
+  loadFoodAuditEvents,
+  saveFoodAuditEvents,
+} from './foodAudit'
 import { loadFoodReviewQueue, saveFoodReviewQueue } from './foodReviewQueue'
+import { buildFoodAuditEvents } from '../../domain/foodAudit'
+import { loadAllFoodLogs } from './logs'
 import {
   loadGarminImportedWeights,
   loadGarminModifierRecords,
@@ -75,6 +82,7 @@ function normalizeBackupAliases(rawBackup: BackupFile): BackupFile {
     progressionDecisions: rawBackup.progressionDecisions ?? [],
     encryptedSyncQueue: rawBackup.encryptedSyncQueue ?? [],
     benchmarkReports: rawBackup.benchmarkReports ?? [],
+    foodAuditEvents: rawBackup.foodAuditEvents ?? [],
   }
 }
 
@@ -120,6 +128,7 @@ function buildRecoveryManifest(backup: BackupFile): RecoveryExportPackManifest {
       workoutSessions: backup.workoutSessions?.length ?? 0,
       progressionDecisions: backup.progressionDecisions?.length ?? 0,
       benchmarkReports: backup.benchmarkReports?.length ?? 0,
+      foodAuditEvents: backup.foodAuditEvents?.length ?? 0,
     },
     media: {
       photoCount: mediaHashes.length,
@@ -141,6 +150,7 @@ function buildCurrentCounts(legacyCounts: BackupPreview['counts']): BackupPrevie
     workoutSessions: loadWorkoutSessions().length,
     progressionDecisions: loadProgressionDecisions().length,
     benchmarkReports: loadBenchmarkReports().length,
+    foodAuditEvents: loadFoodAuditEvents().length,
   }
 }
 
@@ -156,6 +166,7 @@ function buildCountsFromBackup(backup: BackupFile, legacyCounts: BackupPreview['
     workoutSessions: backup.workoutSessions?.length ?? 0,
     progressionDecisions: backup.progressionDecisions?.length ?? 0,
     benchmarkReports: backup.benchmarkReports?.length ?? 0,
+    foodAuditEvents: backup.foodAuditEvents?.length ?? 0,
   }
 }
 
@@ -238,6 +249,7 @@ export function exportBackupFile(): ActionResult<BackupFile> {
     progressionDecisions: loadProgressionDecisions(),
     encryptedSyncQueue: loadEncryptedSyncQueue(),
     benchmarkReports: loadBenchmarkReports(),
+    foodAuditEvents: loadFoodAuditEvents(),
   }
 
   return ok({
@@ -282,6 +294,7 @@ export function validateBackupText(rawText: string): ActionResult<BackupPreview>
       progressionDecisions: normalizedResult.data.progressionDecisions ?? [],
       encryptedSyncQueue: normalizedResult.data.encryptedSyncQueue ?? [],
       benchmarkReports: normalizedResult.data.benchmarkReports ?? [],
+      foodAuditEvents: normalizedResult.data.foodAuditEvents ?? [],
       recoveryManifest: normalizedResult.data.recoveryManifest,
     },
   })
@@ -292,6 +305,7 @@ export async function applyBackupImport(
   mode: 'replace' | 'merge',
 ): Promise<ActionResult<BackupPreview['counts']>> {
   const normalizedBackup = normalizeBackupAliases(backup)
+  const logsBeforeImport = loadAllFoodLogs()
   const legacyResult = applyLegacyBackupImport(normalizedBackup, mode)
   if (!legacyResult.ok) {
     return legacyResult
@@ -324,6 +338,7 @@ export async function applyBackupImport(
   const importedProgressionDecisions = normalizedBackup.progressionDecisions ?? []
   const importedEncryptedSyncQueue = normalizedBackup.encryptedSyncQueue ?? []
   const importedBenchmarkReports = normalizedBackup.benchmarkReports ?? []
+  const importedFoodAuditEvents = normalizedBackup.foodAuditEvents ?? []
 
   const recipeResult = saveRecipes(
     mode === 'replace'
@@ -513,6 +528,21 @@ export async function applyBackupImport(
   )
   if (!benchmarkReportsResult.ok) {
     return benchmarkReportsResult as ActionResult<BackupPreview['counts']>
+  }
+
+  const auditEventsAfterImport = buildFoodAuditEvents({
+    date: 'backup-import',
+    beforeEntries: Object.values(logsBeforeImport).flat(),
+    afterEntries: Object.values(loadAllFoodLogs()).flat(),
+    actor: 'import',
+    operationId: `backup-import:${new Date().toISOString()}`,
+  })
+  const auditResult =
+    mode === 'replace'
+      ? saveFoodAuditEvents([...importedFoodAuditEvents, ...auditEventsAfterImport])
+      : appendFoodAuditEvents([...importedFoodAuditEvents, ...auditEventsAfterImport])
+  if (!auditResult.ok) {
+    return auditResult as ActionResult<BackupPreview['counts']>
   }
 
   return ok(buildCurrentCounts(legacyResult.data))

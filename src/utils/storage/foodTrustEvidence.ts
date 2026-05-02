@@ -1,4 +1,4 @@
-import type { ActionResult, FoodTrustEvidence } from '../../types'
+import type { ActionResult, FoodAccuracyIssue, FoodFieldEvidence, FoodTrustEvidence } from '../../types'
 
 const STORAGE_KEY = 'mt_food_trust_evidence'
 
@@ -74,6 +74,84 @@ function normalizeEvidence(rawValue: unknown): FoodTrustEvidence | null {
     return null
   }
 
+  const fieldEvidence = Array.isArray(raw.fieldEvidence)
+    ? raw.fieldEvidence
+        .map((entry) => {
+          if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+            return null
+          }
+          const field = (entry as Record<string, unknown>).field
+          const source = (entry as Record<string, unknown>).source
+          const value = (entry as Record<string, unknown>).value
+          const fieldConfidence = (entry as Record<string, unknown>).confidence
+          if (
+            !['calories', 'protein', 'carbs', 'fat', 'servingSize', 'servingUnit', 'barcode'].includes(`${field}`) ||
+            !['barcode', 'catalog', 'ocr', 'custom', 'import', 'user_review', 'system'].includes(`${source}`) ||
+            !(typeof value === 'string' || typeof value === 'number') ||
+            typeof fieldConfidence !== 'number' ||
+            !Number.isFinite(fieldConfidence)
+          ) {
+            return null
+          }
+
+          const normalized: FoodFieldEvidence = {
+            field: field as NonNullable<FoodTrustEvidence['fieldEvidence']>[number]['field'],
+            value,
+            source: source as NonNullable<FoodTrustEvidence['fieldEvidence']>[number]['source'],
+            confidence: Math.max(0, Math.min(1, fieldConfidence)),
+          }
+          const reviewedAt = (entry as Record<string, unknown>).reviewedAt
+          if (typeof reviewedAt === 'string' && reviewedAt.trim()) {
+            normalized.reviewedAt = reviewedAt
+          }
+          return normalized
+        })
+        .filter((entry): entry is NonNullable<FoodTrustEvidence['fieldEvidence']>[number] => entry !== null)
+    : undefined
+  const accuracyIssues = Array.isArray(raw.accuracyIssues)
+    ? raw.accuracyIssues
+        .map((entry) => {
+          if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+            return null
+          }
+          const issue = entry as Record<string, unknown>
+          if (
+            ![
+              'missing_macros',
+              'missing_serving_basis',
+              'macro_energy_mismatch',
+              'impossible_value',
+              'suspicious_density',
+              'provider_conflict',
+              'low_confidence',
+              'ocr_serving_mismatch',
+            ].includes(`${issue.code}`) ||
+            !['info', 'review', 'block'].includes(`${issue.severity}`) ||
+            typeof issue.message !== 'string'
+          ) {
+            return null
+          }
+
+          const normalized: FoodAccuracyIssue = {
+            code: issue.code as NonNullable<FoodTrustEvidence['accuracyIssues']>[number]['code'],
+            severity: issue.severity as NonNullable<FoodTrustEvidence['accuracyIssues']>[number]['severity'],
+            message: issue.message,
+            blocksCoachingProof: issue.blocksCoachingProof !== false,
+          }
+          if (['calories', 'protein', 'carbs', 'fat', 'servingSize', 'servingUnit', 'barcode'].includes(`${issue.field}`)) {
+            normalized.field = issue.field as NonNullable<FoodTrustEvidence['accuracyIssues']>[number]['field']
+          }
+          if (typeof issue.expected === 'string') {
+            normalized.expected = issue.expected
+          }
+          if (typeof issue.actual === 'string') {
+            normalized.actual = issue.actual
+          }
+          return normalized
+        })
+        .filter((entry): entry is NonNullable<FoodTrustEvidence['accuracyIssues']>[number] => entry !== null)
+    : undefined
+
   return {
     source: raw.source,
     sourceId,
@@ -93,6 +171,9 @@ function normalizeEvidence(rawValue: unknown): FoodTrustEvidence | null {
         )
       : [],
     reviewedAt: typeof raw.reviewedAt === 'string' && raw.reviewedAt.trim() ? raw.reviewedAt : undefined,
+    fieldEvidence,
+    accuracyIssues,
+    proofEligible: raw.proofEligible === true || raw.status === 'trusted',
   }
 }
 

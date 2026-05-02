@@ -13,6 +13,7 @@ import type {
   TrustRepairReasonCode,
   TrustRepairTask,
 } from '../types'
+import { buildFoodFieldEvidence, validateFoodAccuracy } from './foodAccuracy'
 
 type FoodTrustInput = {
   food?: Pick<
@@ -168,12 +169,21 @@ function inferStatus(input: {
   macroCompleteness: FoodTrustMacroCompleteness
   servingBasis: FoodTrustServingBasis
   providerConflict: boolean
+  hasBlockingAccuracyIssue?: boolean
+  hasReviewAccuracyIssue?: boolean
 }): FoodTrustStatus {
+  if (input.hasBlockingAccuracyIssue) {
+    return 'blocked'
+  }
+
   if (input.macroCompleteness === 'missing' || input.servingBasis === 'missing') {
     return 'blocked'
   }
 
-  if (input.macroCompleteness === 'partial' || input.providerConflict) {
+  if (input.macroCompleteness === 'partial' || input.providerConflict || input.hasReviewAccuracyIssue) {
+    if (input.reviewedAt && !input.providerConflict && !input.hasReviewAccuracyIssue) {
+      return 'trusted'
+    }
     return 'review_required'
   }
 
@@ -214,6 +224,20 @@ export function classifyFoodTrustEvidence(input: FoodTrustInput): FoodTrustEvide
     : 'missing'
   const providerConflict = Boolean(importTrust?.blockingIssues.includes('provider_conflict'))
   const confidence = normalizeConfidence(input.confidence ?? input.food?.trustEvidence?.confidence ?? input.snapshot?.trustEvidence?.confidence)
+  const fieldEvidence = buildFoodFieldEvidence({
+    food: input.food,
+    snapshot: input.snapshot,
+    source,
+    confidence,
+    reviewedAt,
+  })
+  const accuracyIssues = validateFoodAccuracy({
+    food: input.food,
+    snapshot: input.snapshot,
+    source,
+    confidence,
+    reviewedAt,
+  })
   const status = inferStatus({
     confidence,
     reviewedAt,
@@ -221,6 +245,10 @@ export function classifyFoodTrustEvidence(input: FoodTrustInput): FoodTrustEvide
     macroCompleteness,
     servingBasis,
     providerConflict,
+    hasBlockingAccuracyIssue: accuracyIssues.some((issue) => issue.severity === 'block'),
+    hasReviewAccuracyIssue: accuracyIssues.some(
+      (issue) => issue.severity === 'review' && issue.blocksCoachingProof,
+    ),
   })
 
   return {
@@ -238,6 +266,9 @@ export function classifyFoodTrustEvidence(input: FoodTrustInput): FoodTrustEvide
       providerConflict,
     }),
     reviewedAt,
+    fieldEvidence,
+    accuracyIssues,
+    proofEligible: status === 'trusted' && !accuracyIssues.some((issue) => issue.blocksCoachingProof),
   }
 }
 
@@ -246,6 +277,14 @@ export function isFoodTrustedForCoaching(evidence: FoodTrustEvidence | null | un
 }
 
 function repairReasonFromEvidence(evidence: FoodTrustEvidence): TrustRepairReasonCode {
+  if (evidence.accuracyIssues?.some((issue) => issue.code === 'impossible_value')) {
+    return 'impossible_value'
+  }
+
+  if (evidence.accuracyIssues?.some((issue) => issue.code === 'macro_energy_mismatch')) {
+    return 'missing_macros'
+  }
+
   if (evidence.source === 'ai_photo' && !evidence.reviewedAt) {
     return 'unreviewed_ai'
   }
@@ -382,6 +421,11 @@ export function getFoodTrustLabel(evidence: FoodTrustEvidence): string {
 export function getFoodTrustDetail(evidence: FoodTrustEvidence): string {
   if (evidence.status === 'trusted') {
     return evidence.reviewedAt ? 'Reviewed and coaching-grade' : 'Complete macros and serving basis'
+  }
+
+  const blockingIssue = evidence.accuracyIssues?.find((issue) => issue.blocksCoachingProof)
+  if (blockingIssue) {
+    return blockingIssue.message
   }
 
   if (evidence.reasons.includes('missing_macros')) {
