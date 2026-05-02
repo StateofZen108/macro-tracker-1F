@@ -606,6 +606,11 @@ export type DiagnosticsEventType =
   | 'recovery.issue_visible'
   | 'recovery.partial_save_blocked'
   | 'release.daily_reliability_verified'
+  | 'biometric.sanity_checked'
+  | 'biometric.outlier_quarantined'
+  | 'biometric.proof_excluded'
+  | 'biometric.import_guarded'
+  | 'biometric.restore_quarantined'
 export type CoachProposalType =
   | 'applyCalorieTarget'
   | 'applyMacroTargets'
@@ -646,6 +651,37 @@ export type ScaleLieVerdict =
   | 'confounded_stall'
   | 'logging_noise'
   | 'insufficient_proof'
+
+export type BiometricKind = 'weight' | 'waist' | 'hips' | 'chest' | 'thigh' | 'arm' | 'body_fat'
+export type BiometricSource =
+  | 'manual_entry'
+  | 'storage_load'
+  | 'history_import'
+  | 'garmin_import'
+  | 'backup_restore'
+  | 'body_progress'
+export type BiometricSanityStatus = 'valid' | 'outlier_review_required' | 'blocked_invalid'
+export type BiometricIssueCode =
+  | 'non_finite'
+  | 'negative_or_zero'
+  | 'outside_absolute_range'
+  | 'unit_invalid'
+  | 'day_to_day_jump'
+  | 'body_metric_jump'
+  | 'missing_date'
+
+export interface BiometricSanityIssue {
+  code: BiometricIssueCode
+  message: string
+}
+
+export interface BiometricSanityResult {
+  status: BiometricSanityStatus
+  issues: BiometricSanityIssue[]
+  canonicalValue: number
+  canonicalUnit: 'kg' | 'lb' | 'cm' | '%'
+  proofEligible: boolean
+}
 export type TrainingContractVerdict =
   | 'preserved'
   | 'at_risk'
@@ -1121,6 +1157,10 @@ export interface WeightEntry {
   createdAt: string
   updatedAt?: string
   deletedAt?: string
+  sanityStatus?: BiometricSanityStatus
+  sanityIssues?: BiometricSanityIssue[]
+  proofEligible?: boolean
+  reviewedAt?: string
 }
 
 export interface NutrientGoalSetting {
@@ -1457,6 +1497,10 @@ export interface GarminImportedWeight {
   importedAt: string
   state: GarminImportedWeightState
   conflictLocalWeightId?: string
+  sanityStatus?: BiometricSanityStatus
+  sanityIssues?: BiometricSanityIssue[]
+  proofEligible?: boolean
+  reviewedAt?: string
 }
 
 export interface GarminModifierRecord {
@@ -1638,6 +1682,10 @@ export interface BodyMetricValue {
   label: string
   unit: string
   value: number
+  sanityStatus?: BiometricSanityStatus
+  sanityIssues?: BiometricSanityIssue[]
+  proofEligible?: boolean
+  reviewedAt?: string
 }
 
 export interface ProgressPhotoEntry {
@@ -2346,6 +2394,8 @@ export interface BackupPreview {
     progressionDecisions: number
     benchmarkReports: number
     foodAuditEvents: number
+    biometricQuarantined?: number
+    biometricBlocked?: number
   }
 }
 
@@ -2371,6 +2421,8 @@ export interface HistoryImportPreview {
     skippedRows: number
     supportedFiles: number
     unsupportedFiles: number
+    quarantinedWeights?: number
+    blockedWeights?: number
   }
   dateRange?: {
     start: string

@@ -143,4 +143,24 @@ describe('daily mistake-proof guardrails', () => {
     expect(model.readiness).toBe('blocked')
     expect(model.primaryGuardrail?.id).toBe('surface-mismatch:2026-04-29')
   })
+
+  it('blocks escalation when today has a quarantined weigh-in', () => {
+    const model = buildDailyMistakeProofModel({
+      date: '2026-04-29',
+      surface: surface(),
+      entries: [logEntry()],
+      weights: [
+        {
+          ...weight(),
+          sanityStatus: 'blocked_invalid',
+          proofEligible: false,
+          sanityIssues: [{ code: 'outside_absolute_range', message: 'Weight must be between 50-800 lb.' }],
+        },
+      ],
+    })
+
+    expect(model.readiness).toBe('blocked')
+    expect(model.primaryGuardrail?.id).toBe('weight-quarantined:2026-04-29')
+    expect(model.primaryGuardrail?.cta.route).toBe('weight')
+  })
 })

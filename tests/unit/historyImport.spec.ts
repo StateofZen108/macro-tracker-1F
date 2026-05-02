@@ -89,6 +89,28 @@ describe('history import', () => {
     expect(result.data.warnings.some((warning) => warning.code === 'historyImportIgnoredColumns')).toBe(true)
   })
 
+  it('excludes impossible imported weights from history import proof', async () => {
+    const { previewHistoryImport } = await import('../../src/utils/storage/historyImport')
+    const csv = [
+      'Date,Weight,Unit,Logged At',
+      '2026-04-10,200,lb,2026-04-10 07:00',
+      '2026-04-11,99999,lb,2026-04-11 07:00',
+    ].join('\n')
+
+    const result = await previewHistoryImport('macrofactor', [
+      { name: 'bad-weights.csv', text: csv },
+    ])
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) {
+      return
+    }
+
+    expect(result.data.payload.weights).toHaveLength(1)
+    expect(result.data.counts.blockedWeights).toBe(1)
+    expect(result.data.warnings.some((warning) => warning.code === 'historyImportBiometricGuarded')).toBe(true)
+  })
+
   it('keeps repeated applies idempotent and updates lastImportAt', async () => {
     const { initializeStorage } = await import('../../src/utils/storage/schema')
     const { previewHistoryImport, applyHistoryImport } = await import('../../src/utils/storage/historyImport')

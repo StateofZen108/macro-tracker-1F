@@ -58,6 +58,7 @@ import {
   mergeSearchAliases,
   normalizeRemoteReferences,
 } from '../../../domain/foods/personalLibrary'
+import { sanitizeWeights } from '../../../domain/biometricSanity'
 import {
   queueActivitySyncMutations,
   queueDayMetaSyncMutations,
@@ -1090,7 +1091,10 @@ function syncCoreDomainsFromIndexedDb(
 ): void {
   storageCache.foods = sortFoodsByName(snapshot.foods.map(normalizeFoodRecord))
   storageCache.settings = normalizeSettings(snapshot.settings)
-  storageCache.weights = dedupeWeightsByDate(snapshot.weights.map(normalizeWeightEntry))
+  storageCache.weights = sanitizeWeights(
+    dedupeWeightsByDate(snapshot.weights.map(normalizeWeightEntry)),
+    { source: 'storage_load' },
+  ).weights
   storageCache.mealTemplates = sortTemplatesByUsage(snapshot.mealTemplates.map(normalizeMealTemplate))
   storageCache.wellness = sortWellnessEntries(snapshot.wellness.map(normalizeWellnessEntry))
   storageCache.recoveryCheckIns = sortRecoveryCheckIns(
@@ -2274,6 +2278,12 @@ function normalizeWeightEntry(entry: WeightEntry): WeightEntry {
     unit: entry.unit === 'kg' ? 'kg' : 'lb',
     updatedAt: entry.updatedAt?.trim() || undefined,
     deletedAt: entry.deletedAt?.trim() || undefined,
+    sanityStatus: entry.sanityStatus,
+    sanityIssues: entry.sanityIssues?.length ? entry.sanityIssues : undefined,
+    proofEligible:
+      entry.proofEligible ??
+      (entry.sanityStatus !== 'blocked_invalid' && entry.sanityStatus !== 'outlier_review_required'),
+    reviewedAt: entry.reviewedAt?.trim() || undefined,
   }
 }
 
@@ -3210,16 +3220,24 @@ function parseWeightEntryStrict(rawWeight: unknown, index: number): ActionResult
     return fail('invalidBackup', `Backup weight #${index + 1} is incomplete.`)
   }
 
-  return ok({
-    id,
-    date,
-    weight,
-    unit,
-    createdAt,
-    updatedAt,
-    deletedAt,
-  })
-}
+    return ok({
+      id,
+      date,
+      weight,
+      unit,
+      createdAt,
+      updatedAt,
+      deletedAt,
+      sanityStatus:
+        rawWeight.sanityStatus === 'valid' ||
+        rawWeight.sanityStatus === 'outlier_review_required' ||
+        rawWeight.sanityStatus === 'blocked_invalid'
+          ? rawWeight.sanityStatus
+          : undefined,
+      proofEligible: typeof rawWeight.proofEligible === 'boolean' ? rawWeight.proofEligible : undefined,
+      reviewedAt: readOptionalString(rawWeight.reviewedAt),
+    })
+  }
 
 function parseDayMetaStrict(rawEntry: unknown, index: number): ActionResult<DayMeta> {
   if (!isRecord(rawEntry)) {
@@ -3939,6 +3957,14 @@ function parseWeights(rawWeights: unknown, fallbackUnit: WeightUnit): WeightEntr
         createdAt,
         updatedAt,
         deletedAt,
+        sanityStatus:
+          rawWeight.sanityStatus === 'valid' ||
+          rawWeight.sanityStatus === 'outlier_review_required' ||
+          rawWeight.sanityStatus === 'blocked_invalid'
+            ? rawWeight.sanityStatus
+            : undefined,
+        proofEligible: typeof rawWeight.proofEligible === 'boolean' ? rawWeight.proofEligible : undefined,
+        reviewedAt: readOptionalString(rawWeight.reviewedAt),
       }),
     ]
   })
@@ -3952,7 +3978,28 @@ function parseWeights(rawWeights: unknown, fallbackUnit: WeightUnit): WeightEntr
     )
   }
 
-  return dedupedWeights
+  const sanitized = sanitizeWeights(dedupedWeights, { source: 'storage_load' })
+  if (sanitized.blockedCount > 0 || sanitized.quarantinedCount > 0) {
+    recordIssue(
+      'weights',
+      STORAGE_KEYS.weights,
+      `${sanitized.blockedCount + sanitized.quarantinedCount} weight entr${
+        sanitized.blockedCount + sanitized.quarantinedCount === 1 ? 'y was' : 'ies were'
+      } quarantined from coaching proof by biometric sanity checks.`,
+    )
+    void recordDiagnosticsEvent({
+      eventType: 'biometric.restore_quarantined',
+      severity: 'warning',
+      scope: 'storage',
+      message: 'Stored weight history was revalidated and quarantined from proof where needed.',
+      payload: {
+        blockedCount: sanitized.blockedCount,
+        quarantinedCount: sanitized.quarantinedCount,
+      },
+    })
+  }
+
+  return sanitized.weights
 }
 
 function parseDayMeta(rawDayMeta: unknown): DayMeta[] {
@@ -4415,7 +4462,7 @@ function buildNormalizedState(
     foods: sortFoodsByName(foods.map(normalizeFoodRecord)),
     settings: normalizeSettings(settings),
     uiPrefs: normalizeUiPrefs(uiPrefs),
-    weights: dedupeWeightsByDate(weights),
+      weights: sanitizeWeights(dedupeWeightsByDate(weights), { source: 'backup_restore' }).weights,
     mealTemplates: sortTemplatesByUsage(mealTemplates.map(normalizeMealTemplate)),
     dayMeta: normalizeFastingDayConflicts(dayMeta.map(normalizeDayMeta), normalizedLogs),
     activityLog: sortActivityLog(activityLog.map(normalizeActivityEntry)),
@@ -5878,7 +5925,9 @@ export function saveWeights(weights: WeightEntry[]): ActionResult<void> {
   ensureStorageInitialized()
 
   const previousWeights = storageCache.weights
-  const nextWeights = dedupeWeightsByDate(weights.map(normalizeWeightEntry))
+  const nextWeights = sanitizeWeights(dedupeWeightsByDate(weights.map(normalizeWeightEntry)), {
+    source: 'manual_entry',
+  }).weights
   const result = directWriteJson(STORAGE_KEYS.weights, nextWeights)
   if (!result.ok) {
     return result

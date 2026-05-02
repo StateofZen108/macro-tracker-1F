@@ -482,7 +482,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
   )
   const garmin = useGarmin(sync.session)
   const { uiPrefs, updateUiPrefs } = useUiPrefs()
-  const { weights, saveWeight, deleteWeight } = useWeights()
+  const { weights, proofEligibleWeights, saveWeight, deleteWeight } = useWeights()
   const bodyProgress = useBodyProgress()
   const { dayMeta, getDayMeta, getDayStatus, setDayStatus, toggleDayMarker } = useDayMeta()
   const {
@@ -689,7 +689,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
       workouts.snapshot.strengthRetention,
     ],
   )
-  const coachingInsight = useCoaching(coachingSettings, weights, recoveryIssues.length)
+  const coachingInsight = useCoaching(coachingSettings, proofEligibleWeights, recoveryIssues.length)
   const {
     currentCheckIn,
     canApplyTargets: canApplyCheckInTargets,
@@ -701,7 +701,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     markOverridden,
   } = useWeeklyCheckIns(
     coachingSettings,
-    weights,
+    proofEligibleWeights,
     recoveryIssues.length,
     weeklyCheckInAdaptiveInputs,
   )
@@ -1614,7 +1614,8 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     enabled: FEATURE_FLAGS.paidCutOsV1,
     date: todayDateKey,
     logsByDate: allFoodLogs,
-    weights,
+    weights: proofEligibleWeights,
+    allWeights: weights,
     currentCheckIn: visibleCurrentCheckIn,
     checkInHistory: visibleCheckInHistory,
     coachingDecisionHistory: visibleCoachingDecisionHistory,
@@ -1928,7 +1929,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
         galleryMode: settings.bodyProgressFocusState?.galleryMode ?? 'latest_vs_compare',
         focusedMetricKey: settings.bodyProgressFocusState?.focusedMetricKey,
         scaleContext: buildScaleContextFromCutDayPlan(latestSnapshotCutDayPlan),
-        weights,
+        weights: proofEligibleWeights,
       }) ?? undefined
     )
   }, [
@@ -1937,7 +1938,7 @@ function AppContent({ bootHealthy }: { bootHealthy: boolean }) {
     normalizedDietPhases,
     settings.bodyProgressFocusState,
     settings.phaseMealTemplates,
-    weights,
+    proofEligibleWeights,
   ])
   const morningPhoneSnapshot = useMemo<MorningPhoneSnapshot | null>(() => {
     const repeatLog: RepeatLogRecommendation | null =

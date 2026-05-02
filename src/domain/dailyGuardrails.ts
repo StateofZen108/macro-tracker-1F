@@ -12,6 +12,7 @@ import type {
   TrustRepairTask,
   WeightEntry,
 } from '../types'
+import { isWeightProofEligible } from './biometricSanity'
 
 function routeForActionTarget(target: CutOsActionTarget): DailyGuardrailRoute {
   switch (target) {
@@ -53,7 +54,11 @@ function repairReasonLabel(task: TrustRepairTask): string {
 }
 
 function hasWeightForDate(weights: readonly WeightEntry[], date: string): boolean {
-  return weights.some((entry) => entry.date === date && !entry.deletedAt)
+  return weights.some((entry) => entry.date === date && isWeightProofEligible(entry))
+}
+
+function findQuarantinedWeightForDate(weights: readonly WeightEntry[], date: string): WeightEntry | null {
+  return weights.find((entry) => entry.date === date && !entry.deletedAt && !isWeightProofEligible(entry)) ?? null
 }
 
 function buildDefaultConsistency(surface: CutOsSurfaceModel | null): CommandConsistencyReport {
@@ -146,7 +151,21 @@ export function buildDailyMistakeProofModel(input: {
     })
   }
 
-  if (input.surface && !hasWeightForDate(input.weights ?? [], input.date)) {
+  const quarantinedWeight = findQuarantinedWeightForDate(input.weights ?? [], input.date)
+  if (input.surface && quarantinedWeight) {
+    guardrails.push({
+      id: `weight-quarantined:${input.date}`,
+      date: input.date,
+      severity: 'block',
+      source: 'weight',
+      title: 'Review impossible weigh-in',
+      reason:
+        quarantinedWeight.sanityIssues?.[0]?.message ??
+        'The latest weigh-in is excluded from proof by biometric sanity checks.',
+      cta: { label: 'Fix weigh-in', route: 'weight' },
+      proofIds: input.surface.command.proofIds.filter((proofId) => proofId.includes('scale')),
+    })
+  } else if (input.surface && !hasWeightForDate(input.weights ?? [], input.date)) {
     guardrails.push({
       id: `weight-stale:${input.date}`,
       date: input.date,

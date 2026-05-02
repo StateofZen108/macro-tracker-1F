@@ -18,6 +18,7 @@ import {
   getRangeCutoff,
   sortDatesAscending,
 } from './dates'
+import { isWeightProofEligible } from '../domain/biometricSanity'
 
 type MacroSource = Pick<Food | FoodSnapshot, 'calories' | 'protein' | 'carbs' | 'fat' | 'fiber'>
 
@@ -137,7 +138,7 @@ export function buildWeightChartPoints(
   range: WeightRange,
   displayUnit: WeightUnit,
 ): WeightChartPoint[] {
-  const ascendingWeights = sortDatesAscending(weights)
+  const ascendingWeights = sortDatesAscending(weights.filter(isWeightProofEligible))
   if (!ascendingWeights.length) {
     return []
   }

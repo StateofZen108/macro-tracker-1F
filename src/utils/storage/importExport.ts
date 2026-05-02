@@ -28,6 +28,7 @@ import {
 } from './foodAudit'
 import { loadFoodReviewQueue, saveFoodReviewQueue } from './foodReviewQueue'
 import { buildFoodAuditEvents } from '../../domain/foodAudit'
+import { sanitizeBodyProgressSnapshot, sanitizeWeights } from '../../domain/biometricSanity'
 import { loadAllFoodLogs } from './logs'
 import {
   loadGarminImportedWeights,
@@ -155,6 +156,20 @@ function buildCurrentCounts(legacyCounts: BackupPreview['counts']): BackupPrevie
 }
 
 function buildCountsFromBackup(backup: BackupFile, legacyCounts: BackupPreview['counts']): BackupPreview['counts'] {
+  const weightSanity = sanitizeWeights(backup.weights ?? [], { source: 'backup_restore' })
+  const bodyMetricCounts = (backup.bodyProgressSnapshots ?? []).reduce(
+    (counts, snapshot) => {
+      const result = sanitizeBodyProgressSnapshot(snapshot, {
+        source: 'backup_restore',
+        existingSnapshots: backup.bodyProgressSnapshots ?? [],
+      })
+      return {
+        quarantined: counts.quarantined + result.quarantinedCount,
+        blocked: counts.blocked + result.blockedCount,
+      }
+    },
+    { quarantined: 0, blocked: 0 },
+  )
   return {
     ...legacyCounts,
     foodReviewQueue: backup.foodReviewQueue?.length ?? 0,
@@ -167,6 +182,8 @@ function buildCountsFromBackup(backup: BackupFile, legacyCounts: BackupPreview['
     progressionDecisions: backup.progressionDecisions?.length ?? 0,
     benchmarkReports: backup.benchmarkReports?.length ?? 0,
     foodAuditEvents: backup.foodAuditEvents?.length ?? 0,
+    biometricQuarantined: weightSanity.quarantinedCount + bodyMetricCounts.quarantined,
+    biometricBlocked: weightSanity.blockedCount + bodyMetricCounts.blocked,
   }
 }
 

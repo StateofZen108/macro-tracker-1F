@@ -15,6 +15,7 @@ Cut OS turns the app into one daily cut command with proof, blockers, and a next
 | Settings focus request state | `src/app/useAppShell.ts`, `src/screens/SettingsScreen.tsx` |
 | Proof-bound Coach answers | `src/domain/coachProofAnswer.ts`, `src/hooks/useCoach.ts`, `src/app/useCoachController.ts` |
 | Daily mistake-proof guardrails | `src/domain/dailyGuardrails.ts`, `src/utils/storage/dailyGuardrails.ts`, `src/components/cut-os/DailyGuardrailStrip.tsx` |
+| Biometric sanity and quarantine | `src/domain/biometricSanity.ts`, `src/hooks/useWeights.ts`, `src/utils/storage/internal/runtime.ts`, `src/utils/storage/bodyProgress.ts` |
 | Surface consistency guard | `src/domain/surfaceConsistency.ts`, `src/hooks/useCutOsSurface.ts` |
 | Food trust repair tasks | `src/domain/foodTrust.ts`, `src/components/FoodLogItem.tsx`, `src/components/MealSection.tsx` |
 | Activation renderer | `src/components/cut-os/CutOsActivationCard.tsx` |
@@ -65,6 +66,8 @@ Cut OS turns the app into one daily cut command with proof, blockers, and a next
 | `coach_proof_failed` | Thread write fails | User retries | Answering | Previous thread remains unchanged |
 | `daily_guardrails_ready` | Shared model computes with no blockers | New repair, stale data, or mismatch appears | Actionable or blocked | Latest local snapshot wins |
 | `daily_guardrails_blocked` | Food trust, stale proof, recovery, or surface mismatch blocks the day | User resolves the blocker | Recompute into ready/actionable | Deleted blocker beats stale command |
+| `biometric_outlier_review` | A plausible but extreme weigh-in/body metric enters storage | User corrects or confirms the value | Valid proof or blocked proof | Quarantine wins over timestamps/import source |
+| `biometric_blocked` | Impossible biometric value enters input, storage, import, or restore | Corrected value saved | Valid proof | Blocked value never feeds Cut OS or Coach |
 | `trust_repair_open` | Food trust issue is detected | User reviews, fixes, or dismisses | Resolved or dismissed | User review wins over provider update |
 | `surface_consistency_mismatch` | Dashboard, Log, Weight, or Coach disagree | Shared model recomputes | Verified | Mismatch hides unsafe CTAs |
 | `sheet_closed` | Sheet unmounted | Open request | Open | Latest open wins |
@@ -83,6 +86,7 @@ npm run test:history-import:corpus
 npm run test:daily-guardrails
 npm run test:mistake-proof-log
 npm run test:surface-consistency
+npm run test:biometric-release
 npm run test:unit
 npx playwright test tests/e2e --config=playwright.config.ts
 npm run test:release
@@ -90,3 +94,9 @@ npm run test:release
 
 Release requires 0 lint warnings, 0 Vite chunk warnings, passing bundle budgets, passing unit tests, and passing Playwright E2E.
 Paid release signoff also requires the physical-device evidence in `docs/device-qa-runbook.md` and release hygiene: unknown untracked source files must be staged, ignored, or explicitly documented before handoff.
+
+## Biometric Quarantine Policy
+
+Cut OS treats weight and body metrics as proof only after `src/domain/biometricSanity.ts` marks them `valid`. Manual input, storage load, MacroFactor/Renpho import, Garmin import, backup restore, and body-progress saves all revalidate the same absolute ranges and outlier rules.
+
+Impossible values such as `99999 lb`, non-finite values, zero/negative values, invalid units, or impossible body metrics are `blocked_invalid` and `proofEligible=false`. Plausible extreme jumps are `outlier_review_required` and remain visible for audit, but Weight trends, weekly check-ins, Coach, and Cut OS ignore them until corrected or explicitly reviewed.

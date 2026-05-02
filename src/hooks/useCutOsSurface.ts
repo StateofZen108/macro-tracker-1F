@@ -28,6 +28,7 @@ interface UseCutOsSurfaceInput {
   date: string
   logsByDate: Record<string, FoodLogEntry[]>
   weights: WeightEntry[]
+  allWeights?: WeightEntry[]
   currentCheckIn: CheckInRecord | null
   checkInHistory?: CheckInRecord[]
   coachingDecisionHistory?: CoachingDecisionRecord[]
@@ -78,7 +79,7 @@ export function useCutOsSurface(input: UseCutOsSurfaceInput): CutOsSurfaceModel 
       surface: baseSurface,
       entries: input.logsByDate[input.date] ?? [],
       foodReviewQueue: input.foodReviewQueue,
-      weights: input.weights,
+      weights: input.allWeights ?? input.weights,
       surfaceConsistency,
     })
 

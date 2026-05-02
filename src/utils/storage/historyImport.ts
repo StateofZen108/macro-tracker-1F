@@ -11,6 +11,7 @@ import type {
   WeightEntry,
 } from '../../types'
 import { buildMacrofactorReplayReport } from '../../domain/cutOs'
+import { sanitizeWeights } from '../../domain/biometricSanity'
 import { formatDateKey } from '../dates'
 import { parseCsv } from '../import/csv'
 import { loadAllFoodLogs, saveFoodLog } from './logs'
@@ -636,10 +637,14 @@ export async function previewHistoryImport(
     return fail('unsupportedHistoryImport', 'No supported files were detected in the selected import set.')
   }
 
+  const sanitizedWeights = sanitizeWeights(dedupeWeights(parsedWeightRows), {
+    source: 'history_import',
+    blockInvalid: true,
+  })
   const payload: ParsedHistoryPayload = {
     provider,
     foodLogEntries: compactFoodRows(parsedFoodRows),
-    weights: dedupeWeights(parsedWeightRows),
+    weights: sanitizedWeights.weights,
   }
 
   if (payload.foodLogEntries.length === 0 && payload.weights.length === 0) {
@@ -650,6 +655,14 @@ export async function previewHistoryImport(
     warnings.push({
       code: 'historyImportSkippedRows',
       message: `${skippedRows} row${skippedRows === 1 ? '' : 's'} were skipped because required fields were missing or invalid.`,
+    })
+  }
+  if (sanitizedWeights.blockedCount > 0 || sanitizedWeights.quarantinedCount > 0) {
+    warnings.push({
+      code: 'historyImportBiometricGuarded',
+      message: `${sanitizedWeights.blockedCount + sanitizedWeights.quarantinedCount} weight row${
+        sanitizedWeights.blockedCount + sanitizedWeights.quarantinedCount === 1 ? '' : 's'
+      } were excluded or quarantined by biometric sanity checks.`,
     })
   }
 
@@ -663,6 +676,8 @@ export async function previewHistoryImport(
       skippedRows,
       supportedFiles,
       unsupportedFiles,
+      quarantinedWeights: sanitizedWeights.quarantinedCount,
+      blockedWeights: sanitizedWeights.blockedCount,
     },
     dateRange: summarizeDateRange(payload),
     warnings,

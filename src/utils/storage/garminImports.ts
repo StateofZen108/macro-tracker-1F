@@ -7,6 +7,7 @@ import type {
   WeightUnit,
 } from '../../types'
 import { FEATURE_FLAGS } from '../../config/featureFlags'
+import { isWeightProofEligible, validateWeightValue } from '../../domain/biometricSanity'
 import { enqueueEncryptedSyncEnvelope } from './encryptedSync'
 
 const STORAGE_KEYS = {
@@ -61,6 +62,25 @@ function parseWeightUnit(value: unknown): WeightUnit | null {
   return value === 'lb' || value === 'kg' ? value : null
 }
 
+function applyGarminWeightSanity(
+  record: GarminImportedWeight,
+  localWeights: readonly WeightEntry[],
+): GarminImportedWeight {
+  const sanity = validateWeightValue({
+    date: record.date,
+    weight: record.weight,
+    unit: record.unit,
+    source: 'garmin_import',
+    existingWeights: localWeights.filter(isWeightProofEligible),
+  })
+  return {
+    ...record,
+    sanityStatus: sanity.status,
+    sanityIssues: sanity.issues.length ? sanity.issues : undefined,
+    proofEligible: sanity.proofEligible,
+  }
+}
+
 function normalizeImportedWeight(rawValue: unknown): GarminImportedWeight | null {
   if (!isRecord(rawValue)) {
     return null
@@ -98,6 +118,14 @@ function normalizeImportedWeight(rawValue: unknown): GarminImportedWeight | null
       typeof rawValue.conflictLocalWeightId === 'string' && rawValue.conflictLocalWeightId.trim()
         ? rawValue.conflictLocalWeightId.trim()
         : undefined,
+    sanityStatus:
+      rawValue.sanityStatus === 'valid' ||
+      rawValue.sanityStatus === 'outlier_review_required' ||
+      rawValue.sanityStatus === 'blocked_invalid'
+        ? rawValue.sanityStatus
+        : undefined,
+    proofEligible: typeof rawValue.proofEligible === 'boolean' ? rawValue.proofEligible : undefined,
+    reviewedAt: typeof rawValue.reviewedAt === 'string' && rawValue.reviewedAt.trim() ? rawValue.reviewedAt.trim() : undefined,
   }
 }
 
@@ -363,7 +391,7 @@ export function mergeGarminImportedData(input: {
     (input.importedWeights ?? []).map((record) => {
       const localWeight = input.localWeights.find((entry) => !entry.deletedAt && entry.date === record.date)
 
-      return {
+      return applyGarminWeightSanity({
         id: `garmin-weight:${record.date}`,
         provider: 'garmin' as const,
         date: record.date,
@@ -373,7 +401,7 @@ export function mergeGarminImportedData(input: {
         importedAt: now,
         state: localWeight ? 'ignored_conflict' : 'imported',
         conflictLocalWeightId: localWeight?.id,
-      } satisfies GarminImportedWeight
+      } satisfies GarminImportedWeight, input.localWeights)
     }),
   )
 

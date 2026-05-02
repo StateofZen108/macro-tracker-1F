@@ -22,6 +22,7 @@ import type {
   WorkoutDashboardSnapshot,
 } from '../types'
 import { addDays, enumerateDateKeys, parseDateKey } from '../utils/dates'
+import { isWeightProofEligible } from './biometricSanity'
 import { classifyFoodTrustEvidence } from './foodTrust'
 
 const MINIMUM_CALENDAR_DAYS = 14
@@ -202,7 +203,7 @@ export function buildMinimumHistoryStatus(input: {
     .filter(([date, entries]) => date <= input.date && entries.some((entry) => !entry.deletedAt))
     .map(([date]) => date)
   const weighInDates = input.weights
-    .filter((entry) => !entry.deletedAt && entry.date <= input.date)
+    .filter((entry) => isWeightProofEligible(entry) && entry.date <= input.date)
     .map((entry) => entry.date)
   const allDates = uniqueSorted([...loggedDates, ...weighInDates])
   const calendarDays = allDates.length ? dateSpanDays(allDates[0], input.date) : 0

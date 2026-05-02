@@ -1,5 +1,6 @@
 import { useMemo, useState, useSyncExternalStore } from 'react'
 import type { ActionResult, AppActionError, WeightUnit } from '../types'
+import { applyWeightSanity, firstSanityMessage, isWeightProofEligible, validateWeightValue } from '../domain/biometricSanity'
 import { sortDatesDescending } from '../utils/dates'
 import { isSyncEnabled } from '../utils/sync/core'
 import { subscribeToStorage } from '../utils/storage/core'
@@ -11,20 +12,63 @@ export function useWeights() {
     () => sortDatesDescending(storedWeights.filter((entry) => !entry.deletedAt)),
     [storedWeights],
   )
+  const proofEligibleWeights = useMemo(
+    () => sortDatesDescending(storedWeights.filter(isWeightProofEligible)),
+    [storedWeights],
+  )
   const [lastError, setLastError] = useState<AppActionError | null>(null)
 
   function saveWeight(date: string, weight: number, unit: WeightUnit): ActionResult<void> {
     const currentWeights = sortDatesDescending(loadWeights())
     const existingEntry = currentWeights.find((entry) => entry.date === date)
     const now = new Date().toISOString()
+    const sanity = validateWeightValue({
+      date,
+      weight,
+      unit,
+      source: 'manual_entry',
+      existingWeights: currentWeights,
+      excludeId: existingEntry?.id,
+    })
+
+    if (sanity.status === 'blocked_invalid') {
+      const error = {
+        code: 'invalidBiometric',
+        message: firstSanityMessage(sanity),
+      } satisfies AppActionError
+      setLastError(error)
+      return { ok: false, error }
+    }
+
+    const sanityFields = applyWeightSanity(
+      {
+        id: existingEntry?.id ?? crypto.randomUUID(),
+        date,
+        weight,
+        unit,
+        createdAt: existingEntry?.createdAt ?? now,
+        updatedAt: now,
+      },
+      {
+        source: 'manual_entry',
+        existingWeights: currentWeights,
+      },
+    )
+    if (!sanityFields) {
+      const error = {
+        code: 'invalidBiometric',
+        message: 'This weigh-in is outside safe biometric ranges.',
+      } satisfies AppActionError
+      setLastError(error)
+      return { ok: false, error }
+    }
     const nextWeights = sortDatesDescending(
       existingEntry
         ? currentWeights.map((entry) =>
             entry.date === date
               ? {
                   ...entry,
-                  weight,
-                  unit,
+                  ...sanityFields,
                   updatedAt: now,
                   deletedAt: undefined,
                 }
@@ -32,14 +76,7 @@ export function useWeights() {
           )
         : [
             ...currentWeights,
-            {
-              id: crypto.randomUUID(),
-              date,
-              weight,
-              unit,
-              createdAt: now,
-              updatedAt: now,
-            },
+            sanityFields,
           ],
     )
 
@@ -75,6 +112,7 @@ export function useWeights() {
 
   return {
     weights,
+    proofEligibleWeights,
     saveWeight,
     deleteWeight,
     lastError,

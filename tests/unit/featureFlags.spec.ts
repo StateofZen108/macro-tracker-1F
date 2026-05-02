@@ -39,6 +39,10 @@ describe('feature flags', () => {
       encryptedSyncV2: false,
       coachEvidenceAI: false,
       benchmarkSuiteV1: false,
+      biometricSanityV1: false,
+      biometricOutlierQuarantineV1: false,
+      biometricImportGuardV1: false,
+      biometricProofExclusionV1: false,
       recoveryPacksV1: false,
       dashboardV1: false,
       coachModulesV1: false,
@@ -148,6 +152,10 @@ describe('feature flags', () => {
       encryptedSyncV2: true,
       coachEvidenceAI: true,
       benchmarkSuiteV1: true,
+      biometricSanityV1: true,
+      biometricOutlierQuarantineV1: true,
+      biometricImportGuardV1: true,
+      biometricProofExclusionV1: true,
       recoveryPacksV1: true,
       dashboardV1: true,
       coachModulesV1: true,
@@ -276,6 +284,10 @@ describe('feature flags', () => {
       encryptedSyncV2: false,
       coachEvidenceAI: false,
       benchmarkSuiteV1: false,
+      biometricSanityV1: false,
+      biometricOutlierQuarantineV1: false,
+      biometricImportGuardV1: false,
+      biometricProofExclusionV1: false,
       recoveryPacksV1: false,
       dashboardV1: false,
       coachModulesV1: false,
@@ -429,6 +441,9 @@ describe('feature flags', () => {
     expect(flags.foodTrustRepairV1).toBe(false)
     expect(flags.coachMistakeProofV1).toBe(false)
     expect(flags.surfaceConsistencyGuardV1).toBe(false)
+    expect(flags.biometricOutlierQuarantineV1).toBe(false)
+    expect(flags.biometricImportGuardV1).toBe(false)
+    expect(flags.biometricProofExclusionV1).toBe(false)
   })
 
   it('enables the paid Cut OS preview preset in production while keeping AI meal photo retired', () => {
@@ -446,6 +461,10 @@ describe('feature flags', () => {
     expect(flags.foodTrustRepairV1).toBe(true)
     expect(flags.coachMistakeProofV1).toBe(true)
     expect(flags.surfaceConsistencyGuardV1).toBe(true)
+    expect(flags.biometricSanityV1).toBe(true)
+    expect(flags.biometricOutlierQuarantineV1).toBe(true)
+    expect(flags.biometricImportGuardV1).toBe(true)
+    expect(flags.biometricProofExclusionV1).toBe(true)
     expect(flags.aiMealCaptureV1).toBe(false)
   })
 

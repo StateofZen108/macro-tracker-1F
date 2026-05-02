@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb'
 import type { ActionResult, BodyProgressSnapshot } from '../../types'
+import { sanitizeBodyProgressSnapshot } from '../../domain/biometricSanity'
 
 const BODY_PROGRESS_DB_NAME = 'macrotracker-body-progress'
 const BODY_PROGRESS_DB_VERSION = 1
@@ -51,6 +52,18 @@ function sortSnapshots(snapshots: BodyProgressSnapshot[]): BodyProgressSnapshot[
   )
 }
 
+function sanitizeSnapshotForStorage(
+  snapshot: BodyProgressSnapshot,
+  existingSnapshots: readonly BodyProgressSnapshot[],
+  blockInvalid = false,
+): BodyProgressSnapshot {
+  return sanitizeBodyProgressSnapshot(snapshot, {
+    source: 'body_progress',
+    existingSnapshots,
+    blockInvalid,
+  }).snapshot
+}
+
 function emitChange(): void {
   for (const listener of listeners) {
     listener()
@@ -83,7 +96,15 @@ export async function listBodyProgressSnapshots(): Promise<BodyProgressSnapshot[
     return snapshotCache
   }
 
-  snapshotCache = sortSnapshots(await database.getAll(BODY_PROGRESS_STORE))
+  const rawSnapshots = await database.getAll(BODY_PROGRESS_STORE)
+  snapshotCache = sortSnapshots(
+    rawSnapshots.map((snapshot) =>
+      sanitizeBodyProgressSnapshot(snapshot, {
+        source: 'storage_load',
+        existingSnapshots: rawSnapshots,
+      }).snapshot,
+    ),
+  )
   return snapshotCache
 }
 
@@ -102,9 +123,13 @@ export async function saveBodyProgressSnapshot(
   }
 
   try {
-    await database.put(BODY_PROGRESS_STORE, snapshot)
+    const sanitized = sanitizeSnapshotForStorage(snapshot, await listBodyProgressSnapshots(), true)
+    if (sanitized.metrics.length !== snapshot.metrics.length) {
+      return fail('invalidBiometric', 'One or more body metrics are outside safe biometric ranges.')
+    }
+    await database.put(BODY_PROGRESS_STORE, sanitized)
     await refreshBodyProgressSnapshots()
-    return ok(snapshot)
+    return ok(sanitized)
   } catch {
     return fail('storageWriteFailed', 'Unable to persist body progress locally.')
   }
@@ -151,7 +176,13 @@ export async function replaceBodyProgressSnapshots(
   try {
     const transaction = database.transaction(BODY_PROGRESS_STORE, 'readwrite')
     await transaction.store.clear()
-    for (const snapshot of snapshots) {
+    const sanitizedSnapshots = snapshots.map((snapshot) =>
+      sanitizeBodyProgressSnapshot(snapshot, {
+        source: 'backup_restore',
+        existingSnapshots: snapshots,
+      }).snapshot,
+    )
+    for (const snapshot of sanitizedSnapshots) {
       await transaction.store.put(snapshot)
     }
     await transaction.done

@@ -106,6 +106,7 @@ const scripts = [
   'test:food-accuracy',
   'test:food-audit',
   'test:food-proof',
+  'test:biometric-release',
   'test:e2e:lane-guard',
   'test:e2e:personal-library-preview',
   'test:e2e:coach-preview',

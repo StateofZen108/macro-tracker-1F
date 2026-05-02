@@ -32,6 +32,7 @@ import type {
 import { formatShortDate, getTodayDateKey } from '../utils/dates'
 import { buildWeightChartPoints, convertWeight } from '../utils/macros'
 import { CutReviewCard } from '../components/CutReviewCard'
+import { isWeightProofEligible } from '../domain/biometricSanity'
 
 interface WeightScreenProps {
   settings: UserSettings
@@ -70,6 +71,19 @@ function formatDisplayWeight(entry: WeightEntry | null, unit: UserSettings['weig
   }
 
   return `${convertWeight(entry.weight, entry.unit, unit)} ${unit}`
+}
+
+function formatWeightSanityLabel(entry: WeightEntry): string | null {
+  if (entry.sanityStatus === 'blocked_invalid') {
+    return 'Invalid - excluded from proof'
+  }
+  if (entry.sanityStatus === 'outlier_review_required') {
+    return 'Review - excluded from proof'
+  }
+  if (entry.proofEligible === false) {
+    return 'Excluded from proof'
+  }
+  return null
 }
 
 function formatWeeklyRate(value: number): string {
@@ -530,7 +544,6 @@ export function WeightScreen({
 }: WeightScreenProps) {
   const today = getTodayDateKey()
   const todayEntry = weights.find((entry) => entry.date === today) ?? null
-  const latestEntry = weights[0] ?? null
   const [selectedRange, setSelectedRange] = useState<WeightRange>('30')
   const [editorDate, setEditorDate] = useState(today)
   const [showOverrideEditor, setShowOverrideEditor] = useState(false)
@@ -563,7 +576,13 @@ export function WeightScreen({
   const [customCompareDate, setCustomCompareDate] = useState('')
   const [showAdvancedBodyProgress, setShowAdvancedBodyProgress] = useState(false)
 
-  const chartPoints = buildWeightChartPoints(weights, selectedRange, settings.weightUnit)
+  const proofEligibleWeights = useMemo(() => weights.filter(isWeightProofEligible), [weights])
+  const quarantinedWeights = useMemo(
+    () => weights.filter((entry) => !entry.deletedAt && !isWeightProofEligible(entry)),
+    [weights],
+  )
+  const latestEntry = proofEligibleWeights[0] ?? weights[0] ?? null
+  const chartPoints = buildWeightChartPoints(proofEligibleWeights, selectedRange, settings.weightUnit)
   const latestTrend = [...chartPoints].reverse().find((point) => point.trend !== null)?.trend ?? null
   const editingEntry = useMemo(
     () => weights.find((entry) => entry.date === editorDate) ?? null,
@@ -732,13 +751,13 @@ export function WeightScreen({
       weights,
     ],
   )
-  const recentDelta =
-    weights.length >= 2
-      ? Math.round(
-          (convertWeight(weights[0].weight, weights[0].unit, settings.weightUnit) -
+    const recentDelta =
+    proofEligibleWeights.length >= 2
+        ? Math.round(
+          (convertWeight(proofEligibleWeights[0].weight, proofEligibleWeights[0].unit, settings.weightUnit) -
             convertWeight(
-              weights[Math.min(6, weights.length - 1)].weight,
-              weights[Math.min(6, weights.length - 1)].unit,
+              proofEligibleWeights[Math.min(6, proofEligibleWeights.length - 1)].weight,
+              proofEligibleWeights[Math.min(6, proofEligibleWeights.length - 1)].unit,
               settings.weightUnit,
             )) *
             100,
@@ -2868,6 +2887,39 @@ export function WeightScreen({
       </section>
       ) : null}
 
+      {quarantinedWeights.length ? (
+        <section className="app-card space-y-3 border border-amber-200 bg-amber-50/80 px-4 py-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <div>
+            <p className="text-xs uppercase tracking-[0.24em] text-amber-700 dark:text-amber-300">
+              Biometric review
+            </p>
+            <p className="font-display text-2xl text-slate-900 dark:text-white">
+              {quarantinedWeights.length} weigh-in{quarantinedWeights.length === 1 ? '' : 's'} excluded from proof
+            </p>
+            <p className="mt-1 text-sm text-slate-700 dark:text-slate-200">
+              These entries stay in your history for audit, but Cut OS and Coach ignore them until corrected.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {quarantinedWeights.slice(0, 4).map((entry) => (
+              <button
+                key={entry.id}
+                type="button"
+                className="w-full rounded-[22px] border border-amber-200 bg-white/75 px-4 py-3 text-left dark:border-amber-500/30 dark:bg-slate-950/50"
+                onClick={() => setEditorDate(entry.date)}
+              >
+                <span className="block text-sm font-semibold text-slate-900 dark:text-white">
+                  {entry.date}: {convertWeight(entry.weight, entry.unit, settings.weightUnit)} {settings.weightUnit}
+                </span>
+                <span className="mt-1 block text-xs text-amber-800 dark:text-amber-200">
+                  {entry.sanityIssues?.[0]?.message ?? formatWeightSanityLabel(entry)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="app-card space-y-4 px-4 py-4">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -3040,7 +3092,9 @@ export function WeightScreen({
                     onClick={() => setEditorDate(entry.date)}
                   >
                     <p className="font-medium text-slate-900 dark:text-white">{entry.date}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Tap to edit this day</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {formatWeightSanityLabel(entry) ?? 'Tap to edit this day'}
+                    </p>
                   </button>
                   <div className="text-right">
                     <p className="text-sm text-slate-600 dark:text-slate-300">

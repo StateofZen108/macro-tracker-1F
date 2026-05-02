@@ -38,6 +38,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `native_device_green` | `npm run test:native-device-proof` verifies a current-build physical-device manifest in strict production mode and reports pending evidence locally when no real device proof exists |
 | `macrofactor_surpass_candidate` | `npm run test:macrofactor-surpass` passes logger speed, food database trust, Cut OS benchmark, paid ops, and native-device proof rails |
 | `daily_reliability_green` | `npm run test:mistake-proof-core` verifies daily guardrails, visible trust repair, surface consistency, Coach repair answers, and food trust classification |
+| `biometric_sanity_green` | `npm run test:biometric-release` verifies impossible weigh-ins/body metrics are blocked or quarantined at input, storage load, history import, Garmin import, backup restore, Coach, and Cut OS proof boundaries |
 | `ten_out_of_ten_local_candidate` | `npm run test:10` passes every local paid-PWA rail and writes `tmp/10-out-of-10-report.json`; any physical-device or production-only proof is reported as `pending_external`, not hand-waved |
 | `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:10:production` and `npm run test:release:production` for the same build ID/source Git SHA, with the evidence commit SHA recorded separately after release evidence is committed |
 
@@ -55,6 +56,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `npm run test:standalone-cut-9` | Food trust, activation, Coach proof, Cut OS replay, server typecheck, and deploy-log scanner pass | 2026-04-30: passed locally; deploy-log scanner enforces supplied logs and production strict mode |
 | `npm run test:macrofactor-surpass` | Logger speed, provider trust, Cut OS benchmark, paid ops, and native-device proof rails pass | Pending latest run |
 | `npm run test:mistake-proof-core` | Daily guardrails, mistake-proof Log, surface consistency, Coach proof, and food trust gates pass | Pending latest run |
+| `npm run test:biometric-release` | Biometric sanity unit, storage/import, and S22 E2E gates pass; `99999` weigh-ins cannot persist as proof | Pending latest run |
 | `npm run test:10` | Local paid-PWA 10/10 rails pass and external-only rails are machine-reported as pending when unavailable | Pending latest run |
 | `npm run test:10:preview` | Protected Vercel preview proof, feature parity, visual polish, trust, Coach, Cut OS, paid ops, and support/recovery rails pass | Pending latest run |
 | `npm run test:10:production` | Strict deployed production proof, physical-device evidence, readiness, and all local paid-PWA rails pass for one build ID/git SHA | Pending external production/device evidence |
@@ -88,6 +90,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 - Strict production proof binds two SHAs: `sourceGitSha` for the deployed app build and `evidenceCommitSha` for the later evidence-only commit. Sentry smoke, device QA, and readiness manifests must match `PRODUCTION_SOURCE_GIT_SHA`; strict validators reject Sentry/Supabase manual attestations and require API/live proof.
 - MacroFactor-surpass proof must keep local paid value separate from production proof: local domains and E2E can pass on this machine, while `native_device_green` stays pending or strict-red until real-device evidence is committed for the current build.
 - Daily reliability must keep one safe next action visible, expose food repair at the exact meal row, suppress unsafe harder-cut CTAs while blockers are open, and keep Dashboard, Log, Weight, and Coach on the same command packet.
+- Biometric sanity is a release blocker: impossible weigh-ins or body metrics must never feed trends, weekly check-ins, Coach, or Cut OS. Quarantined rows remain visible for audit with exact reasons and `proofEligible=false`.
 - The 10/10 umbrella gate is `npm run test:10` locally, `npm run test:10:preview` for protected Vercel previews, and `npm run test:10:production` for strict production proof. AI meal photo is excluded from all 10/10 gates.
 
 Physical-device QA, live Sentry smoke, and Supabase migration verification require external evidence outside this desktop/headless environment.

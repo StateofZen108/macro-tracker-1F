@@ -99,6 +99,10 @@ export interface FeatureFlags {
   foodTrustRepairV1: boolean
   coachMistakeProofV1: boolean
   surfaceConsistencyGuardV1: boolean
+  biometricSanityV1: boolean
+  biometricOutlierQuarantineV1: boolean
+  biometricImportGuardV1: boolean
+  biometricProofExclusionV1: boolean
 }
 
 export type FeatureFlagPreset = 'paid-cut-os-preview'
@@ -190,6 +194,10 @@ const PAID_CUT_OS_PREVIEW_FLAGS: Array<keyof FeatureFlags> = [
   'foodTrustRepairV1',
   'coachMistakeProofV1',
   'surfaceConsistencyGuardV1',
+  'biometricSanityV1',
+  'biometricOutlierQuarantineV1',
+  'biometricImportGuardV1',
+  'biometricProofExclusionV1',
 ]
 
 export function resolveFeatureFlagPreset(value: string | boolean | undefined): FeatureFlagPreset | null {
@@ -327,6 +335,10 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
     foodTrustRepairV1: resolveFeatureFlag(env.VITE_FF_FOOD_TRUST_REPAIR_V1, mode),
     coachMistakeProofV1: resolveFeatureFlag(env.VITE_FF_COACH_MISTAKE_PROOF_V1, mode),
     surfaceConsistencyGuardV1: resolveFeatureFlag(env.VITE_FF_SURFACE_CONSISTENCY_GUARD_V1, mode),
+    biometricSanityV1: resolveFeatureFlag(env.VITE_FF_BIOMETRIC_SANITY_V1, mode),
+    biometricOutlierQuarantineV1: resolveFeatureFlag(env.VITE_FF_BIOMETRIC_OUTLIER_QUARANTINE_V1, mode),
+    biometricImportGuardV1: resolveFeatureFlag(env.VITE_FF_BIOMETRIC_IMPORT_GUARD_V1, mode),
+    biometricProofExclusionV1: resolveFeatureFlag(env.VITE_FF_BIOMETRIC_PROOF_EXCLUSION_V1, mode),
   }
 
   if (preset === PAID_CUT_OS_PREVIEW_PRESET) {
@@ -627,6 +639,12 @@ export function buildFeatureFlags(env: Record<string, string | boolean | undefin
 
   if (!resolvedFlags.coachProofDefaultV2) {
     resolvedFlags.coachMistakeProofV1 = false
+  }
+
+  if (!resolvedFlags.biometricSanityV1) {
+    resolvedFlags.biometricOutlierQuarantineV1 = false
+    resolvedFlags.biometricImportGuardV1 = false
+    resolvedFlags.biometricProofExclusionV1 = false
   }
 
   resolvedFlags.aiMealCaptureV1 = false

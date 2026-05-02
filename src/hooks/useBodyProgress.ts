@@ -16,6 +16,7 @@ import {
   subscribeBodyProgress,
 } from '../utils/storage/bodyProgress'
 import { recordDiagnosticsEvent } from '../utils/diagnostics'
+import { sanitizeBodyProgressSnapshot } from '../domain/biometricSanity'
 
 function ok<T>(data: T): ActionResult<T> {
   return { ok: true, data }
@@ -117,8 +118,26 @@ export function useBodyProgress() {
           createdAt: existing?.createdAt ?? timestamp,
           updatedAt: timestamp,
         }
+        const sanity = sanitizeBodyProgressSnapshot(nextSnapshot, {
+          source: 'body_progress',
+          existingSnapshots: await listBodyProgressSnapshots(),
+          blockInvalid: true,
+        })
+        if (sanity.blockedCount > 0 || sanity.snapshot.metrics.length !== nextSnapshot.metrics.length) {
+          const nextError = {
+            code: 'invalidBiometric',
+            message:
+              nextSnapshot.metrics.find((metric) =>
+                !sanity.snapshot.metrics.some((sanitizedMetric) => sanitizedMetric.key === metric.key),
+              )?.label
+                ? 'One body metric is outside safe biometric ranges.'
+                : 'One or more body metrics are outside safe biometric ranges.',
+          } satisfies AppActionError
+          setLastError(nextError)
+          return { ok: false, error: nextError }
+        }
 
-        const result = await saveBodyProgressSnapshot(nextSnapshot)
+        const result = await saveBodyProgressSnapshot(sanity.snapshot)
         setLastError(result.ok ? null : result.error)
         if (result.ok) {
           void recordDiagnosticsEvent({

@@ -19,6 +19,10 @@ const TEN_ENV_FLAGS = {
   VITE_FF_FOOD_TRUST_REPAIR_V1: 'true',
   VITE_FF_COACH_MISTAKE_PROOF_V1: 'true',
   VITE_FF_SURFACE_CONSISTENCY_GUARD_V1: 'true',
+  VITE_FF_BIOMETRIC_SANITY_V1: 'true',
+  VITE_FF_BIOMETRIC_OUTLIER_QUARANTINE_V1: 'true',
+  VITE_FF_BIOMETRIC_IMPORT_GUARD_V1: 'true',
+  VITE_FF_BIOMETRIC_PROOF_EXCLUSION_V1: 'true',
   VITE_FF_AI_MEAL_CAPTURE_V1: 'false',
 }
 
@@ -85,7 +89,7 @@ function baseRails() {
     },
     {
       id: 'food_logging_trust_superior',
-      commands: ['test:logger-speed', 'test:food-trust', 'test:food-accuracy', 'test:food-audit', 'test:food-proof', 'test:food-db-trust'],
+      commands: ['test:logger-speed', 'test:food-trust', 'test:food-accuracy', 'test:food-audit', 'test:food-proof', 'test:food-db-trust', 'test:biometric-release'],
       evidence: 'tests/e2e/logger-speed.spec.ts; tests/unit/foodTrust.spec.ts; tests/unit/foodAccuracy.spec.ts; tests/unit/foodAudit.spec.ts; tests/unit/foodProof.spec.ts; tests/e2e/food-proof.spec.ts; tests/unit/foodDatabaseTrust.spec.ts',
     },
     {
