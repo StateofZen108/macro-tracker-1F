@@ -2,6 +2,11 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import {
+  isTruthy,
+  resolveExpectedSourceGitSha,
+  validateEvidenceBinding,
+} from './production-evidence-binding.mjs'
 
 export const REQUIRED_DEVICE_QA_CHECKS = [
   'camera_permission_denied',
@@ -20,14 +25,10 @@ function resolveBuildId(env = process.env) {
 }
 
 function resolveGitSha() {
-  return execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+  return execFileSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim()
-}
-
-function isTruthy(value) {
-  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
 function isGitTracked(path) {
@@ -48,13 +49,7 @@ export function validateDeviceQaEvidence(manifest, expected) {
     return ['Device QA manifest must be a JSON object.']
   }
 
-  if (manifest.buildId !== expected.buildId) {
-    violations.push(`Device QA buildId mismatch: expected ${expected.buildId}, got ${manifest.buildId ?? '<missing>'}.`)
-  }
-
-  if (manifest.gitSha !== expected.gitSha) {
-    violations.push(`Device QA gitSha mismatch: expected ${expected.gitSha}, got ${manifest.gitSha ?? '<missing>'}.`)
-  }
+  violations.push(...validateEvidenceBinding(manifest, expected, 'Device QA'))
 
   for (const field of ['checkedAt', 'tester', 'deviceModel', 'osVersion', 'browser', 'installMode']) {
     if (typeof manifest[field] !== 'string' || !manifest[field].trim()) {
@@ -98,7 +93,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1)
   }
 
-  const gitSha = resolveGitSha()
+  const currentGitSha = resolveGitSha()
+  const strictProduction = isTruthy(process.env.PRODUCTION_RELEASE_REQUIRED)
+  const sourceGitSha = resolveExpectedSourceGitSha(process.env, strictProduction ? null : currentGitSha)
   const manifestPath = resolve(join('docs', 'device-qa-results', `${buildId}.json`))
   if (!existsSync(manifestPath)) {
     console.error('Device QA evidence check failed:')
@@ -107,8 +104,17 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
 
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
-  const violations = validateDeviceQaEvidence(manifest, { buildId, gitSha })
-  if (isTruthy(process.env.PRODUCTION_RELEASE_REQUIRED) && !isGitTracked(join('docs', 'device-qa-results', `${buildId}.json`))) {
+  const violations = []
+  if (strictProduction && !process.env.PRODUCTION_SOURCE_GIT_SHA?.trim()) {
+    violations.push('PRODUCTION_SOURCE_GIT_SHA is required in strict production mode.')
+  }
+  violations.push(...validateDeviceQaEvidence(manifest, {
+    buildId,
+    sourceGitSha,
+    gitSha: sourceGitSha,
+    evidenceCommitSha: currentGitSha,
+  }))
+  if (strictProduction && !isGitTracked(join('docs', 'device-qa-results', `${buildId}.json`))) {
     violations.push(`Device QA manifest must be committed in strict production mode: docs/device-qa-results/${buildId}.json`)
   }
   if (violations.length) {

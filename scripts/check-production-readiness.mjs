@@ -2,20 +2,22 @@ import { existsSync, readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  isStrictExternalProof,
+  isTruthy,
+  resolveExpectedSourceGitSha,
+  validateEvidenceBinding,
+} from './production-evidence-binding.mjs'
 
 function resolveBuildId(env = process.env) {
   return env.VITE_APP_BUILD_ID || env.VERCEL_GIT_COMMIT_SHA || env.GIT_COMMIT_SHA || null
 }
 
 function resolveGitSha() {
-  return execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+  return execFileSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim()
-}
-
-function isTruthy(value) {
-  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
 function isGitTracked(path) {
@@ -36,12 +38,7 @@ export function validateProductionReadinessManifest(manifest, expected) {
     return ['Production readiness manifest must be a JSON object.']
   }
 
-  if (manifest.buildId !== expected.buildId) {
-    violations.push(`Readiness buildId mismatch: expected ${expected.buildId}, got ${manifest.buildId ?? '<missing>'}.`)
-  }
-  if (manifest.gitSha !== expected.gitSha) {
-    violations.push(`Readiness gitSha mismatch: expected ${expected.gitSha}, got ${manifest.gitSha ?? '<missing>'}.`)
-  }
+  violations.push(...validateEvidenceBinding(manifest, expected, 'Readiness'))
 
   for (const field of ['checkedAt', 'deviceQaManifestPath', 'sentrySmokeEventId']) {
     if (typeof manifest[field] !== 'string' || !manifest[field].trim()) {
@@ -63,6 +60,9 @@ export function validateProductionReadinessManifest(manifest, expected) {
   ) {
     violations.push('Readiness manifest sentryAlertVerificationMode must be api or manual_attestation.')
   }
+  if (expected.strictExternalProof && manifest.sentryAlertVerificationMode !== 'api') {
+    violations.push('Readiness manifest requires sentryAlertVerificationMode=api in strict external proof mode.')
+  }
 
   if (
     manifest.supabaseVerificationMode !== undefined &&
@@ -70,6 +70,9 @@ export function validateProductionReadinessManifest(manifest, expected) {
     manifest.supabaseVerificationMode !== 'manual_attestation'
   ) {
     violations.push('Readiness manifest supabaseVerificationMode must be live_database or manual_attestation.')
+  }
+  if (expected.strictExternalProof && manifest.supabaseVerificationMode !== 'live_database') {
+    violations.push('Readiness manifest requires supabaseVerificationMode=live_database in strict external proof mode.')
   }
 
   for (const field of [
@@ -109,7 +112,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1)
   }
 
-  const gitSha = resolveGitSha()
+  const currentGitSha = resolveGitSha()
   const manifestPath = resolve(join('docs', 'production-readiness', `${buildId}.json`))
   if (!existsSync(manifestPath)) {
     console.error('Production readiness check failed:')
@@ -119,13 +122,22 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
 
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
   const strictProduction = isTruthy(process.env.PRODUCTION_RELEASE_REQUIRED)
-  const violations = validateProductionReadinessManifest(manifest, {
+  const strictExternalProof = isStrictExternalProof(process.env)
+  const sourceGitSha = resolveExpectedSourceGitSha(process.env, strictProduction ? null : currentGitSha)
+  const violations = []
+  if (strictProduction && !process.env.PRODUCTION_SOURCE_GIT_SHA?.trim()) {
+    violations.push('PRODUCTION_SOURCE_GIT_SHA is required in strict production mode.')
+  }
+  violations.push(...validateProductionReadinessManifest(manifest, {
     buildId,
-    gitSha,
+    sourceGitSha,
+    gitSha: sourceGitSha,
+    evidenceCommitSha: currentGitSha,
     requireExistingPaths: true,
     requireDeploymentBaseUrl: strictProduction,
     requireProofReport: strictProduction,
-  })
+    strictExternalProof,
+  }))
   if (strictProduction && !isGitTracked(join('docs', 'production-readiness', `${buildId}.json`))) {
     violations.push(`Readiness manifest must be committed in strict production mode: docs/production-readiness/${buildId}.json`)
   }

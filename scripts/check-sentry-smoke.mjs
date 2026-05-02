@@ -2,6 +2,10 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  isStrictExternalProof,
+  shaMatches,
+} from './production-evidence-binding.mjs'
 
 const RESULT_PATH = resolve('tmp', 'observability-smoke-result.json')
 
@@ -28,6 +32,8 @@ export async function runSentrySmoke(env = process.env, fetchImpl = fetch) {
   const buildId = env.VITE_APP_BUILD_ID ?? env.VERCEL_GIT_COMMIT_SHA ?? env.GIT_COMMIT_SHA ?? null
   const deploymentBaseUrl = env.PRODUCTION_BASE_URL ?? null
   const gitSha = resolveGitSha(env)
+  const expectedSourceGitSha = env.PRODUCTION_SOURCE_GIT_SHA ?? gitSha
+  const strictExternalProof = isStrictExternalProof(env)
   const checkedAt = new Date().toISOString()
 
   if (truthy(env.OBSERVABILITY_SMOKE_DISABLED)) {
@@ -86,13 +92,32 @@ export async function runSentrySmoke(env = process.env, fetchImpl = fetch) {
       errors: [`Sentry smoke failed with status ${response.status}; missing event ID.`],
     }
   }
+  const proofErrors = []
+  if (strictExternalProof && payload.buildId !== buildId) {
+    proofErrors.push(`Sentry smoke buildId mismatch: expected ${buildId}, got ${payload.buildId ?? '<missing>'}.`)
+  }
+  if (strictExternalProof && (!payload.gitSha || !shaMatches(payload.gitSha, expectedSourceGitSha))) {
+    proofErrors.push(`Sentry smoke sourceGitSha mismatch: expected ${expectedSourceGitSha}, got ${payload.gitSha ?? '<missing>'}.`)
+  }
+  if (proofErrors.length) {
+    return {
+      ok: false,
+      checkedAt,
+      buildId,
+      gitSha: expectedSourceGitSha,
+      deploymentBaseUrl,
+      returnedBuildId: payload.buildId ?? null,
+      returnedGitSha: payload.gitSha ?? null,
+      errors: proofErrors,
+    }
+  }
 
   return {
     ok: true,
     eventId: String(payload.eventId),
     checkedAt,
     buildId,
-    gitSha,
+    gitSha: expectedSourceGitSha,
     deploymentBaseUrl,
     smokeUrl: url,
     returnedBuildId: payload.buildId ?? null,

@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isStrictExternalProof } from './production-evidence-binding.mjs'
 
 const RESULT_PATH = resolve('tmp', 'sentry-alerts-result.json')
 
@@ -71,8 +72,23 @@ export function validateSentryAlertRules(rules, expectedAlertIds = DEFAULT_EXPEC
 export async function verifySentryAlerts(env = process.env, fetchImpl = fetch) {
   const expectedAlertIds = normalizeExpectedAlertIds(env.SENTRY_EXPECTED_ALERTS)
   const checkedAt = new Date().toISOString()
+  const strictExternalProof = isStrictExternalProof(env)
 
   if (!env.SENTRY_AUTH_TOKEN || !env.SENTRY_ORG || !env.SENTRY_PROJECT) {
+    if (strictExternalProof) {
+      return {
+        ok: false,
+        checkedAt,
+        verificationMode: 'api',
+        expectedAlertIds,
+        alertsVerified: [],
+        missingAlertIds: expectedAlertIds,
+        errors: [
+          'Sentry alert API credentials are required when PRODUCTION_STRICT_EXTERNAL_PROOF=true.',
+        ],
+      }
+    }
+
     if (truthy(env.SENTRY_ALERTS_VERIFIED)) {
       return {
         ok: true,

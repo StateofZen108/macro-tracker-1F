@@ -8,6 +8,7 @@ import {
   isIgnoredReleaseArtifact,
   parsePorcelainStatus,
 } from './check-release-hygiene.mjs'
+import { resolveExpectedSourceGitSha } from './production-evidence-binding.mjs'
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const REPORT_PATH = resolve('tmp', 'production-proof-report.json')
@@ -203,14 +204,20 @@ function readJsonIfExists(path) {
 
 export async function runProductionProof({ mode = 'test', env = process.env } = {}) {
   const gitSha = readGitSha()
+  const sourceGitSha = resolveExpectedSourceGitSha(env, gitSha)
   const preflight = validateProductionProofPreflight({
     env,
     gitStatus: readGitStatus(),
     gitSha,
   })
+  if (mode !== 'commit' && !env.PRODUCTION_SOURCE_GIT_SHA?.trim()) {
+    preflight.errors.push('PRODUCTION_SOURCE_GIT_SHA is required for strict production proof test mode.')
+    preflight.ok = false
+  }
   const report = {
     buildId: preflight.buildId ?? '',
     gitSha,
+    sourceGitSha,
     checkedAt: new Date().toISOString(),
     deploymentBaseUrl: preflight.deploymentBaseUrl,
     status: 'proof_failed',
@@ -222,8 +229,10 @@ export async function runProductionProof({ mode = 'test', env = process.env } = 
     ...env,
     VITE_APP_BUILD_ID: preflight.buildId ?? env.VITE_APP_BUILD_ID,
     GIT_COMMIT_SHA: env.GIT_COMMIT_SHA || gitSha,
+    PRODUCTION_SOURCE_GIT_SHA: sourceGitSha,
     OBSERVABILITY_SMOKE_URL: preflight.smokeUrl ?? env.OBSERVABILITY_SMOKE_URL,
     PRODUCTION_RELEASE_REQUIRED: 'true',
+    PRODUCTION_STRICT_EXTERNAL_PROOF: 'true',
     RELEASE_DEVICE_QA_REQUIRED: 'true',
   }
 
@@ -274,6 +283,7 @@ export async function runProductionProof({ mode = 'test', env = process.env } = 
 
     try {
       report.commitSha = stageAndCommitEvidence(preflight.buildId)
+      report.evidenceCommitSha = report.commitSha
       report.rails.push({
         id: 'evidence_commit',
         status: 'passed',
@@ -289,14 +299,16 @@ export async function runProductionProof({ mode = 'test', env = process.env } = 
       return { ok: false, report }
     }
 
-    const strictCode = await runNpmScript('test:release:production', {
+    const strictCode = await runNpmScript('test:10:production', {
       ...proofEnv,
       GIT_COMMIT_SHA: report.commitSha,
+      PRODUCTION_SOURCE_GIT_SHA: sourceGitSha,
+      PRODUCTION_EVIDENCE_COMMIT_SHA: report.commitSha,
     })
     report.rails.push({
-      id: 'strict_production_release_after_commit',
+      id: 'strict_10_production_after_commit',
       status: strictCode === 0 ? 'passed' : 'failed',
-      reason: strictCode === 0 ? undefined : `test:release:production exited ${strictCode}.`,
+      reason: strictCode === 0 ? undefined : `test:10:production exited ${strictCode}.`,
     })
     if (strictCode !== 0) {
       writeReport(report)

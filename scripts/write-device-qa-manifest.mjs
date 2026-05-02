@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { REQUIRED_DEVICE_QA_CHECKS, validateDeviceQaEvidence } from './check-device-qa-evidence.mjs'
+import { resolveExpectedSourceGitSha } from './production-evidence-binding.mjs'
 
 export function resolveDeviceQaSourcePath(env = process.env) {
   return env.DEVICE_QA_RESULT_SOURCE || env.DEVICE_QA_OPERATOR_EVIDENCE_JSON || ''
@@ -30,13 +31,16 @@ function normalizeCheck(check) {
 
 export function buildDeviceQaManifest(raw, expected) {
   const buildId = expected.buildId || raw?.buildId
-  const gitSha = expected.gitSha || raw?.gitSha
+  const sourceGitSha = expected.sourceGitSha || expected.gitSha || raw?.sourceGitSha || raw?.gitSha
+  const evidenceCommitSha = expected.evidenceCommitSha || raw?.evidenceCommitSha
   const rawChecks = Array.isArray(raw?.checks) ? raw.checks : []
   const checksById = new Map(rawChecks.map((check) => [check?.id, normalizeCheck(check)]))
 
   return {
     buildId,
-    gitSha,
+    sourceGitSha,
+    gitSha: sourceGitSha,
+    ...(evidenceCommitSha ? { evidenceCommitSha } : {}),
     checkedAt: raw?.checkedAt || new Date().toISOString(),
     tester: raw?.tester || expected.tester || 'operator',
     device: raw?.device || expected.device || 'physical_android',
@@ -53,7 +57,7 @@ export function buildDeviceQaManifest(raw, expected) {
   }
 }
 
-export function writeDeviceQaManifestFromSource({ sourcePath, buildId, gitSha, outputPath }) {
+export function writeDeviceQaManifestFromSource({ sourcePath, buildId, gitSha, sourceGitSha, evidenceCommitSha, outputPath }) {
   if (!sourcePath) {
     throw new Error('DEVICE_QA_RESULT_SOURCE or DEVICE_QA_OPERATOR_EVIDENCE_JSON is required to write the device QA manifest.')
   }
@@ -62,8 +66,14 @@ export function writeDeviceQaManifestFromSource({ sourcePath, buildId, gitSha, o
   }
 
   const raw = JSON.parse(readFileSync(sourcePath, 'utf8'))
-  const manifest = buildDeviceQaManifest(raw, { buildId, gitSha })
-  const violations = validateDeviceQaEvidence(manifest, { buildId, gitSha })
+  const expectedSourceGitSha = sourceGitSha || gitSha
+  const manifest = buildDeviceQaManifest(raw, { buildId, sourceGitSha: expectedSourceGitSha, evidenceCommitSha })
+  const violations = validateDeviceQaEvidence(manifest, {
+    buildId,
+    sourceGitSha: expectedSourceGitSha,
+    gitSha: expectedSourceGitSha,
+    evidenceCommitSha,
+  })
   if (violations.length) {
     throw new Error(`Device QA evidence is incomplete:\n- ${violations.join('\n- ')}`)
   }
@@ -80,13 +90,16 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1)
   }
 
-  const gitSha = readGitSha()
+  const currentGitSha = readGitSha()
+  const sourceGitSha = resolveExpectedSourceGitSha(process.env, currentGitSha)
   const outputPath = resolve('docs', 'device-qa-results', `${buildId}.json`)
   try {
     writeDeviceQaManifestFromSource({
       sourcePath: resolveDeviceQaSourcePath(),
       buildId,
-      gitSha,
+      gitSha: sourceGitSha,
+      sourceGitSha,
+      evidenceCommitSha: process.env.PRODUCTION_EVIDENCE_COMMIT_SHA,
       outputPath,
     })
     console.log(`Wrote device QA manifest: ${outputPath}`)

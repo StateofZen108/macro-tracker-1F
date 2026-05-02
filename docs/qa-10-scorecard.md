@@ -39,7 +39,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 | `macrofactor_surpass_candidate` | `npm run test:macrofactor-surpass` passes logger speed, food database trust, Cut OS benchmark, paid ops, and native-device proof rails |
 | `daily_reliability_green` | `npm run test:mistake-proof-core` verifies daily guardrails, visible trust repair, surface consistency, Coach repair answers, and food trust classification |
 | `ten_out_of_ten_local_candidate` | `npm run test:10` passes every local paid-PWA rail and writes `tmp/10-out-of-10-report.json`; any physical-device or production-only proof is reported as `pending_external`, not hand-waved |
-| `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:10:production` and `npm run test:release:production` for the same build ID/git SHA |
+| `paid_10_final_candidate` | All predicates above are true on the same working tree; production releases also pass `npm run test:10:production` and `npm run test:release:production` for the same build ID/source Git SHA, with the evidence commit SHA recorded separately after release evidence is committed |
 
 ## Gate Status
 
@@ -85,6 +85,7 @@ This scorecard defines what "10/10 Cut OS" means for this repo.
 - Production readiness must include the live Sentry smoke event ID, Supabase migration verification, and module budget proof for the same build ID and git SHA.
 - Accessible rails must be used before production signoff so local/CI automation executes everything available before external evidence is requested.
 - Strict production proof must use `npm run test:release:proof` or `npm run release:proof-and-commit`; missing deployed Sentry, Supabase, physical-device, or committed evidence must remain machine-detected blockers.
+- Strict production proof binds two SHAs: `sourceGitSha` for the deployed app build and `evidenceCommitSha` for the later evidence-only commit. Sentry smoke, device QA, and readiness manifests must match `PRODUCTION_SOURCE_GIT_SHA`; strict validators reject Sentry/Supabase manual attestations and require API/live proof.
 - MacroFactor-surpass proof must keep local paid value separate from production proof: local domains and E2E can pass on this machine, while `native_device_green` stays pending or strict-red until real-device evidence is committed for the current build.
 - Daily reliability must keep one safe next action visible, expose food repair at the exact meal row, suppress unsafe harder-cut CTAs while blockers are open, and keep Dashboard, Log, Weight, and Coach on the same command packet.
 - The 10/10 umbrella gate is `npm run test:10` locally, `npm run test:10:preview` for protected Vercel previews, and `npm run test:10:production` for strict production proof. AI meal photo is excluded from all 10/10 gates.

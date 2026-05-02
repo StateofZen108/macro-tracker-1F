@@ -33,6 +33,7 @@ function runNpmScript(scriptName, env) {
 const releaseEnv = {
   ...process.env,
   PRODUCTION_RELEASE_REQUIRED: 'true',
+  PRODUCTION_STRICT_EXTERNAL_PROOF: 'true',
   RELEASE_DEVICE_QA_REQUIRED: 'true',
 }
 

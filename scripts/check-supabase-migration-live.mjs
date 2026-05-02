@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
+import { isStrictExternalProof } from './production-evidence-binding.mjs'
 
 const RESULT_PATH = resolve('tmp', 'supabase-migration-live-result.json')
 
@@ -177,6 +178,36 @@ export function canRunSupabaseLiveCheck(env = process.env, commandExistsImpl = c
   return Boolean(readDatabaseUrl(env)) && commandExistsImpl('psql')
 }
 
+export function resolveSupabaseLiveProofPreflight(env = process.env, commandExistsImpl = commandExists) {
+  const databaseUrl = readDatabaseUrl(env)
+  const strictExternalProof = isStrictExternalProof(env)
+  if (!databaseUrl) {
+    return {
+      ok: false,
+      databaseUrl: null,
+      strictExternalProof,
+      error: strictExternalProof
+        ? 'SUPABASE_DB_URL or DATABASE_URL is required when PRODUCTION_STRICT_EXTERNAL_PROOF=true.'
+        : 'SUPABASE_DB_URL or DATABASE_URL is required.',
+    }
+  }
+  if (!commandExistsImpl('psql')) {
+    return {
+      ok: false,
+      databaseUrl,
+      strictExternalProof,
+      error: strictExternalProof
+        ? 'psql is required on PATH when PRODUCTION_STRICT_EXTERNAL_PROOF=true.'
+        : 'psql is required on PATH to inspect live PostgreSQL RLS, policies, constraints, indexes, and functions.',
+    }
+  }
+  return {
+    ok: true,
+    databaseUrl,
+    strictExternalProof,
+  }
+}
+
 function truthy(value) {
   return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
@@ -220,7 +251,13 @@ function runLiveQuery(databaseUrl) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const databaseUrl = readDatabaseUrl()
+  const strictExternalProof = isStrictExternalProof(process.env)
   if (!databaseUrl) {
+    if (strictExternalProof) {
+      console.error('Supabase live migration check failed:')
+      console.error('- SUPABASE_DB_URL or DATABASE_URL is required when PRODUCTION_STRICT_EXTERNAL_PROOF=true.')
+      process.exit(1)
+    }
     if (truthy(process.env.SUPABASE_MIGRATION_VERIFIED)) {
       const result = {
         ok: true,
@@ -245,6 +282,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1)
   }
   if (!commandExists('psql')) {
+    if (strictExternalProof) {
+      console.error('Supabase live migration check failed:')
+      console.error('- psql is required on PATH when PRODUCTION_STRICT_EXTERNAL_PROOF=true.')
+      process.exit(1)
+    }
     if (truthy(process.env.SUPABASE_MIGRATION_VERIFIED)) {
       const result = {
         ok: true,

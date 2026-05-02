@@ -34,7 +34,7 @@ async function handlePost(request: Request): Promise<Response> {
     ok: true,
     eventId,
     buildId: process.env.VITE_APP_BUILD_ID ?? process.env.VERCEL_GIT_COMMIT_SHA ?? null,
-    gitSha: process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? null,
+    gitSha: process.env.PRODUCTION_SOURCE_GIT_SHA ?? process.env.GIT_COMMIT_SHA ?? process.env.VERCEL_GIT_COMMIT_SHA ?? null,
   })
 }
 

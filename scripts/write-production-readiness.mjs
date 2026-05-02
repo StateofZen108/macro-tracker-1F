@@ -2,6 +2,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  isStrictExternalProof,
+  resolveExpectedSourceGitSha,
+} from './production-evidence-binding.mjs'
 
 const SMOKE_RESULT_PATH = resolve('tmp', 'observability-smoke-result.json')
 const SENTRY_ALERTS_RESULT_PATH = resolve('tmp', 'sentry-alerts-result.json')
@@ -17,7 +21,7 @@ function resolveRequired(name) {
 }
 
 function resolveGitSha() {
-  return execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+  return execFileSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim()
@@ -91,7 +95,9 @@ function readSupabaseMigrationResult() {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const buildId = resolveRequired('VITE_APP_BUILD_ID')
-  const gitSha = resolveGitSha()
+  const currentGitSha = resolveGitSha()
+  const sourceGitSha = resolveExpectedSourceGitSha(process.env, currentGitSha)
+  const evidenceCommitSha = process.env.PRODUCTION_EVIDENCE_COMMIT_SHA?.trim() || undefined
   const deviceQaManifestPath = resolve(join('docs', 'device-qa-results', `${buildId}.json`))
   if (!existsSync(deviceQaManifestPath)) {
     throw new Error(`Missing device QA manifest: ${deviceQaManifestPath}`)
@@ -101,14 +107,22 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (!sentryAlerts.verified) {
     throw new Error('Missing Sentry alert verification.')
   }
+  if (isStrictExternalProof(process.env) && sentryAlerts.verificationMode !== 'api') {
+    throw new Error('Strict external proof requires Sentry alerts verified through the Sentry API.')
+  }
   const supabaseMigration = readSupabaseMigrationResult()
   if (!supabaseMigration.verified) {
     throw new Error('Missing Supabase migration verification.')
   }
+  if (isStrictExternalProof(process.env) && supabaseMigration.verificationMode !== 'live_database') {
+    throw new Error('Strict external proof requires Supabase migration verified against the live database.')
+  }
 
   const manifest = {
     buildId,
-    gitSha,
+    sourceGitSha,
+    gitSha: sourceGitSha,
+    ...(evidenceCommitSha ? { evidenceCommitSha } : {}),
     checkedAt: new Date().toISOString(),
     deploymentBaseUrl: process.env.PRODUCTION_BASE_URL ?? null,
     releaseSuitePassed: true,
@@ -133,7 +147,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     [
       `# Production Readiness ${buildId}`,
       '',
-      `- Git SHA: ${gitSha}`,
+      `- Source Git SHA: ${sourceGitSha}`,
+      `- Evidence commit SHA: ${evidenceCommitSha ?? '<recorded in production proof report after commit>'}`,
       `- Checked at: ${manifest.checkedAt}`,
       `- Deployment base URL: ${manifest.deploymentBaseUrl ?? '<not recorded>'}`,
       `- Device QA: ${manifest.deviceQaManifestPath}`,

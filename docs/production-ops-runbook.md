@@ -78,6 +78,8 @@ To close the strict production proof rails, run the proof orchestrator against a
 ```powershell
 $env:VITE_APP_BUILD_ID='<non-local-build-id>'
 $env:PRODUCTION_BASE_URL='https://<deployment>'
+$env:PRODUCTION_SOURCE_GIT_SHA='<deployed-source-full-sha>'
+$env:PRODUCTION_STRICT_EXTERNAL_PROOF='true'
 $env:OBSERVABILITY_SMOKE_SECRET='<deployment-secret>'
 $env:SENTRY_AUTH_TOKEN='<sentry-token>'
 $env:SENTRY_ORG='<org>'
@@ -89,6 +91,8 @@ npm run test:release:proof
 
 `npm run test:release:proof` derives `OBSERVABILITY_SMOKE_URL` from `PRODUCTION_BASE_URL` when it is not supplied, runs every local and external rail, and writes `tmp/production-proof-report.json`. It fails with exact blockers when Sentry, Supabase, a physical device, or committed evidence is unavailable.
 
+Strict proof separates the deployed source commit from the later evidence commit. Device QA and readiness manifests record `sourceGitSha` for the deployed app build; after commit mode creates the evidence-only commit, `tmp/production-proof-report.json` records `evidenceCommitSha`. A committed manifest is not required to contain its own future commit SHA, but if an `evidenceCommitSha` field is present it must match the current evidence commit.
+
 To generate and commit evidence after physical-device proof has been collected, run:
 
 ```powershell
@@ -97,7 +101,7 @@ $env:PRODUCTION_PROOF_AUTO_COMMIT='true'
 npm run release:proof-and-commit
 ```
 
-Commit mode writes `docs/device-qa-results/<build-id>.json` and `docs/production-readiness/<build-id>.json`, commits only the release evidence, then reruns `npm run test:release:production`.
+Commit mode writes `docs/device-qa-results/<build-id>.json` and `docs/production-readiness/<build-id>.json`, commits only the release evidence, then reruns `npm run test:10:production`.
 
 Production release also requires a non-local build ID, physical-device evidence, a live Sentry smoke event, module budgets, Supabase migration verification, and a committed readiness manifest:
 
@@ -105,11 +109,14 @@ Production release also requires a non-local build ID, physical-device evidence,
 $env:VITE_APP_BUILD_ID='<candidate-build-id>'
 $env:RELEASE_DEVICE_QA_REQUIRED='true'
 $env:PRODUCTION_RELEASE_REQUIRED='true'
+$env:PRODUCTION_SOURCE_GIT_SHA='<deployed-source-full-sha>'
+$env:PRODUCTION_STRICT_EXTERNAL_PROOF='true'
 $env:OBSERVABILITY_SMOKE_URL='https://<deployment>/api/observability/smoke'
 $env:OBSERVABILITY_SMOKE_SECRET='<deployment-secret>'
 $env:SUPABASE_DB_URL='<production-postgres-url>'
-$env:SENTRY_ALERTS_VERIFIED='true'
-$env:SUPABASE_MIGRATION_VERIFIED='true'
+$env:SENTRY_AUTH_TOKEN='<sentry-token>'
+$env:SENTRY_ORG='<org>'
+$env:SENTRY_PROJECT='<project>'
 npm run test:device-qa:evidence
 npm run test:observability:smoke
 npm run test:sentry:alerts
@@ -121,7 +128,7 @@ npm run test:release:production
 
 `npm run test:release` always runs audit, lint, build, bundle, unit, E2E, corpus, preview lanes, and release hygiene. It runs physical-device evidence automatically when `RELEASE_DEVICE_QA_REQUIRED=true` or `VERCEL_ENV=production`.
 
-`npm run test:release:production` is intentionally stricter than the local release suite. It rejects fallback `local-release-*` build IDs, requires physical-device QA, requires Sentry smoke to be enabled, validates `docs/production-readiness/<build-id>.json`, and runs release hygiene again after the smoke check. The production readiness manifest must already be committed; use `npm run write:production-readiness` only as a drafting helper before review and commit.
+`npm run test:release:production` is intentionally stricter than the local release suite. It rejects fallback `local-release-*` build IDs, requires physical-device QA, requires Sentry smoke to be enabled, validates `docs/production-readiness/<build-id>.json`, and runs release hygiene again after the smoke check. In strict 10/10 production mode, `SENTRY_ALERTS_VERIFIED=true` and `SUPABASE_MIGRATION_VERIFIED=true` manual attestations are rejected; Sentry alerts must be verified through the Sentry API and Supabase must be verified live through `psql`. The production readiness manifest must already be committed; use `npm run write:production-readiness` only as a drafting helper before review and commit.
 
 ## Observability
 
@@ -137,7 +144,7 @@ Configure Sentry alerts before paid release:
 | Sync failure spike | Notify when sync push/pull/bootstrap failures exceed 3 in 10 minutes |
 | Release regression | Notify when a new issue first appears on the current `SENTRY_RELEASE` |
 
-Run `npm run test:sentry:alerts` with `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` to verify those rules through the Sentry API. If API credentials are unavailable, `SENTRY_ALERTS_VERIFIED=true` is accepted only as a manual attestation and is recorded as such in production readiness.
+Run `npm run test:sentry:alerts` with `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` to verify those rules through the Sentry API. If API credentials are unavailable, `SENTRY_ALERTS_VERIFIED=true` is accepted only outside strict 10/10 production mode as a manual attestation and is recorded as such in production readiness.
 
 Production smoke uses `POST /api/observability/smoke` with `X-Observability-Smoke-Secret`. The route captures a synthetic server message and returns the Sentry event ID. The event ID must be recorded in `docs/production-readiness/<build-id>.json`; `OBSERVABILITY_SMOKE_DISABLED=true` is allowed only outside production-required runs.
 
@@ -184,8 +191,9 @@ Each device check must include `automationMode: "automated"` or `automationMode:
 
 ## Production Readiness Manifest
 
-Readiness manifests live under `docs/production-readiness/<build-id>.json` and must match the current git SHA. Each manifest records:
+Readiness manifests live under `docs/production-readiness/<build-id>.json` and must match the deployed source SHA through `sourceGitSha`. In strict production proof, the current evidence commit is validated separately after the manifest is committed. Each manifest records:
 
+- deployed source SHA
 - physical-device QA manifest path
 - deployed production base URL
 - Sentry smoke event ID

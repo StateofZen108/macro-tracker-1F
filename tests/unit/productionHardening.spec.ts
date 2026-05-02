@@ -11,7 +11,10 @@ import { validateProductionReadinessManifest } from '../../scripts/check-product
 import { runSentrySmoke } from '../../scripts/check-sentry-smoke.mjs'
 import { validateSentryAlertRules, verifySentryAlerts } from '../../scripts/check-sentry-alerts.mjs'
 import { resolveAccessibleProductionRailsPlan } from '../../scripts/run-accessible-production-rails.mjs'
-import { validateSupabaseMigrationSnapshot } from '../../scripts/check-supabase-migration-live.mjs'
+import {
+  resolveSupabaseLiveProofPreflight,
+  validateSupabaseMigrationSnapshot,
+} from '../../scripts/check-supabase-migration-live.mjs'
 import {
   deriveSmokeUrl,
   isNonLocalBuildId,
@@ -60,6 +63,7 @@ describe('production hardening scripts', () => {
   it('requires complete physical-device evidence for the current build', () => {
     const manifest = {
       buildId: 'build-1',
+      sourceGitSha: 'abc123',
       gitSha: 'abc123',
       checkedAt: '2026-04-28T12:00:00.000Z',
       tester: 'QA',
@@ -76,19 +80,25 @@ describe('production hardening scripts', () => {
       })),
     }
 
-    expect(validateDeviceQaEvidence(manifest, { buildId: 'build-1', gitSha: 'abc123' })).toEqual([])
-    expect(validateDeviceQaEvidence({ ...manifest, gitSha: 'old' }, { buildId: 'build-1', gitSha: 'abc123' }))
-      .toContain('Device QA gitSha mismatch: expected abc123, got old.')
+    expect(validateDeviceQaEvidence(manifest, { buildId: 'build-1', sourceGitSha: 'abc123' })).toEqual([])
+    expect(validateDeviceQaEvidence({ ...manifest, sourceGitSha: 'old', gitSha: 'old' }, { buildId: 'build-1', sourceGitSha: 'abc123' }))
+      .toContain('Device QA sourceGitSha mismatch: expected abc123, got old.')
+    expect(validateDeviceQaEvidence({ ...manifest, evidenceCommitSha: 'evidence-a' }, {
+      buildId: 'build-1',
+      sourceGitSha: 'abc123',
+      evidenceCommitSha: 'evidence-b',
+    })).toContain('Device QA evidenceCommitSha mismatch: expected evidence-b, got evidence-a.')
     expect(validateDeviceQaEvidence({
       ...manifest,
       checks: manifest.checks.map((check) => ({ ...check, automationMode: 'simulated' })),
-    }, { buildId: 'build-1', gitSha: 'abc123' }))
+    }, { buildId: 'build-1', sourceGitSha: 'abc123' }))
       .toContain('Device QA check camera_permission_denied requires automationMode automated or operator_assisted.')
   })
 
   it('requires complete production readiness evidence for the current build', () => {
     const manifest = {
       buildId: 'build-1',
+      sourceGitSha: 'abc123',
       gitSha: 'abc123',
       checkedAt: '2026-04-28T12:00:00.000Z',
       releaseSuitePassed: true,
@@ -101,9 +111,23 @@ describe('production hardening scripts', () => {
       moduleBudgetPassed: true,
     }
 
-    expect(validateProductionReadinessManifest(manifest, { buildId: 'build-1', gitSha: 'abc123' })).toEqual([])
-    expect(validateProductionReadinessManifest({ ...manifest, moduleBudgetPassed: false }, { buildId: 'build-1', gitSha: 'abc123' }))
+    expect(validateProductionReadinessManifest(manifest, { buildId: 'build-1', sourceGitSha: 'abc123' })).toEqual([])
+    expect(validateProductionReadinessManifest({ ...manifest, moduleBudgetPassed: false }, { buildId: 'build-1', sourceGitSha: 'abc123' }))
       .toContain('Readiness manifest requires moduleBudgetPassed=true.')
+    expect(validateProductionReadinessManifest({ ...manifest, evidenceCommitSha: 'evidence-a' }, {
+      buildId: 'build-1',
+      sourceGitSha: 'abc123',
+      evidenceCommitSha: 'evidence-b',
+    })).toContain('Readiness evidenceCommitSha mismatch: expected evidence-b, got evidence-a.')
+    expect(validateProductionReadinessManifest({
+      ...manifest,
+      sentryAlertVerificationMode: 'manual_attestation',
+      supabaseVerificationMode: 'manual_attestation',
+    }, { buildId: 'build-1', sourceGitSha: 'abc123', strictExternalProof: true }))
+      .toEqual(expect.arrayContaining([
+        'Readiness manifest requires sentryAlertVerificationMode=api in strict external proof mode.',
+        'Readiness manifest requires supabaseVerificationMode=live_database in strict external proof mode.',
+      ]))
   })
 
   it('enforces public root module budgets', () => {
@@ -205,13 +229,14 @@ describe('production hardening scripts', () => {
         evidence: `evidence/${id}.png`,
         automationMode: id === 'discard_dialog_hit_test' ? 'automated' : 'operator_assisted',
       })),
-    }, { buildId: 'build-1', gitSha: 'abc123' })
+    }, { buildId: 'build-1', sourceGitSha: 'abc123' })
 
     expect(manifest.buildId).toBe('build-1')
-    expect(validateDeviceQaEvidence(manifest, { buildId: 'build-1', gitSha: 'abc123' })).toEqual([])
-    expect(validateDeviceQaEvidence(buildDeviceQaManifest({ checks: [] }, { buildId: 'build-1', gitSha: 'abc123' }), {
+    expect(manifest.sourceGitSha).toBe('abc123')
+    expect(validateDeviceQaEvidence(manifest, { buildId: 'build-1', sourceGitSha: 'abc123' })).toEqual([])
+    expect(validateDeviceQaEvidence(buildDeviceQaManifest({ checks: [] }, { buildId: 'build-1', sourceGitSha: 'abc123' }), {
       buildId: 'build-1',
-      gitSha: 'abc123',
+      sourceGitSha: 'abc123',
     })).toContain('Device QA check did not pass: camera_permission_denied')
   })
 
@@ -514,6 +539,30 @@ describe('observability smoke', () => {
     expect(result.errors).toContain('OBSERVABILITY_SMOKE_DISABLED cannot be true when PRODUCTION_RELEASE_REQUIRED=true.')
   })
 
+  it('rejects strict Sentry smoke when the deployed build or source SHA differs', async () => {
+    const result = await runSentrySmoke({
+      VITE_APP_BUILD_ID: 'build-1',
+      PRODUCTION_SOURCE_GIT_SHA: 'abc123',
+      PRODUCTION_STRICT_EXTERNAL_PROOF: 'true',
+      OBSERVABILITY_SMOKE_URL: 'https://app.example.com/api/observability/smoke',
+      OBSERVABILITY_SMOKE_SECRET: 'secret',
+    } as NodeJS.ProcessEnv, async () => new Response(JSON.stringify({
+      ok: true,
+      eventId: 'event-1',
+      buildId: 'wrong-build',
+      gitSha: 'old-sha',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+
+    expect(result.ok).toBe(false)
+    expect(result.errors).toEqual(expect.arrayContaining([
+      'Sentry smoke buildId mismatch: expected build-1, got wrong-build.',
+      'Sentry smoke sourceGitSha mismatch: expected abc123, got old-sha.',
+    ]))
+  })
+
   it('verifies Sentry alert rules through API or explicit manual attestation', async () => {
     expect(validateSentryAlertRules([
       { name: 'New issue' },
@@ -530,6 +579,15 @@ describe('observability smoke', () => {
     } as NodeJS.ProcessEnv)).resolves.toMatchObject({
       ok: true,
       verificationMode: 'manual_attestation',
+    })
+
+    await expect(verifySentryAlerts({
+      SENTRY_ALERTS_VERIFIED: 'true',
+      PRODUCTION_STRICT_EXTERNAL_PROOF: 'true',
+    } as NodeJS.ProcessEnv)).resolves.toMatchObject({
+      ok: false,
+      verificationMode: 'api',
+      errors: ['Sentry alert API credentials are required when PRODUCTION_STRICT_EXTERNAL_PROOF=true.'],
     })
 
     await expect(verifySentryAlerts({
@@ -556,6 +614,25 @@ describe('Supabase RLS migration', () => {
     expect(sql).toContain("jsonb_typeof(payload_json) = 'object'")
     expect(sql).toContain("status in ('applied', 'dead_letter')")
     expect(sql).toContain('set search_path = public')
+  })
+
+  it('rejects manual Supabase attestation in strict external proof mode', () => {
+    expect(resolveSupabaseLiveProofPreflight({
+      SUPABASE_MIGRATION_VERIFIED: 'true',
+      PRODUCTION_STRICT_EXTERNAL_PROOF: 'true',
+    } as NodeJS.ProcessEnv, () => true)).toMatchObject({
+      ok: false,
+      error: 'SUPABASE_DB_URL or DATABASE_URL is required when PRODUCTION_STRICT_EXTERNAL_PROOF=true.',
+    })
+
+    expect(resolveSupabaseLiveProofPreflight({
+      SUPABASE_DB_URL: 'postgres://example',
+      SUPABASE_MIGRATION_VERIFIED: 'true',
+      PRODUCTION_STRICT_EXTERNAL_PROOF: 'true',
+    } as NodeJS.ProcessEnv, () => false)).toMatchObject({
+      ok: false,
+      error: 'psql is required on PATH when PRODUCTION_STRICT_EXTERNAL_PROOF=true.',
+    })
   })
 
   it('validates a live Supabase RLS and constraint snapshot', () => {

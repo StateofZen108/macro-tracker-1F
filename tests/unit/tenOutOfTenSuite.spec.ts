@@ -43,6 +43,18 @@ describe('10/10 suite orchestration', () => {
     const plan = resolveTenOutOfTenPlan({ mode: 'production' })
     const productionRail = plan.find((rail) => rail.id === 'production_operable')
     expect(productionRail?.commands).toContain('test:release:proof')
+
+    const env = buildTenOutOfTenEnv({
+      env: {
+        VITE_APP_BUILD_ID: 'prod-build',
+        PRODUCTION_SOURCE_GIT_SHA: 'source-sha',
+      },
+      mode: 'production',
+      gitSha: 'evidence-sha',
+    })
+    expect(env.PRODUCTION_RELEASE_REQUIRED).toBe('true')
+    expect(env.PRODUCTION_STRICT_EXTERNAL_PROOF).toBe('true')
+    expect(env.PRODUCTION_SOURCE_GIT_SHA).toBe('source-sha')
   })
 
   it('reports pending external proof from existing artifacts', () => {

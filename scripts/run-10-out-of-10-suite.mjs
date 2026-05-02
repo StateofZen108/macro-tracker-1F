@@ -68,7 +68,9 @@ export function buildTenOutOfTenEnv({ env = process.env, mode = 'local', gitSha 
     ...TEN_ENV_FLAGS,
     VITE_APP_BUILD_ID: buildId,
     GIT_COMMIT_SHA: env.GIT_COMMIT_SHA || gitSha,
+    PRODUCTION_SOURCE_GIT_SHA: strictProduction ? env.PRODUCTION_SOURCE_GIT_SHA : env.PRODUCTION_SOURCE_GIT_SHA || env.GIT_COMMIT_SHA || gitSha,
     PRODUCTION_RELEASE_REQUIRED: strictProduction ? 'true' : env.PRODUCTION_RELEASE_REQUIRED || 'false',
+    PRODUCTION_STRICT_EXTERNAL_PROOF: strictProduction ? 'true' : env.PRODUCTION_STRICT_EXTERNAL_PROOF,
     RELEASE_DEVICE_QA_REQUIRED: strictProduction ? 'true' : env.RELEASE_DEVICE_QA_REQUIRED || 'false',
     VERCEL_PREVIEW_PROOF_STRICT: mode === 'preview' ? 'true' : env.VERCEL_PREVIEW_PROOF_STRICT,
   })
