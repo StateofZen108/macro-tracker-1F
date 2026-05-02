@@ -175,6 +175,44 @@ npm run test:supabase:rls-live
 
 The check inspects the production database for RLS-enabled sync tables, authenticated user-isolation policies, required constraints, indexes, and hardened `search_path = public` functions. A successful run writes `tmp/supabase-migration-live-result.json`, which `npm run write:production-readiness` can use as the Supabase verification proof.
 
+## Garmin
+
+Garmin is not considered live until the production deployment has Garmin OAuth credentials, an exact registered callback URL, encrypted token keys, Supabase durable state, background sync protection, and a connected-user smoke test.
+
+Required production env:
+
+```powershell
+$env:GARMIN_CLIENT_ID='<garmin-client-id>'
+$env:GARMIN_CLIENT_SECRET='<garmin-client-secret>'
+$env:GARMIN_PRODUCTION_BASE_URL='https://<deployment>'
+$env:GARMIN_REDIRECT_URI='https://<deployment>/api/garmin/callback'
+$env:GARMIN_HEALTH_API_URL='<garmin-health-api-url>'
+$env:GARMIN_ACTIVITY_API_URL='<garmin-activity-api-url>' # optional when health URL covers the required data
+$env:GARMIN_TOKEN_KEY_CURRENT_ID='current-2026-05'
+$env:GARMIN_TOKEN_KEY_CURRENT='<base64-32-byte-key>'
+$env:GARMIN_BACKGROUND_SYNC_ENABLED='true'
+$env:GARMIN_BACKGROUND_SYNC_SECRET='<high-entropy-secret>'
+$env:SUPABASE_URL='<supabase-url>'
+$env:SUPABASE_SERVICE_ROLE_KEY='<service-role-key>'
+```
+
+Register this exact callback URL in the Garmin developer portal for the same client credentials:
+
+```text
+https://<deployment>/api/garmin/callback
+```
+
+Then verify the deployment:
+
+```powershell
+npm run test:garmin:live-readiness
+$env:GARMIN_SMOKE_BASE_URL='https://<deployment>'
+$env:GARMIN_SMOKE_USER_ACCESS_TOKEN='<supabase-access-token-for-a-garmin-connected-test-user>'
+npm run test:garmin:live-smoke
+```
+
+`npm run test:garmin:live-readiness` fails if credentials, token encryption, durable state, background sync, or callback URL shape are missing. `npm run test:garmin:live-smoke` fails unless the deployed API reports `providerConfigured=true`, `persistentStoreConfigured=true`, background automation enabled, a connected Garmin user, and a successful `/api/garmin/sync` response.
+
 ## Device QA
 
 Physical-device evidence lives under `docs/device-qa-results/<build-id>.json`. The manifest must match the release build ID and git SHA and must pass every check defined in `docs/device-qa-runbook.md`.
