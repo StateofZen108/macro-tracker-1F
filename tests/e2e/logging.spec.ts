@@ -128,6 +128,51 @@ test('quick add logs a snapshot-only entry and updates totals', async ({ page })
   await expect(page.getByTestId('daily-summary-carbs-value')).toHaveText('23g')
 })
 
+test('rapid duplicate quick-add submit is idempotent', async ({ page }) => {
+  await safeClick(page.getByRole('button', { name: /quick add/i }))
+  const quickAddSheet = page.getByRole('dialog', { name: /quick add/i })
+  await safeFill(quickAddSheet.getByLabel('Label (optional)'), 'Protein bar')
+  await safeFill(quickAddSheet.getByLabel('Calories'), '220')
+  await safeFill(quickAddSheet.getByLabel('Protein (g)'), '20')
+  await safeFill(quickAddSheet.getByLabel('Carbs (g)'), '23')
+  await safeFill(quickAddSheet.getByLabel('Fat (g)'), '7')
+
+  const submitButton = quickAddSheet.getByRole('button', { name: /log quick add/i })
+  await expect(submitButton).toBeVisible()
+  await submitButton.evaluate((button) => {
+    if (button instanceof HTMLElement) {
+      button.click()
+      button.click()
+      button.click()
+    }
+  })
+
+  await ensureMealExpanded(page)
+  await expect(page.locator('[data-entry-id]').filter({ hasText: 'Protein bar' })).toHaveCount(1)
+  await expect(page.getByTestId('daily-summary-calories')).toContainText('220 cal')
+})
+
+test('rapid duplicate add-to-meal submit is idempotent', async ({ page }) => {
+  await openMealSheet(page)
+  const addFoodSheet = page.getByRole('dialog', { name: /add food/i })
+  await safeFill(await getAddFoodSearchInput(page), 'Banana')
+  await safeClick(addFoodSheet.getByRole('button', { name: /banana/i }).first())
+
+  const addButton = addFoodSheet.getByRole('button', { name: /add to meal/i })
+  await expect(addButton).toBeVisible()
+  await addButton.evaluate((button) => {
+    if (button instanceof HTMLElement) {
+      button.click()
+      button.click()
+      button.click()
+    }
+  })
+
+  await ensureMealExpanded(page)
+  await expect(page.locator('[data-entry-id]').filter({ hasText: 'Banana' })).toHaveCount(1)
+  await expect(page.getByTestId('daily-summary-calories')).toContainText('105 cal')
+})
+
 test('bottom sheet escape closes clean sheets and dirty discard stays hittable', async ({ page }) => {
   await safeClick(page.getByRole('button', { name: /quick add/i }))
   await expect(page.getByRole('dialog', { name: /quick add/i })).toBeVisible()

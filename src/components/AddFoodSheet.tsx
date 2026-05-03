@@ -86,7 +86,7 @@ interface AddFoodSheetProps {
   onChangeKeepOpenAfterAdd: (nextValue: boolean) => void
   onClose: () => void
   onDirtyChange?: (isDirty: boolean) => void
-  onConfirmFood: (food: Food, servings: number) => ActionResult<unknown>
+  onConfirmFood: (food: Food, servings: number, operationId?: string) => ActionResult<unknown>
   onConfirmRecipe?: (recipeId: string, servings: number) => ActionResult<unknown>
   onApplySavedMeal?: (savedMealId: string) => ActionResult<unknown>
   phaseTemplateLane?: {
@@ -343,6 +343,9 @@ export function AddFoodSheet({
   const pendingBrowseRestoreRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null)
   const handledInitialCaptureRef = useRef<string | null>(null)
   const handledInitialModeRef = useRef<string | null>(null)
+  const foodSubmitLocksRef = useRef<Set<string>>(new Set())
+  const foodSubmitOperationRef = useRef<{ key: string; operationId: string } | null>(null)
+  const foodSubmitUnlockTimersRef = useRef<number[]>([])
 
   const [sheetMode, setSheetMode] = useState<SheetMode>('browse')
   const [query, setQuery] = useState('')
@@ -370,6 +373,7 @@ export function AddFoodSheet({
   const [isPreparingOcrImage, setIsPreparingOcrImage] = useState(false)
   const [isExtractingOcr, setIsExtractingOcr] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [foodSubmitPending, setFoodSubmitPending] = useState(false)
   const [describeDraft, setDescribeDraft] = useState<DescribeFoodDraftV1 | null>(null)
   const [formDirty, setFormDirty] = useState(false)
   const [formConfig, setFormConfig] = useState<FormConfig | null>(null)
@@ -683,6 +687,9 @@ export function AddFoodSheet({
   useEffect(() => {
     return () => {
       stopScanner()
+      for (const timerId of foodSubmitUnlockTimersRef.current) {
+        window.clearTimeout(timerId)
+      }
     }
   }, [])
 
@@ -1082,6 +1089,48 @@ export function AddFoodSheet({
     setActionError(null)
   }
 
+  function buildFoodSubmitKey(food: Food, foodServings: number): string {
+    return [
+      mode,
+      sheetMode,
+      mealLabel ?? 'no-meal',
+      food.id,
+      Number.isFinite(foodServings) ? foodServings.toFixed(6) : 'invalid',
+    ].join(':')
+  }
+
+  function getFoodSubmitOperationId(operationKey: string): string {
+    if (foodSubmitOperationRef.current?.key !== operationKey) {
+      foodSubmitOperationRef.current = {
+        key: operationKey,
+        operationId: `food-log:${crypto.randomUUID()}`,
+      }
+    }
+
+    return foodSubmitOperationRef.current.operationId
+  }
+
+  function releaseFoodSubmitLock(operationKey: string, delayMs: number): void {
+    const release = () => {
+      foodSubmitLocksRef.current.delete(operationKey)
+      if (foodSubmitOperationRef.current?.key === operationKey) {
+        foodSubmitOperationRef.current = null
+      }
+      setFoodSubmitPending(foodSubmitLocksRef.current.size > 0)
+    }
+
+    if (delayMs <= 0) {
+      release()
+      return
+    }
+
+    const timerId = window.setTimeout(() => {
+      release()
+      foodSubmitUnlockTimersRef.current = foodSubmitUnlockTimersRef.current.filter((id) => id !== timerId)
+    }, delayMs)
+    foodSubmitUnlockTimersRef.current.push(timerId)
+  }
+
   function setNextCaptureDraft(nextDraft: CaptureConvenienceDraft | null): void {
     setCaptureDraft((currentDraft) => {
       if (
@@ -1348,14 +1397,25 @@ export function AddFoodSheet({
   }
 
   function submitFood(food: Food, foodServings: number, shouldKeepOpen = false): ActionResult<unknown> {
-    const result = onConfirmFood(food, foodServings)
+    const operationKey = buildFoodSubmitKey(food, foodServings)
+    if (foodSubmitLocksRef.current.has(operationKey)) {
+      return { ok: true, data: null }
+    }
+
+    const operationId = getFoodSubmitOperationId(operationKey)
+    foodSubmitLocksRef.current.add(operationKey)
+    setFoodSubmitPending(true)
+
+    const result = onConfirmFood(food, foodServings, operationId)
     if (!result.ok) {
+      releaseFoodSubmitLock(operationKey, 0)
       setActionError(result.error.message)
       return result
     }
 
     setActionError(null)
     handleSuccessfulAdd(shouldKeepOpen)
+    releaseFoodSubmitLock(operationKey, 500)
     return result
   }
 
@@ -2304,6 +2364,7 @@ export function AddFoodSheet({
             servings={servings}
             onServingsChange={setServings}
             onSubmitFood={submitFood}
+            foodSubmitPending={foodSubmitPending}
             canUseLastAmount={canUseLastAmount}
             keepOpenAfterAdd={keepOpenAfterAdd}
             onChangeKeepOpenAfterAdd={onChangeKeepOpenAfterAdd}

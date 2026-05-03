@@ -1119,6 +1119,7 @@ export interface FoodSnapshot {
 
 export interface FoodLogEntry {
   id: string
+  operationId?: string
   foodId?: string
   snapshot: FoodSnapshot
   date: string

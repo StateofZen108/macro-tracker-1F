@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BottomSheet } from './BottomSheet'
 import { MEAL_LABELS, MEAL_TYPES, type ActionResult, type MealType } from '../types'
 
@@ -14,6 +14,7 @@ interface QuickAddSheetProps {
     protein: number
     carbs: number
     fat: number
+    operationId?: string
   }) => ActionResult<unknown>
 }
 
@@ -56,6 +57,8 @@ export function QuickAddSheet({
   const initialState = useMemo(() => buildInitialState(defaultMeal), [defaultMeal])
   const [formState, setFormState] = useState<QuickAddFormState>(initialState)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const submitOperationIdRef = useRef<string | null>(null)
 
   const isDirty = useMemo(
     () => JSON.stringify(formState) !== JSON.stringify(initialState),
@@ -76,6 +79,14 @@ export function QuickAddSheet({
   function handleSubmit(event: React.FormEvent<HTMLFormElement>): void {
     event.preventDefault()
 
+    if (submitOperationIdRef.current) {
+      return
+    }
+
+    const operationId = `food-log:${crypto.randomUUID()}`
+    submitOperationIdRef.current = operationId
+    setIsSubmitting(true)
+
     try {
       const result = onSubmit({
         meal: formState.meal,
@@ -84,10 +95,13 @@ export function QuickAddSheet({
         protein: parseRequiredNumber('Protein', formState.protein),
         carbs: parseRequiredNumber('Carbs', formState.carbs),
         fat: parseRequiredNumber('Fat', formState.fat),
+        operationId,
       })
 
       if (!result.ok) {
         setErrorMessage(result.error.message)
+        submitOperationIdRef.current = null
+        setIsSubmitting(false)
         return
       }
 
@@ -95,6 +109,8 @@ export function QuickAddSheet({
       onClose()
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Review the quick-add values.')
+      submitOperationIdRef.current = null
+      setIsSubmitting(false)
     }
   }
 
@@ -188,8 +204,8 @@ export function QuickAddSheet({
         ) : null}
 
         <div className="flex flex-col gap-3 sm:flex-row">
-          <button type="submit" className="action-button flex-1">
-            Log quick add
+          <button type="submit" className="action-button flex-1" disabled={isSubmitting} aria-busy={isSubmitting || undefined}>
+            {isSubmitting ? 'Logging...' : 'Log quick add'}
           </button>
           <button type="button" className="action-button-secondary flex-1" onClick={onClose}>
             Cancel

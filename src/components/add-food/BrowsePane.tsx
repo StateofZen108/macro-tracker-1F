@@ -152,6 +152,7 @@ export interface BrowsePaneProps {
   servings: number
   onServingsChange: (value: number) => void
   onSubmitFood: (food: Food, servings: number, keepOpen: boolean) => void
+  foodSubmitPending: boolean
   canUseLastAmount: (food: Food) => boolean
   keepOpenAfterAdd: boolean
   onChangeKeepOpenAfterAdd: (nextValue: boolean) => void
@@ -249,6 +250,7 @@ function LocalFoodCard({
   selectedFoodId,
   onSelectFood,
   onSubmitFood,
+  submitDisabled = false,
   canUseLastAmount,
   favoriteFoodIds,
   onToggleFavoriteFood,
@@ -259,6 +261,7 @@ function LocalFoodCard({
   selectedFoodId: string | null
   onSelectFood: (foodId: string) => void
   onSubmitFood: (food: Food, servings: number, keepOpen: boolean) => void
+  submitDisabled?: boolean
   canUseLastAmount: (food: Food) => boolean
   favoriteFoodIds: Set<string>
   onToggleFavoriteFood?: (foodId: string) => void
@@ -299,6 +302,8 @@ function LocalFoodCard({
           <button
             type="button"
             className="action-button-secondary w-full"
+            disabled={submitDisabled}
+            aria-busy={submitDisabled || undefined}
             onClick={() => onSubmitFood(food, 1, true)}
           >
             Add 1x
@@ -307,6 +312,8 @@ function LocalFoodCard({
             <button
               type="button"
               className="action-button-secondary w-full"
+              disabled={submitDisabled}
+              aria-busy={submitDisabled || undefined}
               onClick={() => onSubmitFood(food, food.lastServings ?? 1, true)}
             >
               Use last amount
@@ -349,6 +356,7 @@ export function BrowsePane({
   servings,
   onServingsChange,
   onSubmitFood,
+  foodSubmitPending,
   canUseLastAmount,
   keepOpenAfterAdd,
   onChangeKeepOpenAfterAdd,
@@ -759,6 +767,8 @@ export function BrowsePane({
           <button
             type="button"
             className="action-button w-full"
+            disabled={foodSubmitPending}
+            aria-busy={foodSubmitPending || undefined}
             onClick={() => onSubmitFood(selectedFood, servings, mode === 'add' && servings !== 1)}
           >
             {mode === 'replace' ? 'Replace food' : 'Add to meal'}
@@ -827,6 +837,7 @@ export function BrowsePane({
                 selectedFoodId={selectedFoodId}
                 onSelectFood={onSelectFood}
                 onSubmitFood={onSubmitFood}
+                submitDisabled={foodSubmitPending}
                 canUseLastAmount={canUseLastAmount}
                 favoriteFoodIds={favoriteFoodIds}
                 onToggleFavoriteFood={onToggleFavoriteFood}
@@ -876,6 +887,8 @@ export function BrowsePane({
                     <button
                       type="button"
                       className="action-button w-full"
+                      disabled={foodSubmitPending}
+                      aria-busy={foodSubmitPending || undefined}
                       onClick={() => onSubmitFood(candidate.food, candidate.servings, true)}
                     >
                       Use last amount
@@ -921,6 +934,8 @@ export function BrowsePane({
                   <button
                     type="button"
                     className="action-button mt-3 w-full"
+                    disabled={foodSubmitPending}
+                    aria-busy={foodSubmitPending || undefined}
                     onClick={() => onApplySavedMealSelection(result.id)}
                   >
                     Review and apply
@@ -958,6 +973,8 @@ export function BrowsePane({
                   <button
                     type="button"
                     className="action-button mt-3 w-full"
+                    disabled={foodSubmitPending}
+                    aria-busy={foodSubmitPending || undefined}
                     onClick={() => onConfirmRecipeSelection(result.id)}
                   >
                     Log 1 serving
@@ -1001,6 +1018,7 @@ export function BrowsePane({
                 selectedFoodId={selectedFoodId}
                 onSelectFood={onSelectFood}
                 onSubmitFood={onSubmitFood}
+                submitDisabled={foodSubmitPending}
                 canUseLastAmount={canUseLastAmount}
                 favoriteFoodIds={favoriteFoodIds}
                 onToggleFavoriteFood={onToggleFavoriteFood}
@@ -1090,6 +1108,8 @@ export function BrowsePane({
                     <button
                       type="button"
                       className="action-button mt-3 w-full"
+                      disabled={foodSubmitPending}
+                      aria-busy={foodSubmitPending || undefined}
                       onClick={() => onImportCatalogFood(result, mode === 'add')}
                     >
                       {importLabel}

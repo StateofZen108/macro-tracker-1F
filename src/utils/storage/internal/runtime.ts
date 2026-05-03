@@ -1160,6 +1160,22 @@ function sortLogEntries(entries: FoodLogEntry[]): FoodLogEntry[] {
   return [...entries].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 }
 
+function validateUniqueFoodLogOperationIds(entries: FoodLogEntry[]): ActionResult<void> {
+  const seenOperationIds = new Set<string>()
+  for (const entry of entries) {
+    if (!entry.operationId) {
+      continue
+    }
+
+    if (seenOperationIds.has(entry.operationId)) {
+      return fail('duplicateFoodLogOperation', 'This food log operation has already been applied.')
+    }
+    seenOperationIds.add(entry.operationId)
+  }
+
+  return ok(undefined)
+}
+
 function dedupeWeightsByDate(weights: WeightEntry[]): WeightEntry[] {
   const byDate = new Map<string, WeightEntry>()
 
@@ -2474,6 +2490,7 @@ function normalizeInterventionEntry(entry: InterventionEntry): InterventionEntry
 function normalizeFoodLogEntry(entry: FoodLogEntry): FoodLogEntry {
   return {
     ...entry,
+    operationId: entry.operationId?.trim() || undefined,
     foodId: entry.foodId?.trim() || undefined,
     snapshot: normalizeSnapshot(entry.snapshot),
     updatedAt: entry.updatedAt?.trim() || undefined,
@@ -4341,6 +4358,7 @@ function parseLogEntries(rawEntries: unknown, date: string, foodIndex: Map<strin
     return [
       normalizeFoodLogEntry({
         id,
+        operationId: readOptionalString(rawEntry.operationId),
         foodId,
         snapshot,
         date: entryDate,
@@ -6474,6 +6492,10 @@ export function saveFoodLogWithUsages(
   ensureStorageInitialized()
 
   const nextEntries = sortLogEntries(entries.map(normalizeFoodLogEntry))
+  const operationIdResult = validateUniqueFoodLogOperationIds(nextEntries)
+  if (!operationIdResult.ok) {
+    return operationIdResult
+  }
   const previousEntries = storageCache.logsByDate[date] ?? []
   const previousFoods = storageCache.foods
   const usageByFoodId = new Map<string, { count: number; lastServings: number; lastMealType?: MealType }>()
@@ -6544,6 +6566,10 @@ export function saveFoodLog(date: string, entries: FoodLogEntry[]): ActionResult
 
   const previousEntries = storageCache.logsByDate[date] ?? []
   const nextEntries = sortLogEntries(entries.map(normalizeFoodLogEntry))
+  const operationIdResult = validateUniqueFoodLogOperationIds(nextEntries)
+  if (!operationIdResult.ok) {
+    return operationIdResult
+  }
   const result = directWriteJson(getLogStorageKey(date), nextEntries)
   if (!result.ok) {
     return result

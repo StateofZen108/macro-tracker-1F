@@ -1,4 +1,4 @@
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ActionResult, AppActionError, Food, FoodAuditActor, FoodLogEntry, FoodSnapshot, MealType } from '../types'
 import { isSyncEnabled } from '../utils/sync/core'
 import {
@@ -13,12 +13,36 @@ import { upsertFoodTrustEvidence } from '../utils/storage/foodTrustEvidence'
 import { buildEntrySnapshot } from '../utils/storage/foods'
 import { subscribeToStorage } from '../utils/storage/core'
 
+type AddEntryOptions = {
+  operationId?: string
+}
+
 function ok<T>(data: T): ActionResult<T> {
   return { ok: true, data }
 }
 
+function duplicateOperationError(): AppActionError {
+  return {
+    code: 'duplicateOperationInFlight',
+    message: 'This food log operation is already saving.',
+  }
+}
+
 function sortEntries(entries: FoodLogEntry[]): FoodLogEntry[] {
   return [...entries].sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+}
+
+function normalizeOperationId(operationId?: string): string | undefined {
+  const normalized = operationId?.trim()
+  return normalized ? normalized : undefined
+}
+
+function findEntryByOperationId(entries: FoodLogEntry[], operationId?: string): FoodLogEntry | undefined {
+  if (!operationId) {
+    return undefined
+  }
+
+  return entries.find((entry) => entry.operationId === operationId)
 }
 
 function auditActorFromFood(food: Food): FoodAuditActor {
@@ -82,12 +106,14 @@ export function useFoodLog(date: string) {
     () => sortEntries(storedEntries.filter((entry) => !entry.deletedAt)),
     [storedEntries],
   )
+  const inFlightAddOperationIdsRef = useRef<Set<string>>(new Set())
   const [lastError, setLastError] = useState<AppActionError | null>(null)
 
   function updateDateEntries(
     targetDate: string,
     updater: (currentEntries: FoodLogEntry[]) => FoodLogEntry[],
     actor: FoodAuditActor = 'user',
+    operationId?: string,
   ): ActionResult<void> {
     const currentDateEntries = sortEntries(loadFoodLog(targetDate))
     const nextEntries = sortEntries(updater(currentDateEntries).map((entry) => ({
@@ -101,6 +127,7 @@ export function useFoodLog(date: string) {
         beforeEntries: currentDateEntries,
         afterEntries: nextEntries,
         actor,
+        operationId,
       })
     }
 
@@ -108,12 +135,35 @@ export function useFoodLog(date: string) {
     return result
   }
 
-  function addEntry(meal: MealType, food: Food, servings: number): ActionResult<FoodLogEntry> {
+  function addEntry(
+    meal: MealType,
+    food: Food,
+    servings: number,
+    options: AddEntryOptions = {},
+  ): ActionResult<FoodLogEntry> {
+    const operationId = normalizeOperationId(options.operationId)
+    const currentEntries = sortEntries(loadFoodLog(date))
+    const existingEntry = findEntryByOperationId(currentEntries, operationId)
+    if (existingEntry) {
+      setLastError(null)
+      return ok(existingEntry)
+    }
+
+    if (operationId && inFlightAddOperationIdsRef.current.has(operationId)) {
+      const error = duplicateOperationError()
+      setLastError(error)
+      return { ok: false, error }
+    }
+    if (operationId) {
+      inFlightAddOperationIdsRef.current.add(operationId)
+    }
+
     const now = new Date().toISOString()
     const trustEvidence = food.trustEvidence ?? classifyFoodTrustEvidence({ food })
     void upsertFoodTrustEvidence(trustEvidence)
     const newEntry: FoodLogEntry = {
       id: crypto.randomUUID(),
+      operationId,
       foodId: food.id,
       snapshot: {
         ...buildEntrySnapshot(food),
@@ -127,8 +177,10 @@ export function useFoodLog(date: string) {
       needsReview: trustEvidence.status !== 'trusted' || undefined,
     }
 
-    const currentEntries = sortEntries(loadFoodLog(date))
     const result = saveFoodLogWithUsage(date, sortEntries([...currentEntries, newEntry]), food.id, servings)
+    if (operationId) {
+      inFlightAddOperationIdsRef.current.delete(operationId)
+    }
     if (!result.ok) {
       setLastError(result.error)
       return result
@@ -139,6 +191,7 @@ export function useFoodLog(date: string) {
       beforeEntries: currentEntries,
       afterEntries: sortEntries([...currentEntries, newEntry]),
       actor: auditActorFromFood(food),
+      operationId,
     })
     setLastError(null)
     return ok(newEntry)
@@ -148,12 +201,31 @@ export function useFoodLog(date: string) {
     meal: MealType,
     snapshot: FoodSnapshot,
     servings: number,
+    options: AddEntryOptions = {},
   ): ActionResult<FoodLogEntry> {
+    const operationId = normalizeOperationId(options.operationId)
+    const currentEntries = sortEntries(loadFoodLog(date))
+    const existingEntry = findEntryByOperationId(currentEntries, operationId)
+    if (existingEntry) {
+      setLastError(null)
+      return ok(existingEntry)
+    }
+
+    if (operationId && inFlightAddOperationIdsRef.current.has(operationId)) {
+      const error = duplicateOperationError()
+      setLastError(error)
+      return { ok: false, error }
+    }
+    if (operationId) {
+      inFlightAddOperationIdsRef.current.add(operationId)
+    }
+
     const now = new Date().toISOString()
     const trustEvidence = snapshot.trustEvidence ?? classifyFoodTrustEvidence({ snapshot })
     void upsertFoodTrustEvidence(trustEvidence)
     const newEntry: FoodLogEntry = {
       id: crypto.randomUUID(),
+      operationId,
       snapshot: {
         ...snapshot,
         trustEvidence,
@@ -166,7 +238,15 @@ export function useFoodLog(date: string) {
       needsReview: trustEvidence.status !== 'trusted' || undefined,
     }
 
-    const result = updateDateEntries(date, (currentEntries) => [...currentEntries, newEntry], auditActorFromSnapshot(snapshot))
+    const result = updateDateEntries(
+      date,
+      (currentEntries) => [...currentEntries, newEntry],
+      auditActorFromSnapshot(snapshot),
+      operationId,
+    )
+    if (operationId) {
+      inFlightAddOperationIdsRef.current.delete(operationId)
+    }
     if (!result.ok) {
       return result
     }

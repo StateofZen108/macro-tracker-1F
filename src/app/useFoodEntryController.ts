@@ -33,15 +33,22 @@ interface QuickAddPayload {
   protein: number
   carbs: number
   fat: number
+  operationId?: string
 }
 
 interface UseFoodEntryControllerOptions {
   entries: FoodLogEntry[]
-  addEntry: (meal: MealType, food: Food, servings: number) => ActionResult<FoodLogEntry>
+  addEntry: (
+    meal: MealType,
+    food: Food,
+    servings: number,
+    options?: { operationId?: string },
+  ) => ActionResult<FoodLogEntry>
   addSnapshotEntry: (
     meal: MealType,
     snapshot: FoodSnapshot,
     servings: number,
+    options?: { operationId?: string },
   ) => ActionResult<FoodLogEntry>
   replaceEntryFood: (entryId: string, food: Food) => ActionResult<void>
   deleteEntry: (entryId: string) => ActionResult<void>
@@ -202,7 +209,7 @@ export function useFoodEntryController({
     setEditingError(null)
   }
 
-  function handleConfirmFood(food: Food, servings: number) {
+  function handleConfirmFood(food: Food, servings: number, operationId?: string) {
     if (!foodSheetContext) {
       return {
         ok: false as const,
@@ -223,7 +230,7 @@ export function useFoodEntryController({
     }
 
     const meal = foodSheetContext.meal
-    const result = addEntry(meal, food, servings)
+    const result = addEntry(meal, food, servings, { operationId })
     if (!result.ok) {
       reportError(result.error)
       return result
@@ -248,6 +255,7 @@ export function useFoodEntryController({
         source: 'custom',
       },
       1,
+      { operationId: payload.operationId },
     )
 
     if (!result.ok) {
