@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 import {
   findVercelDeployLogAdvisories,
   findVercelDeployLogViolations,
+  readVercelDeployLogFromInputs,
 } from '../../scripts/check-vercel-deploy-log-clean.mjs'
 
 describe('Vercel deploy log cleanliness scanner', () => {
@@ -49,5 +52,27 @@ Build completed successfully
         line: 'npm warn deprecated inflight@1.0.6: This module is not supported',
       },
     ])
+  })
+
+  it('reads deploy log evidence from VERCEL_DEPLOY_LOG_PATH for nested release gates', () => {
+    const tmpDir = resolve('tmp', 'server-deploy-log-clean-test')
+    const logPath = resolve(tmpDir, 'vercel-production-deploy.log')
+    mkdirSync(tmpDir, { recursive: true })
+    writeFileSync(logPath, 'Build completed successfully\n', 'utf8')
+
+    try {
+      const log = readVercelDeployLogFromInputs({
+        argv: ['node', 'check-vercel-deploy-log-clean.mjs'],
+        env: { VERCEL_DEPLOY_LOG_PATH: logPath },
+        defaultLogPath: resolve(tmpDir, 'missing.log'),
+      })
+
+      expect(log).toEqual({
+        source: logPath,
+        text: 'Build completed successfully\n',
+      })
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true })
+    }
   })
 })

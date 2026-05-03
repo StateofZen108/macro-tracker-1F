@@ -41,10 +41,14 @@ export function findVercelDeployLogAdvisories(logText) {
   )
 }
 
-function readLogFromInputs() {
-  const argPath = process.argv[2]
-  if (process.env.VERCEL_DEPLOY_LOG) {
-    return { source: 'VERCEL_DEPLOY_LOG', text: process.env.VERCEL_DEPLOY_LOG }
+export function readVercelDeployLogFromInputs({
+  argv = process.argv,
+  env = process.env,
+  defaultLogPath = DEFAULT_LOG_PATH,
+} = {}) {
+  const argPath = argv[2]
+  if (env.VERCEL_DEPLOY_LOG) {
+    return { source: 'VERCEL_DEPLOY_LOG', text: env.VERCEL_DEPLOY_LOG }
   }
 
   if (argPath) {
@@ -52,7 +56,12 @@ function readLogFromInputs() {
     return { source: absolutePath, text: readFileSync(absolutePath, 'utf8') }
   }
 
-  const defaultPath = resolve(DEFAULT_LOG_PATH)
+  if (env.VERCEL_DEPLOY_LOG_PATH) {
+    const absolutePath = resolve(env.VERCEL_DEPLOY_LOG_PATH)
+    return { source: absolutePath, text: readFileSync(absolutePath, 'utf8') }
+  }
+
+  const defaultPath = resolve(defaultLogPath)
   if (existsSync(defaultPath)) {
     return { source: defaultPath, text: readFileSync(defaultPath, 'utf8') }
   }
@@ -61,7 +70,7 @@ function readLogFromInputs() {
 }
 
 function runCli() {
-  const log = readLogFromInputs()
+  const log = readVercelDeployLogFromInputs()
   const strict = process.env.VERCEL_ENV === 'production' || process.env.PRODUCTION_RELEASE_REQUIRED === 'true'
 
   if (!log) {
